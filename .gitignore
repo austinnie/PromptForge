@@ -1,0 +1,64 @@
+# chat_image_generator/.gitignore
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# 虚拟环境
+venv/
+env/
+ENV/
+.venv
+
+# 输出目录
+output/
+*.png
+*.jpg
+*.jpeg
+*.webp
+
+# 分析报告（可以保留，但通常不提交）
+analysis_report_*.json
+analysis_report_*.md
+project_snapshot_*.txt
+
+# 代码收集工具生成的报告
+code_collect_report/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 日志
+*.log
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 模型文件（太大，不提交）
+*.safetensors
+*.ckpt
+*.bin
+*.pth
+
+# 环境变量（包含敏感信息）
+.env
+.env.local
+.env.*.local
+
+# 测试覆盖率
+.coverage
+htmlcov/
+.pytest_cache/
+
+# 打包文件
+dist/
+build/
+*.egg-info/

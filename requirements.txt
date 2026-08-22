@@ -1,0 +1,32 @@
+# requirements.txt
+# 智能生图 - 核心依赖
+
+# --- PyTorch (CPU版) ---
+# 安装方式: pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+torch
+torchvision
+
+# --- 扩散模型 ---
+diffusers>=0.26.0
+transformers>=4.40.0
+accelerate>=1.14.0
+safetensors>=0.8.0
+huggingface-hub>=0.24.0
+
+# --- 图像处理 ---
+Pillow>=11.0.0
+opencv-python>=4.10.0
+numpy>=1.26.0
+
+# --- LLM 可选 ---
+requests>=2.32.0
+
+# --- 工具 ---
+psutil>=7.0.0
+tqdm>=4.67.0
+
+# --- 可选 (用于更好的兼容性) ---
+# scipy>=1.13.0
+# opencv-python-headless>=4.10.0  # 无GUI版本
+# 添加 dotenv
+python-dotenv>=1.0.0
