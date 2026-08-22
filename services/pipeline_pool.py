@@ -19,36 +19,26 @@ class PipelinePool:
             cls._instance = super().__new__(cls)
         return cls._instance
     
+
+    # services/pipeline_pool.py - 修复 get_pipeline 方法
+
     def get_pipeline(self, model_path: str, model_name: str = None,
                      lora_path: str = None, lora_weight: float = 1.0,
                      task_id: str = None) -> Tuple[Optional[object], bool]:
         """
         获取Pipeline
-        
-        参数:
-            model_path: 模型路径
-            model_name: 模型名称（用于显示）
-            lora_path: LoRA路径（可选）
-            lora_weight: LoRA权重
-            task_id: 任务ID（用于引用计数）
-        
-        返回:
-            (pipeline, is_new)
         """
         if task_id is None:
             task_id = "default"
         
-        # 生成缓存键
         cache_key = f"{model_path}_{lora_path}_{lora_weight}"
         
-        # 检查缓存
         if cache_key in self._pipelines:
             pipe_data = self._pipelines[cache_key]
             self._ref_counts[task_id] += 1
             pipe_data['ref_count'] += 1
             return pipe_data['pipe'], False
         
-        # 加载新Pipeline
         try:
             from diffusers import StableDiffusionPipeline
             
@@ -61,8 +51,21 @@ class PipelinePool:
                 low_cpu_mem_usage=True
             )
             pipe.to("cpu")
-            pipe.enable_vae_slicing()
-            pipe.enable_attention_slicing()
+            
+            # ✅ 修复：新版本 Diffusers API
+            try:
+                if hasattr(pipe.vae, 'enable_slicing'):
+                    pipe.vae.enable_slicing()
+                elif hasattr(pipe, 'enable_vae_slicing'):
+                    pipe.enable_vae_slicing()
+            except Exception as e:
+                print(f"⚠️ VAE slicing 设置失败: {e}")
+            
+            try:
+                if hasattr(pipe, 'enable_attention_slicing'):
+                    pipe.enable_attention_slicing()
+            except Exception as e:
+                print(f"⚠️ Attention slicing 设置失败: {e}")
             
             # 加载LoRA
             if lora_path and lora_path != "None":
@@ -87,7 +90,7 @@ class PipelinePool:
         except Exception as e:
             print(f"❌ Pipeline加载失败: {e}")
             return None, False
-    
+        
     def release_pipeline(self, model_path: str, lora_path: str = None,
                          task_id: str = None) -> bool:
         """释放Pipeline引用"""

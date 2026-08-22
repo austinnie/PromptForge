@@ -185,6 +185,9 @@ class ChatApp:
         self.progress_bar = ttk.Progressbar(status_frame, length=200, mode='determinate')
         self.progress_bar.pack(side=tk.RIGHT, padx=5)
     
+
+    # gui/app.py - 修复 _load_model 方法
+
     def _load_model(self):
         """加载模型"""
         if self.is_model_loaded:
@@ -216,21 +219,39 @@ class ChatApp:
                     low_cpu_mem_usage=True
                 )
                 pipe.to("cpu")
-                pipe.enable_vae_slicing()
-                pipe.enable_attention_slicing()
+                
+                # ✅ 修复：新版本 Diffusers 的 API 变化
+                # 旧版: pipe.enable_vae_slicing()
+                # 新版: pipe.vae.enable_slicing()
+                try:
+                    # 尝试新版 API
+                    if hasattr(pipe.vae, 'enable_slicing'):
+                        pipe.vae.enable_slicing()
+                    elif hasattr(pipe, 'enable_vae_slicing'):
+                        pipe.enable_vae_slicing()
+                except Exception as e:
+                    print(f"⚠️ VAE slicing 设置失败: {e}")
+                
+                try:
+                    # 尝试新版 API
+                    if hasattr(pipe, 'enable_attention_slicing'):
+                        pipe.enable_attention_slicing()
+                except Exception as e:
+                    print(f"⚠️ Attention slicing 设置失败: {e}")
                 
                 self.pipe = pipe
                 self.is_model_loaded = True
                 
                 self.root.after(0, self._on_load_complete)
             except Exception as err:
-                # ✅ 修复：正确捕获异常并传递错误信息
                 error_msg = str(err)
                 print(f"❌ 加载失败: {error_msg}")
+                import traceback
+                traceback.print_exc()
                 self.root.after(0, lambda msg=error_msg: self._on_load_error(msg))
         
         threading.Thread(target=load_thread, daemon=True).start()
-    
+        
     def _on_load_complete(self):
         """加载完成"""
         self.load_btn.config(state=tk.NORMAL)
