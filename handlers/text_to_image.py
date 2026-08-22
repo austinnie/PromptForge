@@ -310,14 +310,18 @@ class TextToImageHandler(BaseHandler):
         """估算参数"""
         text_lower = text.lower()
         
+        # ✅ 使用新模型支持的尺寸 (宽*高)
         if any(k in text_lower for k in ['美女', '女孩', '女人', '人像']):
-            return {"width": 512, "height": 768, "steps": 30, "cfg": 7.5}
+            return {"width": 1104, "height": 1472, "steps": 30, "cfg": 7.5}
         if any(k in text_lower for k in ['全身', '站立']):
-            return {"width": 512, "height": 896, "steps": 32, "cfg": 7.5}
+            return {"width": 928, "height": 1664, "steps": 32, "cfg": 7.5}
         if any(k in text_lower for k in ['风景', '景色', '日落']):
-            return {"width": 896, "height": 512, "steps": 25, "cfg": 7.0}
+            return {"width": 1664, "height": 928, "steps": 25, "cfg": 7.0}
+        if any(k in text_lower for k in ['正方形', '头像']):
+            return {"width": 1328, "height": 1328, "steps": 30, "cfg": 7.5}
         
-        return {"width": 512, "height": 768, "steps": 30, "cfg": 7.5}
+        # 默认 1:1
+        return {"width": 1328, "height": 1328, "steps": 30, "cfg": 7.5}
     
     def cancel(self):
         self.cancel_flag = True

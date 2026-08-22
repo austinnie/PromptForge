@@ -79,3 +79,6 @@ class HunyuanEngine:
     def get_usage(self):
         """获取使用量"""
         return {"info": "请登录腾讯云控制台查看使用量"}
+
+    def get_name(self) -> str:
+        return "腾讯混元"        

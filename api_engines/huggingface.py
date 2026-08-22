@@ -92,3 +92,6 @@ class HuggingFaceEngine:
     def get_usage(self):
         """获取使用量"""
         return {"info": "HuggingFace 免费版无限使用，但有限速"}
+
+    def get_name(self) -> str:
+        return "HuggingFace"        
