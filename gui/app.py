@@ -17,7 +17,7 @@ class ChatApp:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("💬 智能生图")
-        self.root.geometry("750x650")
+        self.root.geometry("850x650")  # 稍微加宽以容纳更多控件
         
         self.settings = settings
         self.intent_analyzer = IntentAnalyzer()
@@ -27,6 +27,9 @@ class ChatApp:
         # 模型状态
         self.is_model_loaded = False
         self.pipe = None
+        
+        # API 引擎缓存
+        self._api_engine = None
         
         # 图片上传状态
         self.uploaded_images = []
@@ -45,16 +48,18 @@ class ChatApp:
         self._build_input_area(main_frame)
         self._build_status_bar()
     
+    # ============================================================
+    # ✅ 修改点 1：在工具栏中添加模式切换
+    # ============================================================
     def _build_toolbar(self, parent):
         """构建工具栏"""
         toolbar = ttk.Frame(parent)
         toolbar.pack(fill=tk.X, pady=5)
         
-        # 模型状态
+        # --- 第一组：模型 ---
         self.model_status = ttk.Label(toolbar, text="🔴 未加载", foreground="red")
         self.model_status.pack(side=tk.LEFT, padx=5)
         
-        # 选择模型按钮
         self.select_model_btn = ttk.Button(
             toolbar,
             text="📂 选择模型",
@@ -62,11 +67,10 @@ class ChatApp:
         )
         self.select_model_btn.pack(side=tk.LEFT, padx=5)
         
-        # 加载模型按钮
         self.load_btn = ttk.Button(toolbar, text="📦 加载模型", command=self._load_model)
         self.load_btn.pack(side=tk.LEFT, padx=5)
         
-        # 上传图片按钮
+        # --- 第二组：图片上传 ---
         self.upload_btn = ttk.Button(
             toolbar,
             text="📎 上传图片",
@@ -74,7 +78,6 @@ class ChatApp:
         )
         self.upload_btn.pack(side=tk.LEFT, padx=5)
         
-        # 清除图片按钮
         self.clear_upload_btn = ttk.Button(
             toolbar,
             text="🗑️ 清除图片",
@@ -82,12 +85,54 @@ class ChatApp:
         )
         self.clear_upload_btn.pack(side=tk.LEFT, padx=5)
         
-        # 图片状态
         self.upload_status = ttk.Label(toolbar, text="", foreground="green")
         self.upload_status.pack(side=tk.LEFT, padx=5)
         
-        # LLM状态
+        # --- 第三组：分隔线 ---
         ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=10)
+        
+        # --- ✅ 第四组：生成模式切换 ---
+        ttk.Label(toolbar, text="模式:").pack(side=tk.LEFT, padx=2)
+        
+        # 模式下拉框：local / api
+        self.mode_var = tk.StringVar(value=self.settings.generation_mode)
+        self.mode_combo = ttk.Combobox(
+            toolbar,
+            textvariable=self.mode_var,
+            values=["local", "api"],
+            width=8,
+            state="readonly"
+        )
+        self.mode_combo.pack(side=tk.LEFT, padx=2)
+        self.mode_combo.bind('<<ComboboxSelected>>', self._on_mode_changed)
+        
+        # API 提供商下拉框（只有 api 模式时可用）
+        ttk.Label(toolbar, text="API:").pack(side=tk.LEFT, padx=5)
+        
+        self.provider_var = tk.StringVar(value=self.settings.api_provider)
+        self.provider_combo = ttk.Combobox(
+            toolbar,
+            textvariable=self.provider_var,
+            values=["huggingface", "tongyi", "yige", "hunyuan"],
+            width=12,
+            state="readonly"
+        )
+        self.provider_combo.pack(side=tk.LEFT, padx=2)
+        self.provider_combo.bind('<<ComboboxSelected>>', self._on_provider_changed)
+        
+        # 模式状态提示
+        self.mode_hint = ttk.Label(
+            toolbar,
+            text="🖥️ 本地模式",
+            foreground="blue",
+            font=("", 8)
+        )
+        self.mode_hint.pack(side=tk.LEFT, padx=10)
+        
+        # --- 第五组：右侧按钮 ---
+        ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=10)
+        
+        # LLM状态
         self.llm_status = ttk.Label(toolbar, text="●", foreground="gray")
         self.llm_status.pack(side=tk.LEFT, padx=2)
         
@@ -96,6 +141,100 @@ class ChatApp:
         
         # 打开输出
         ttk.Button(toolbar, text="📁 输出目录", command=self._open_output).pack(side=tk.RIGHT, padx=5)
+        
+        # 初始化模式状态
+        self._update_mode_ui()
+    
+    # ============================================================
+    # ✅ 新增方法：模式切换处理
+    # ============================================================
+    def _on_mode_changed(self, event=None):
+        """模式切换"""
+        mode = self.mode_var.get()
+        self.settings.generation_mode = mode
+        
+        if mode == "api":
+            self.mode_hint.config(
+                text=f"☁️ API: {self.provider_var.get()}",
+                foreground="green"
+            )
+            self.provider_combo.config(state="readonly")
+            self._append_message("system", f"☁️ 切换到 API 模式 ({self.provider_var.get()})")
+            
+            # 检查 API 配置
+            config = self.settings.get_api_config().get(self.provider_var.get(), {})
+            has_token = False
+            if self.provider_var.get() == "huggingface":
+                has_token = bool(config.get("HF_API_TOKEN"))
+            elif self.provider_var.get() == "tongyi":
+                has_token = bool(config.get("TONGYI_API_KEY"))
+            elif self.provider_var.get() == "yige":
+                has_token = bool(config.get("YIGE_API_KEY") and config.get("YIGE_SECRET_KEY"))
+            elif self.provider_var.get() == "hunyuan":
+                has_token = bool(config.get("HUNYUAN_SECRET_ID") and config.get("HUNYUAN_SECRET_KEY"))
+            
+            if not has_token:
+                self._append_message("system", f"⚠️ {self.provider_var.get()} API 密钥未配置，请检查 .env 文件")
+        else:
+            self.mode_hint.config(
+                text="🖥️ 本地模式",
+                foreground="blue"
+            )
+            self.provider_combo.config(state="disabled")
+            self._append_message("system", "🖥️ 切换到本地模式")
+            
+            # 检查本地模型
+            if not self.settings.get_model_path():
+                self._append_message("system", "⚠️ 本地模型路径未配置，请选择模型文件")
+    
+    def _on_provider_changed(self, event=None):
+        """API 提供商切换"""
+        provider = self.provider_var.get()
+        self.settings.api_provider = provider
+        self._api_engine = None  # 重置引擎缓存
+        
+        if self.settings.generation_mode == "api":
+            self.mode_hint.config(
+                text=f"☁️ API: {provider}",
+                foreground="green"
+            )
+            self._append_message("system", f"☁️ 切换到 {provider} API")
+            
+            # 检查 API 配置
+            config = self.settings.get_api_config().get(provider, {})
+            has_token = False
+            if provider == "huggingface":
+                has_token = bool(config.get("HF_API_TOKEN"))
+            elif provider == "tongyi":
+                has_token = bool(config.get("TONGYI_API_KEY"))
+            elif provider == "yige":
+                has_token = bool(config.get("YIGE_API_KEY") and config.get("YIGE_SECRET_KEY"))
+            elif provider == "hunyuan":
+                has_token = bool(config.get("HUNYUAN_SECRET_ID") and config.get("HUNYUAN_SECRET_KEY"))
+            
+            if not has_token:
+                self._append_message("system", f"⚠️ {provider} API 密钥未配置")
+    
+    def _update_mode_ui(self):
+        """更新模式 UI 状态"""
+        mode = self.settings.generation_mode
+        
+        if mode == "api":
+            self.mode_hint.config(
+                text=f"☁️ API: {self.provider_var.get()}",
+                foreground="green"
+            )
+            self.provider_combo.config(state="readonly")
+        else:
+            self.mode_hint.config(
+                text="🖥️ 本地模式",
+                foreground="blue"
+            )
+            self.provider_combo.config(state="disabled")
+    
+    # ============================================================
+    # 以下方法保持不变
+    # ============================================================
     
     def _select_model_file(self):
         """选择模型文件"""
@@ -112,7 +251,6 @@ class ChatApp:
         if filepath:
             self.settings.model_path = filepath
             self._append_message("system", f"📦 已选择模型: {os.path.basename(filepath)}")
-            # 自动加载
             self._load_model()
     
     def _build_chat_area(self, parent):
@@ -138,6 +276,7 @@ class ChatApp:
         
         self._append_message("system", "👋 欢迎！输入描述即可生成图片")
         self._append_message("system", "💡 试试说：生成一张美丽的日落风景")
+        self._append_message("system", f"🔄 当前模式: {self.settings.generation_mode}")
     
     def _build_input_area(self, parent):
         """构建输入区域"""
@@ -185,9 +324,6 @@ class ChatApp:
         self.progress_bar = ttk.Progressbar(status_frame, length=200, mode='determinate')
         self.progress_bar.pack(side=tk.RIGHT, padx=5)
     
-
-    # gui/app.py - 修复 _load_model 方法
-
     def _load_model(self):
         """加载模型"""
         if self.is_model_loaded:
@@ -220,11 +356,8 @@ class ChatApp:
                 )
                 pipe.to("cpu")
                 
-                # ✅ 修复：新版本 Diffusers 的 API 变化
-                # 旧版: pipe.enable_vae_slicing()
-                # 新版: pipe.vae.enable_slicing()
+                # 内存优化
                 try:
-                    # 尝试新版 API
                     if hasattr(pipe.vae, 'enable_slicing'):
                         pipe.vae.enable_slicing()
                     elif hasattr(pipe, 'enable_vae_slicing'):
@@ -233,7 +366,6 @@ class ChatApp:
                     print(f"⚠️ VAE slicing 设置失败: {e}")
                 
                 try:
-                    # 尝试新版 API
                     if hasattr(pipe, 'enable_attention_slicing'):
                         pipe.enable_attention_slicing()
                 except Exception as e:
@@ -251,7 +383,7 @@ class ChatApp:
                 self.root.after(0, lambda msg=error_msg: self._on_load_error(msg))
         
         threading.Thread(target=load_thread, daemon=True).start()
-        
+    
     def _on_load_complete(self):
         """加载完成"""
         self.load_btn.config(state=tk.NORMAL)
@@ -275,7 +407,7 @@ class ChatApp:
     def _upload_image(self):
         """上传图片"""
         from tkinter import filedialog
-        from PIL import Image, ImageTk
+        from PIL import Image
         
         files = filedialog.askopenfilenames(
             title="选择图片",

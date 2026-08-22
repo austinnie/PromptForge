@@ -30,3 +30,8 @@ tqdm>=4.67.0
 # opencv-python-headless>=4.10.0  # 无GUI版本
 # 添加 dotenv
 python-dotenv>=1.0.0
+
+# 可选：各 API SDK
+# dashscope>=1.14.0          # 通义万相
+# tencentcloud-sdk-python    # 腾讯混元
+# 百度文心一格用 REST API，无需额外 SDK
