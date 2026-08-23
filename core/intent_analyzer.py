@@ -21,10 +21,16 @@ class IntentResult:
 class IntentAnalyzer:
     """意图分析器"""
     
-    COUPLE_KEYWORDS = ['和', '与', '一起', '两人', '双人', '情侣', 'couple', 'together']
-    EDIT_KEYWORDS = ['变成', '改为', '换成', '改成', '换', '改', '修改', '调整', '风格']
-    GEN_KEYWORDS = ['生成', '画', '创建', 'create', 'generate', '画一张', '帮我画']
-    CONTINUATION_KEYWORDS = ['再来', '继续', '换一个', '换一张', 'another', 'continue']
+    # ✅ 扩充触发词，支持英文
+    COUPLE_KEYWORDS = ['和', '与', '一起', '两人', '双人', '情侣', 'couple', 'together', 'two']
+    EDIT_KEYWORDS = ['变成', '改为', '换成', '改成', '换', '改', '修改', '调整', '风格', 'edit', 'change', 'modify']
+    GEN_KEYWORDS = ['生成', '画', '创建', 'create', 'generate', '画一张', '帮我画', 
+                    'make', 'render', 'produce', 'draw', 'paint']
+    
+    # ✅ 增加英文场景词
+    SCENE_KEYWORDS = ['风景', '美女', '帅哥', '人像', '动漫', 'portrait', 'landscape', 
+                      'woman', 'man', 'girl', 'boy', 'beautiful', 'gorgeous',
+                      'scenery', 'nature', 'ocean', 'sunset', 'city', 'forest']
     
     def __init__(self):
         self._safety = None
@@ -60,14 +66,14 @@ class IntentAnalyzer:
     def _is_gen_intent(self, text: str) -> bool:
         text_lower = text.lower()
         return (any(k in text_lower for k in self.GEN_KEYWORDS) or 
-                len(text) > 5 or 
-                any(k in text_lower for k in ['风景', '美女', '帅哥', '人像', '动漫']))
+                len(text) > 8 or  # ✅ 稍微提高阈值，避免短句误判
+                any(k in text_lower for k in self.SCENE_KEYWORDS))
     
     def _analyze_txt2img(self, text: str) -> IntentResult:
         keywords = self._extract_keywords(text)
-        # 移除"生成""画"等指令词
+        # 移除触发词
         prompt = text
-        for kw in ['生成', '画', '帮我画', 'create', 'generate']:
+        for kw in ['生成', '画', '帮我画', 'create', 'generate', 'make', 'render', 'produce', 'draw', 'paint']:
             prompt = prompt.replace(kw, '')
         prompt = prompt.strip().strip('，').strip(',')
         
