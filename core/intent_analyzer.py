@@ -28,9 +28,11 @@ class IntentAnalyzer:
                     'make', 'render', 'produce', 'draw', 'paint']
     
     # ✅ 增加英文场景词
-    SCENE_KEYWORDS = ['风景', '美女', '帅哥', '人像', '动漫', 'portrait', 'landscape', 
-                      'woman', 'man', 'girl', 'boy', 'beautiful', 'gorgeous',
-                      'scenery', 'nature', 'ocean', 'sunset', 'city', 'forest']
+    SCENE_KEYWORDS = ['风景', '美女', '帅哥', '人像', '动漫', 
+                      'portrait', 'landscape', 'woman', 'man', 'girl', 'boy',
+                      'beautiful', 'gorgeous', 'scenery', 'nature', 'ocean',
+                      'sunset', 'city', 'forest', 'mountain', 'river',
+                      'flower', 'cat', 'dog', 'animal', 'vehicle']
     
     def __init__(self):
         self._safety = None
@@ -65,9 +67,10 @@ class IntentAnalyzer:
     
     def _is_gen_intent(self, text: str) -> bool:
         text_lower = text.lower()
+        # ✅ 触发词 + 场景词 + 长度判断
         return (any(k in text_lower for k in self.GEN_KEYWORDS) or 
-                len(text) > 8 or  # ✅ 稍微提高阈值，避免短句误判
-                any(k in text_lower for k in self.SCENE_KEYWORDS))
+                any(k in text_lower for k in self.SCENE_KEYWORDS) or
+                len(text) > 10)  # 较长的描述也视为图像生成意图
     
     def _analyze_txt2img(self, text: str) -> IntentResult:
         keywords = self._extract_keywords(text)
@@ -83,7 +86,8 @@ class IntentAnalyzer:
             keywords=keywords,
             original_text=text,
             confidence=0.8
-        )
+        )   
+
     
     def _analyze_img2img(self, text: str) -> IntentResult:
         keywords = self._extract_keywords(text)

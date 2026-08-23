@@ -91,7 +91,7 @@ class ChatApp:
         # --- 第三组：分隔线 ---
         ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=10)
         
-        # --- ✅ 第四组：生成模式切换 ---
+        # --- 第四组：生成模式切换 ---
         ttk.Label(toolbar, text="模式:").pack(side=tk.LEFT, padx=2)
         
         # 模式下拉框：local / api
@@ -110,10 +110,11 @@ class ChatApp:
         ttk.Label(toolbar, text="API:").pack(side=tk.LEFT, padx=5)
         
         self.provider_var = tk.StringVar(value=self.settings.api_provider)
+        # ✅ 添加所有可用的 API 提供商
         self.provider_combo = ttk.Combobox(
             toolbar,
             textvariable=self.provider_var,
-            values=["huggingface", "tongyi", "yige", "hunyuan"],
+            values=["pollinations", "huggingface", "tongyi", "yige", "hunyuan", "agnes", "freeapi"],
             width=12,
             state="readonly"
         )
@@ -161,20 +162,35 @@ class ChatApp:
             self.provider_combo.config(state="readonly")
             self._append_message("system", f"☁️ 切换到 API 模式 ({self.provider_var.get()})")
             
-            # 检查 API 配置
-            config = self.settings.get_api_config().get(self.provider_var.get(), {})
+            # ✅ 检查 API 配置（支持所有提供商）
+            provider = self.provider_var.get()
+            config = self.settings.get_api_config().get(provider, {})
+            
+            # 不需要 API Key 的提供商
+            no_key_providers = ["pollinations", "freeapi"]
+            
+            if provider in no_key_providers:
+                self._append_message("system", f"✅ {provider} 无需 API Key，可直接使用")
+                return
+            
+            # 需要 API Key 的提供商
             has_token = False
-            if self.provider_var.get() == "huggingface":
+            if provider == "huggingface":
                 has_token = bool(config.get("HF_API_TOKEN"))
-            elif self.provider_var.get() == "tongyi":
+            elif provider == "tongyi":
                 has_token = bool(config.get("TONGYI_API_KEY"))
-            elif self.provider_var.get() == "yige":
+            elif provider == "yige":
                 has_token = bool(config.get("YIGE_API_KEY") and config.get("YIGE_SECRET_KEY"))
-            elif self.provider_var.get() == "hunyuan":
+            elif provider == "hunyuan":
                 has_token = bool(config.get("HUNYUAN_SECRET_ID") and config.get("HUNYUAN_SECRET_KEY"))
+            elif provider == "agnes":
+                has_token = bool(config.get("AGNES_API_KEY"))
             
             if not has_token:
-                self._append_message("system", f"⚠️ {self.provider_var.get()} API 密钥未配置，请检查 .env 文件")
+                self._append_message("system", f"⚠️ {provider} API 密钥未配置，请检查 .env 文件")
+            else:
+                self._append_message("system", f"✅ {provider} API 密钥已配置")
+                
         else:
             self.mode_hint.config(
                 text="🖥️ 本地模式",
@@ -186,7 +202,8 @@ class ChatApp:
             # 检查本地模型
             if not self.settings.get_model_path():
                 self._append_message("system", "⚠️ 本地模型路径未配置，请选择模型文件")
-    
+            
+
     def _on_provider_changed(self, event=None):
         """API 提供商切换"""
         provider = self.provider_var.get()
@@ -200,8 +217,18 @@ class ChatApp:
             )
             self._append_message("system", f"☁️ 切换到 {provider} API")
             
-            # 检查 API 配置
+            # ✅ 检查 API 配置（区分是否需要 API Key）
             config = self.settings.get_api_config().get(provider, {})
+            
+            # 不需要 API Key 的提供商
+            no_key_providers = ["pollinations", "freeapi"]
+            
+            if provider in no_key_providers:
+                # 无需 API Key，直接可用
+                self._append_message("system", f"✅ {provider} 无需 API Key，可直接使用")
+                return
+            
+            # 需要 API Key 的提供商
             has_token = False
             if provider == "huggingface":
                 has_token = bool(config.get("HF_API_TOKEN"))
@@ -211,10 +238,14 @@ class ChatApp:
                 has_token = bool(config.get("YIGE_API_KEY") and config.get("YIGE_SECRET_KEY"))
             elif provider == "hunyuan":
                 has_token = bool(config.get("HUNYUAN_SECRET_ID") and config.get("HUNYUAN_SECRET_KEY"))
+            elif provider == "agnes":
+                has_token = bool(config.get("AGNES_API_KEY"))
             
             if not has_token:
-                self._append_message("system", f"⚠️ {provider} API 密钥未配置")
-    
+                self._append_message("system", f"⚠️ {provider} API 密钥未配置，请检查 .env 文件")
+            else:
+                self._append_message("system", f"✅ {provider} API 密钥已配置")
+            
     def _update_mode_ui(self):
         """更新模式 UI 状态"""
         mode = self.settings.generation_mode

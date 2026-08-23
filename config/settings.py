@@ -55,6 +55,9 @@ class Settings:
     # ----- Agnes AI (需注册获取 API Key) -----
     agnes_api_key: str = os.getenv("AGNES_API_KEY", "")
     agnes_model: str = os.getenv("AGNES_MODEL", "flux")
+
+    # ----- Free API (社区免费代理，无需注册) -----
+    freeapi_model: str = os.getenv("FREEAPI_MODEL", "qwen-image-plus")
     
     # --- 生成参数 ---
     default_steps: int = int(os.getenv("DEFAULT_STEPS", "20"))
@@ -104,6 +107,9 @@ class Settings:
                 "AGNES_API_KEY": self.agnes_api_key,
                 "AGNES_MODEL": self.agnes_model,
             },
+            "freeapi": {
+                "FREEAPI_MODEL": self.freeapi_model,
+            },            
         }
     
     def get_provider_info(self, provider: str) -> dict:

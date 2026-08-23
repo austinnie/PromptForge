@@ -8,6 +8,7 @@ from .hunyuan import HunyuanEngine
 from .huggingface import HuggingFaceEngine
 from .pollinations import PollinationsEngine
 from .agnes import AgnesEngine
+from .freeapi import FreeAPIEngine  # ✅ 添加 Free API
 
 
 def create_engine(provider: str, config: dict) -> BaseEngine:
@@ -48,6 +49,11 @@ def create_engine(provider: str, config: dict) -> BaseEngine:
             model=config.get("AGNES_MODEL", "flux")
         )
     
+    elif provider == "freeapi":
+        return FreeAPIEngine(
+            model=config.get("FREEAPI_MODEL", "qwen-image-plus")
+        )
+    
     else:
         raise ValueError(f"不支持的 API 提供商: {provider}")
 
@@ -60,5 +66,6 @@ __all__ = [
     'HuggingFaceEngine',
     'PollinationsEngine',
     'AgnesEngine',
+    'FreeAPIEngine',
     'create_engine',
 ]
