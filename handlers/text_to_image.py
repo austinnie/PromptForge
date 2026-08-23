@@ -171,8 +171,22 @@ class TextToImageHandler(BaseHandler):
         
         try:
             # 构建完整提示词
-            full_prompt = self._build_quality_prompt(original_text, intent.get("keywords", {}))
-            negative = self._build_negative(original_text)
+            # ✅ 针对 Pollinations 使用简化 Prompt
+            if self.app.settings.api_provider == "pollinations":
+                # 使用原始用户输入，不添加额外质量词
+                simple_prompt = intent.get("original_text", prompt)
+                # 去除可能的"生成""画"等指令词
+                for word in ["生成", "画", "帮我画", "create", "generate"]:
+                    simple_prompt = simple_prompt.replace(word, "")
+                simple_prompt = simple_prompt.strip().strip('，').strip(',')
+                full_prompt = simple_prompt
+                print(f"🔍 Pollinations 使用简化 Prompt: {full_prompt}")
+                negative = "ugly, blurry, bad quality"  # 简短版本
+            else:
+                # 其他 API 使用完整质量词            
+                full_prompt = self._build_quality_prompt(original_text, intent.get("keywords", {}))
+                negative = self._build_negative(original_text)
+    
             
             self._update_status(f"☁️ 调用 {engine.get_name()} API...")
             

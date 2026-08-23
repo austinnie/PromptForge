@@ -25,25 +25,36 @@ class Settings:
     ollama_url: str = os.getenv("OLLAMA_URL", "http://localhost:11434")
     ollama_model: str = os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b")
     
-    # --- ✅ 新增：API 配置 ---
+    # --- API 配置 ---
     # 图像生成模式: "local" 或 "api"
     generation_mode: str = os.getenv("GENERATION_MODE", "local")
     
     # 默认 API 提供商
-    api_provider: str = os.getenv("API_PROVIDER", "huggingface")
+    api_provider: str = os.getenv("API_PROVIDER", "pollinations")
     
-    # API 密钥
+    # ----- 通义万相 (阿里云百炼) -----
     tongyi_api_key: str = os.getenv("TONGYI_API_KEY", "")
-    tongyi_model: str = os.getenv("TONGYI_MODEL", "wanx-v1")
+    tongyi_model: str = os.getenv("TONGYI_MODEL", "wan2.1-t2i-plus")
+    tongyi_base_url: str = os.getenv("TONGYI_BASE_URL", "")
     
+    # ----- 文心一格 (百度) -----
     yige_api_key: str = os.getenv("YIGE_API_KEY", "")
     yige_secret_key: str = os.getenv("YIGE_SECRET_KEY", "")
     
+    # ----- 腾讯混元 -----
     hunyuan_secret_id: str = os.getenv("HUNYUAN_SECRET_ID", "")
     hunyuan_secret_key: str = os.getenv("HUNYUAN_SECRET_KEY", "")
     
+    # ----- HuggingFace -----
     hf_api_token: str = os.getenv("HF_API_TOKEN", "")
     hf_model: str = os.getenv("HF_MODEL", "sdxl")
+    
+    # ----- Pollinations AI (完全免费，无需 API Key) -----
+    pollinations_model: str = os.getenv("POLLINATIONS_MODEL", "flux")
+    
+    # ----- Agnes AI (需注册获取 API Key) -----
+    agnes_api_key: str = os.getenv("AGNES_API_KEY", "")
+    agnes_model: str = os.getenv("AGNES_MODEL", "flux")
     
     # --- 生成参数 ---
     default_steps: int = int(os.getenv("DEFAULT_STEPS", "20"))
@@ -72,6 +83,7 @@ class Settings:
             "tongyi": {
                 "TONGYI_API_KEY": self.tongyi_api_key,
                 "TONGYI_MODEL": self.tongyi_model,
+                "TONGYI_BASE_URL": self.tongyi_base_url,
             },
             "yige": {
                 "YIGE_API_KEY": self.yige_api_key,
@@ -85,7 +97,56 @@ class Settings:
                 "HF_API_TOKEN": self.hf_api_token,
                 "HF_MODEL": self.hf_model,
             },
+            "pollinations": {
+                "POLLINATIONS_MODEL": self.pollinations_model,
+            },
+            "agnes": {
+                "AGNES_API_KEY": self.agnes_api_key,
+                "AGNES_MODEL": self.agnes_model,
+            },
         }
+    
+    def get_provider_info(self, provider: str) -> dict:
+        """获取特定提供商的信息"""
+        providers = {
+            "tongyi": {
+                "name": "通义万相 (阿里云百炼)",
+                "requires_key": True,
+                "free": False,
+                "description": "阿里云百炼平台，需要 API Key",
+            },
+            "pollinations": {
+                "name": "Pollinations AI",
+                "requires_key": False,
+                "free": True,
+                "description": "完全免费，无需注册，开箱即用",
+            },
+            "agnes": {
+                "name": "Agnes AI",
+                "requires_key": True,
+                "free": True,
+                "description": "无限期免费，需注册获取 API Key",
+            },
+            "huggingface": {
+                "name": "HuggingFace",
+                "requires_key": True,
+                "free": True,
+                "description": "免费但有限速，需 API Token",
+            },
+            "yige": {
+                "name": "文心一格 (百度)",
+                "requires_key": True,
+                "free": False,
+                "description": "百度文心一格，按量付费",
+            },
+            "hunyuan": {
+                "name": "腾讯混元",
+                "requires_key": True,
+                "free": False,
+                "description": "腾讯混元，按量付费",
+            },
+        }
+        return providers.get(provider, {})
 
 
 settings = Settings()
