@@ -198,6 +198,10 @@ class PollinationsEngine:
     
     def get_usage(self):
         return {"info": "Pollinations AI 完全免费，无使用限制"}
+
+    def get_model(self) -> str:
+        """获取当前使用的模型名称"""
+        return self.model
     
     def get_name(self) -> str:
         return f"Pollinations AI ({self.model})"

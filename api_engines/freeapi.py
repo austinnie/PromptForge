@@ -14,28 +14,20 @@ class FreeAPIEngine:
     """Free API 图像生成引擎 (社区免费代理)"""
     
     def __init__(self, model: str = "flux", base_url: str = None):
-        """
-        初始化 Free API 引擎
-        
-        Args:
-            model: 模型名称，会自动检测可用模型
-            base_url: API 地址
-        """
         self.base_url = base_url or "https://openai.good.hidns.vip/v1"
         self.api_key = "https://github.com/smanx/free-api"
         
-        # 可用模型列表（自动获取）
-        self.available_models = []
+        # ✅ 只保留真正可用的图像模型
+        self.available_models = ["grok-imagine-image-lite"]
+        self.verified_models = ["grok-imagine-image-lite"]  # 已验证可用
+        
+        # 尝试获取更多模型，但只保留图像模型
         self._fetch_models()
         
-        # 设置模型
-        if model in self.available_models:
-            self.model = model
-        elif self.available_models:
-            # 选择第一个可用的图像生成模型
-            self.model = self._select_best_model()
-        else:
-            self.model = "flux"  # 默认
+        # ✅ 始终优先使用已验证的模型
+        self.model = "grok-imagine-image-lite"
+        if self.model not in self.available_models:
+            self.available_models.insert(0, self.model)
         
         # 支持的尺寸
         self.supported_sizes = [
@@ -48,6 +40,10 @@ class FreeAPIEngine:
         self.last_request_time = 0
         self.min_interval = 2.5
         
+        # ✅ 最大重试次数
+        self.MAX_RETRIES = 3
+        self.retry_count = 0
+        
         print(f"🔍 Free API 引擎初始化")
         print(f"🔍 API 地址: {self.base_url}")
         print(f"🔍 可用模型: {self.available_models}")
@@ -55,7 +51,7 @@ class FreeAPIEngine:
         print(f"⚠️ 注意: Free API 有 IP 限流 (10秒5次)")
     
     def _fetch_models(self):
-        """获取可用模型列表"""
+        """获取可用模型列表 - 只保留图像生成模型"""
         try:
             url = f"{self.base_url}/models"
             headers = {"Authorization": f"Bearer {self.api_key}"}
@@ -65,44 +61,41 @@ class FreeAPIEngine:
             if response.status_code == 200:
                 data = response.json()
                 if 'data' in data:
-                    # 过滤出图像生成模型
-                    all_models = [m['id'] for m in data['data']]
-                    # 常见的图像生成模型关键词
-                    image_keywords = ['image', 'flux', 'sdxl', 'sd3', 'dall-e', 'qwen', 'wan']
-                    self.available_models = [
-                        m for m in all_models 
-                        if any(kw in m.lower() for kw in image_keywords)
-                    ]
-                    # 如果没有匹配到，使用所有模型
-                    if not self.available_models:
-                        self.available_models = all_models
-                    print(f"✅ 获取到 {len(self.available_models)} 个可用模型")
+                    all_models = [m.get('id', str(m)) for m in data['data']]
+                    all_models = [m for m in all_models if m and m != '...']
+                    
+                    # ✅ 只保留 grok-imagine-image-lite（已验证可用）
+                    verified = ["grok-imagine-image-lite"]
+                    
+                    # 过滤出已验证的模型
+                    filtered = [m for m in all_models if m in verified]
+                    
+                    if filtered:
+                        self.available_models = filtered
+                        print(f"✅ 获取到 {len(self.available_models)} 个可用模型")
+                    else:
+                        # 如果没有找到，保留默认
+                        if "grok-imagine-image-lite" not in self.available_models:
+                            self.available_models = ["grok-imagine-image-lite"]
+                        print(f"⚠️ 未找到可用模型，使用默认: {self.available_models}")
                 else:
                     print(f"⚠️ 无法解析模型列表: {data}")
-                    self.available_models = []
             else:
                 print(f"⚠️ 获取模型列表失败: {response.status_code}")
-                self.available_models = []
         except Exception as e:
             print(f"⚠️ 获取模型列表异常: {e}")
-            self.available_models = []
         
-        # 如果获取失败，使用默认列表
-        if not self.available_models:
-            self.available_models = ["flux", "sdxl", "sd3", "dall-e-3"]
-            print(f"⚠️ 使用默认模型列表: {self.available_models}")
+        # 确保 grok-imagine-image-lite 在列表中
+        if "grok-imagine-image-lite" not in self.available_models:
+            self.available_models.insert(0, "grok-imagine-image-lite")
     
     def _select_best_model(self) -> str:
-        """选择最佳可用模型"""
-        # 按优先级排序
-        priority = ["flux", "sdxl", "sd3", "dall-e-3", "qwen", "wan"]
-        
-        for p in priority:
-            for m in self.available_models:
-                if p in m.lower():
-                    return m
-        
-        return self.available_models[0] if self.available_models else "flux"
+        """选择最佳可用模型 - 只使用已验证的模型"""
+        verified = ["grok-imagine-image-lite"]
+        for vm in verified:
+            if vm in self.available_models:
+                return vm
+        return self.available_models[0] if self.available_models else "grok-imagine-image-lite"
     
     def _get_size(self, width: int, height: int) -> str:
         """获取支持的尺寸格式"""
@@ -110,7 +103,6 @@ class FreeAPIEngine:
         if size in self.supported_sizes:
             return size
         
-        # 找最接近的
         aspect = width / height
         best_match = "1024x1024"
         best_diff = float('inf')
@@ -136,6 +128,9 @@ class FreeAPIEngine:
         seed: int = None,
     ) -> Image.Image:
         """生成单张图片"""
+        
+        # ✅ 重置重试计数（每次新生成重置）
+        self.retry_count = 0
         
         # 限速
         elapsed = time.time() - self.last_request_time
@@ -168,9 +163,12 @@ class FreeAPIEngine:
         
         url = f"{self.base_url}/images/generations"
         
+        if not url.startswith(('http://', 'https://')):
+            raise Exception(f"无效的 API URL: {url}")
+        
         print(f"🔍 Free API 请求")
         print(f"🔍 模型: {self.model}, 尺寸: {size}")
-        print(f"🔍 Prompt 长度: {len(prompt)}")
+        print(f"🔍 URL: {url}")
         
         try:
             response = requests.post(
@@ -190,25 +188,49 @@ class FreeAPIEngine:
                 except:
                     error_msg = response.text[:200]
                 
-                # 如果是模型不可用错误，尝试切换模型
-                if "no access to model" in error_msg or "model" in error_msg.lower():
-                    print(f"⚠️ 模型 {self.model} 不可用，尝试切换...")
-                    self._fetch_models()
-                    if self.available_models:
-                        old_model = self.model
-                        self.model = self._select_best_model()
-                        if self.model != old_model:
-                            print(f"🔄 切换模型: {old_model} → {self.model}")
-                            # 递归重试
-                            return self.generate_single(
-                                prompt, negative, width, height, 
-                                steps, cfg, seed
-                            )
+                # ✅ 检查是否是模型不可用错误（400 也是不可用）
+                is_model_error = (
+                    response.status_code in [502, 503, 504] or
+                    (response.status_code == 400 and "model" in error_msg.lower())
+                )
+                
+                if is_model_error:
+                    self.retry_count += 1
+                    
+                    if self.retry_count > self.MAX_RETRIES:
+                        raise Exception(
+                            f"已尝试 {self.MAX_RETRIES} 次，模型 {self.model} 不可用。\n"
+                            f"Free API 当前可能不可用，请：\n"
+                            f"1. 切换到 Pollinations (API 下拉选择 pollinations)\n"
+                            f"2. 稍后重试"
+                        )
+                    
+                    print(f"⚠️ 模型 {self.model} 不可用 (尝试 {self.retry_count}/{self.MAX_RETRIES})")
+                    
+                    # ✅ 强制切换到 grok-imagine-image-lite（唯一可信模型）
+                    if self.model != "grok-imagine-image-lite":
+                        self.model = "grok-imagine-image-lite"
+                        print(f"🔄 切换模型: {self.model}")
+                    else:
+                        # 如果 grok 也不行，说明 Free API 整体不可用
+                        raise Exception(
+                            f"模型 {self.model} 不可用，Free API 可能暂时离线。\n"
+                            f"请切换到 Pollinations 或稍后重试。"
+                        )
+                    
+                    # 递归重试
+                    return self.generate_single(
+                        prompt, negative, width, height, 
+                        steps, cfg, seed
+                    )
                 
                 if response.status_code == 429:
                     error_msg = f"请求过于频繁 (限流: 10秒5次)，请稍后重试。{error_msg}"
                 
                 raise Exception(f"Free API 调用失败 (状态码 {response.status_code}): {error_msg}")
+            
+            # ✅ 成功，重置重试计数
+            self.retry_count = 0
             
             result = response.json()
             
@@ -240,6 +262,8 @@ class FreeAPIEngine:
             
             raise Exception(f"无法解析图片数据: {type(image_data)}")
             
+        except requests.exceptions.MissingSchema as e:
+            raise Exception(f"Free API URL 无效，请检查配置: {e}")
         except requests.exceptions.RequestException as e:
             raise Exception(f"Free API 请求失败: {e}")
         except Exception as e:
@@ -252,6 +276,9 @@ class FreeAPIEngine:
             "available_models": self.available_models,
             "limits": {"rate_limit": "10次/10秒"}
         }
+
+    def get_model(self) -> str:
+        return self.model
     
     def get_name(self) -> str:
         return f"Free API ({self.model})"

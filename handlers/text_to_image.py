@@ -129,8 +129,9 @@ class TextToImageHandler(BaseHandler):
             import traceback
             traceback.print_exc()
         finally:
-            self.is_generating = False
-    
+            self.is_generating = False    
+
+
     def _handle_api(self, intent: Dict[str, Any]) -> None:
         """API 模式生成"""
         if self.is_generating:
@@ -160,7 +161,7 @@ class TextToImageHandler(BaseHandler):
             return
         
         params = self._estimate_params(original_text or prompt)
-        width = min(params["width"] * 2, 1024)  # API 支持更大尺寸
+        width = min(params["width"] * 2, 1024)
         height = min(params["height"] * 2, 1024)
         steps = max(params["steps"], 20)
         cfg = params["cfg"]
@@ -170,23 +171,17 @@ class TextToImageHandler(BaseHandler):
         self.cancel_flag = False
         
         try:
-            # 构建完整提示词
-            # ✅ 针对 Pollinations 使用简化 Prompt
+            # 构建提示词
             if self.app.settings.api_provider == "pollinations":
-                # 使用原始用户输入，不添加额外质量词
                 simple_prompt = intent.get("original_text", prompt)
-                # 去除可能的"生成""画"等指令词
                 for word in ["生成", "画", "帮我画", "create", "generate"]:
                     simple_prompt = simple_prompt.replace(word, "")
-                simple_prompt = simple_prompt.strip().strip('，').strip(',')
-                full_prompt = simple_prompt
+                full_prompt = simple_prompt.strip().strip('，').strip(',')
                 print(f"🔍 Pollinations 使用简化 Prompt: {full_prompt}")
-                negative = "ugly, blurry, bad quality"  # 简短版本
             else:
-                # 其他 API 使用完整质量词            
                 full_prompt = self._build_quality_prompt(original_text, intent.get("keywords", {}))
-                negative = self._build_negative(original_text)
-    
+            
+            negative = self._build_negative(original_text)
             
             self._update_status(f"☁️ 调用 {engine.get_name()} API...")
             
@@ -212,16 +207,67 @@ class TextToImageHandler(BaseHandler):
                 )
             
         except Exception as e:
+            error_msg = str(e)
+            
+            # ✅ 如果 Free API 失败，自动切换到 Pollinations
+            if self.app.settings.api_provider == "freeapi" and "不可用" in error_msg:
+                print(f"⚠️ Free API 不可用，自动切换到 Pollinations")
+                self._reply("⚠️ Free API 暂时不可用，自动切换到 Pollinations...")
+                
+                # 切换提供商
+                self.app.settings.api_provider = "pollinations"
+                self._api_engine = None
+                engine = self._get_api_engine()
+                
+                if engine:
+                    try:
+                        # 重新生成
+                        self._update_status("☁️ 切换到 Pollinations 重新生成...")
+                        
+                        # 简化 prompt
+                        simple_prompt = intent.get("original_text", prompt)
+                        for word in ["生成", "画", "帮我画", "create", "generate"]:
+                            simple_prompt = simple_prompt.replace(word, "")
+                        full_prompt = simple_prompt.strip().strip('，').strip(',')
+                        
+                        image = engine.generate_single(
+                            prompt=full_prompt,
+                            negative="ugly, blurry",
+                            width=width,
+                            height=height,
+                            steps=steps,
+                            cfg=cfg,
+                            seed=random.randint(1, 2**32 - 1)
+                        )
+                        
+                        filepath = self._save_image(image, prompt[:50], "api")
+                        self._reply(f"✅ 图片已生成（Pollinations AI）！\n📁 {os.path.basename(filepath)}")
+                        self._update_status("✅ Pollinations 生成完成")
+                        
+                        if self.context:
+                            self.context.update(
+                                {"type": "text_to_image", "prompt": prompt},
+                                {"image_path": filepath}
+                            )
+                        return
+                        
+                    except Exception as e2:
+                        print(f"❌ Pollinations 也失败了: {e2}")
+                        self._reply(f"❌ 所有 API 都失败了，请稍后重试或使用本地模式")
+                        self._update_status("❌ 所有 API 失败")
+                        return
+            
+            # 原有错误处理
             if self.cancel_flag:
                 self._reply("⏹️ 已取消生成")
             else:
-                self._reply(f"❌ API 生成失败: {str(e)}")
+                self._reply(f"❌ API 生成失败: {error_msg}")
                 self._update_status("❌ API 生成失败")
             import traceback
             traceback.print_exc()
         finally:
             self.is_generating = False
-    
+        
     def _build_quality_prompt(self, text: str, keywords: Dict) -> str:
         """构建高质量提示词"""
         quality = "masterpiece, best quality, photorealistic, 8k, highly detailed"
