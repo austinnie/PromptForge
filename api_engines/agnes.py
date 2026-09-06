@@ -214,6 +214,11 @@ class AgnesEngine:
         #    data["negative_prompt"] = negative
         
         if seed is not None:
+            # Agnes AI 要求 seed 在 -1 到 999 之间
+            if seed > 999:
+                seed = seed % 1000   # 取模，保证 0-999
+            elif seed < -1:
+                seed = -1
             data["seed"] = seed
         #if steps:
         #    data["steps"] = steps

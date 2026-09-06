@@ -269,39 +269,76 @@ class TextToImageHandler(BaseHandler):
             self.is_generating = False
         
     def _build_quality_prompt(self, text: str, keywords: Dict) -> str:
-        """构建高质量提示词"""
-        quality = "masterpiece, best quality, photorealistic, 8k, highly detailed"
+        """构建高质量提示词 - 以用户描述为核心"""
+        quality = "masterpiece, best quality, 8k, highly detailed"
+        
         subject = self._extract_subject(text)
         scene = self._extract_scene(text, keywords)
         style = self._extract_style(text, keywords)
         lighting = self._extract_lighting(text)
         
         parts = [quality]
+        
+        # ✅ 用户原始描述必须包含（核心依据）
+        if text:
+            parts.append(text)
+        
+        # ✅ 只有检测到明确主体时才添加（避免臆测）
         if subject:
             parts.append(subject)
-        if style:
-            parts.append(style)
+        
         if scene:
             parts.append(scene)
+        if style:
+            parts.append(style)
         if lighting:
             parts.append(lighting)
+        
+        # ✅ 如果检测到景观场景但无人物，显式添加 "no humans" 约束
+        text_lower = text.lower()
+        has_landscape = any(k in text_lower for k in [
+            '风景', '景色', '日出', '日落', '夕阳', '旭日', '朝阳',
+            '云海', '山川', '河流', '湖泊', '大海', '沙漠', '草原',
+            '森林', '田园', '天空', '星空', '极光'
+        ])
+        has_person = any(k in text_lower for k in ['美女', '女孩', '女人', '人', '少女', '帅哥', '男孩', '男人', '少年'])
+        if has_landscape and not has_person:
+            parts.append("landscape, nature, no humans, no people")
+        
         parts.append("intricate details, professional photography")
         
         return ", ".join(parts)
     
     def _extract_subject(self, text: str) -> str:
-        """提取主体"""
+        """提取主体描述 - 如果没有明确主体，返回空字符串"""
         text_lower = text.lower()
-        if any(k in text_lower for k in ['美女', '女孩', '女人']):
+        
+        # ----- 人物 -----
+        if any(k in text_lower for k in ['美女', '女孩', '女人', '少女']):
             return "a beautiful young woman, flawless skin, elegant features"
-        if any(k in text_lower for k in ['帅哥', '男孩', '男人']):
+        if any(k in text_lower for k in ['帅哥', '男孩', '男人', '少年']):
             return "a handsome young man, sharp features"
-        if any(k in text_lower for k in ['风景', '景色']):
-            return "breathtaking landscape, majestic nature"
-        return "a beautiful scene"
+        
+        # ----- 动物 -----
+        animals = ['猫', '狗', '鸟', '马', '老虎', '狮子', '龙', '鹰', '鹿']
+        if any(k in text_lower for k in animals):
+            return "a magnificent animal, detailed fur and features"
+        
+        # ----- 风景/自然（明确景观词） -----
+        landscape_words = [
+            '风景', '景色', '山水', '日出', '日落', '夕阳', '旭日', '朝阳',
+            '云海', '山川', '河流', '湖泊', '大海', '沙漠', '草原', '森林',
+            '田园', '乡村', '天空', '星空', '极光', '彩虹', '樱花', '枫叶',
+            '雪景', '瀑布', '峡谷', '海岸'
+        ]
+        if any(k in text_lower for k in landscape_words):
+            return "breathtaking landscape, majestic nature, stunning scenery"
+        
+        # ----- 默认：不添加任何主体，让模型根据用户描述自由发挥 -----
+        return ""
     
     def _extract_scene(self, text: str, keywords: Dict) -> str:
-        """提取场景"""
+        """提取场景描述"""
         scenes = keywords.get("scenes", [])
         scene_map = {
             'beach': 'tropical beach, crystal clear water',
@@ -309,7 +346,7 @@ class TextToImageHandler(BaseHandler):
             'city': 'modern city, vibrant urban landscape',
             'garden': 'beautiful garden, blooming flowers',
             'ocean': 'ocean view, gentle waves',
-            'sunset': 'golden sunset, warm colors',
+            'sunset': 'breathtaking sunset, golden sky',
             'starry sky': 'starry night, milky way',
         }
         for key, desc in scene_map.items():
@@ -317,12 +354,25 @@ class TextToImageHandler(BaseHandler):
                 return desc
         
         text_lower = text.lower()
+        
+        # ✅ 扩展自然景观识别（包括日出、旭日等）
+        if '日出' in text_lower or '旭日' in text_lower or '朝阳' in text_lower:
+            return 'sunrise over the horizon, golden morning light, warm orange and red sky, glowing sun'
+        if '日落' in text_lower or '夕阳' in text_lower:
+            return 'breathtaking sunset, golden hour, warm colors, dramatic sky'
         if '沙滩' in text_lower or '海边' in text_lower:
-            return 'beautiful beach, ocean waves'
+            return 'beautiful beach, ocean waves, coastal scenery'
         if '森林' in text_lower:
-            return 'magical forest, dappled sunlight'
-        if '日落' in text_lower:
-            return 'breathtaking sunset, golden sky'
+            return 'magical forest, dappled sunlight, towering trees'
+        if '星空' in text_lower:
+            return 'starry night sky, milky way, twinkling stars'
+        if '云海' in text_lower:
+            return 'sea of clouds, mountain peaks, ethereal mist'
+        if '瀑布' in text_lower:
+            return 'majestic waterfall, cascading water, misty spray'
+        if '雪景' in text_lower:
+            return 'snowy landscape, pristine white, winter wonderland'
+        
         return 'beautiful setting'
     
     def _extract_style(self, text: str, keywords: Dict) -> str:
