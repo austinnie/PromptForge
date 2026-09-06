@@ -16,9 +16,13 @@ class PollinationsEngine:
     def __init__(self, model: str = "flux", base_url: str = None):
         self.model = model or "flux"
         self.base_url = "https://image.pollinations.ai/prompt/"
+        # ✅ 可用模型列表（按优先级排序）
         self.available_models = ["flux", "turbo", "sdxl", "sd3", "qwen"]
+        self.current_model_index = 0  # ✅ 当前使用的模型索引
         
-        # 需要清理的质量词
+        # ✅ 尝试过的模型（避免重复尝试）
+        self.tried_models = []
+        
         self.quality_words = [
             "masterpiece", "best quality", "photorealistic", "8k", 
             "highly detailed", "intricate details", "professional photography",
@@ -28,6 +32,16 @@ class PollinationsEngine:
         ]
         
         print(f"🔍 Pollinations AI 引擎初始化 (模型: {model})")
+    
+    def _switch_model(self):
+        """切换到下一个可用模型"""
+        self.current_model_index += 1
+        if self.current_model_index >= len(self.available_models):
+            return False  # 所有模型都试过了
+        
+        self.model = self.available_models[self.current_model_index]
+        print(f"🔄 切换 Pollinations 模型: {self.model}")
+        return True
     
     def generate_single(
         self,
@@ -100,7 +114,6 @@ class PollinationsEngine:
         
         url = f"{self.base_url}{encoded_prompt}"
         
-        # ✅ 核心参数（不包含 negative）
         params = {
             "width": width,
             "height": height,
@@ -110,22 +123,19 @@ class PollinationsEngine:
         if seed is not None:
             params["seed"] = seed
         
-        # ✅ 可选：只传极简的 negative（不超过 20 字符）
-        # Pollinations 自带过滤，不传也没问题
-        if negative and len(negative) < 50:
+        # ✅ 简化 negative（避免触发问题）
+        if negative and len(negative) < 30:
             params["negative"] = negative
         
         param_str = "&".join([f"{k}={v}" for k, v in params.items()])
         full_url = f"{url}?{param_str}"
         
-        # URL 安全检查（防止过长）
+        # URL 安全检查
         if len(full_url) > 1500:
             print(f"⚠️ URL 过长 ({len(full_url)} 字符)，自动精简")
-            # 移除 negative 参数
             params.pop("negative", None)
             param_str = "&".join([f"{k}={v}" for k, v in params.items()])
             full_url = f"{url}?{param_str}"
-            print(f"🔍 精简后 URL 长度: {len(full_url)}")
         
         print(f"🔍 Pollinations GET 请求")
         print(f"🔍 URL 长度: {len(full_url)}")
@@ -143,6 +153,23 @@ class PollinationsEngine:
             if response.status_code != 200:
                 error_text = response.text[:300]
                 print(f"🔍 错误响应: {error_text}")
+                
+                # ✅ 如果是 500 错误且包含 "Gen Sana request failed"，尝试切换模型
+                if response.status_code == 500 and "Gen Sana" in error_text:
+                    if self._switch_model():
+                        print(f"🔄 切换到下一个模型: {self.model}")
+                        # 递归重试
+                        return self.generate_single(
+                            prompt, negative, width, height, 
+                            steps, cfg, seed
+                        )
+                    else:
+                        raise Exception(
+                            f"所有 Pollinations 模型都尝试失败。\n"
+                            f"支持的模型: {self.available_models}\n"
+                            f"建议切换到通义万相或本地模式。"
+                        )
+                
                 raise Exception(f"API 调用失败 (状态码 {response.status_code}): {error_text}")
             
             content_type = response.headers.get('Content-Type', '')
@@ -200,7 +227,6 @@ class PollinationsEngine:
         return {"info": "Pollinations AI 完全免费，无使用限制"}
 
     def get_model(self) -> str:
-        """获取当前使用的模型名称"""
         return self.model
     
     def get_name(self) -> str:
