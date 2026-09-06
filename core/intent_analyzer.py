@@ -40,7 +40,12 @@ class IntentAnalyzer:
         '为什么', '介绍', '描述', '解释', '说明', '告诉我',
         'what', 'how', 'why', 'explain', 'describe', 'introduce'
     ]
-    
+
+    # 图生图/参考图片关键词（优先于普通图生图检测）
+    REFERENCE_KEYWORDS = [
+        '类似', '相似', '参考', '参照', '一样风格', '相同风格', '像这样',
+        'like this', 'similar', 'reference', 'same style'
+    ]    
     def __init__(self):
         self._safety = None
     
@@ -60,20 +65,29 @@ class IntentAnalyzer:
                 original_text=text,
                 confidence=0.9
             )
+            
+        # ✅ 3. 图生图/参考图片（有图片 + 类似/参考关键词）
+            if has_image and any(k in text_lower for k in self.REFERENCE_KEYWORDS):
+                return IntentResult(
+                    type="image_to_image",
+                    prompt=text,
+                    original_text=text,
+                    confidence=0.95
+                )
         
-        # 3. 双人合成
+        # 4. 双人合成
         if has_multiple and any(k in text_lower for k in self.COUPLE_KEYWORDS):
             return self._analyze_couple(text)
         
-        # 4. 图生图
+        # 5. 图生图
         if has_image and any(k in text_lower for k in self.EDIT_KEYWORDS):
             return self._analyze_img2img(text)
         
-        # 5. 文生图（只有明确包含生成词或场景词时才触发）
+        # 6. 文生图（只有明确包含生成词或场景词时才触发）
         if self._is_gen_intent(text):
             return self._analyze_txt2img(text)
         
-        # 6. 普通对话（默认）
+        # 7. 普通对话（默认）
         return IntentResult(
             type="chat",
             original_text=text,
