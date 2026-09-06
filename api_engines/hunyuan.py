@@ -15,6 +15,7 @@ except ImportError:
     hunyuan_client = None
     models = None
 
+import random 
 
 class HunyuanEngine:
     """腾讯混元 API 引擎"""
@@ -37,7 +38,9 @@ class HunyuanEngine:
         seed: int = None,
     ) -> Image.Image:
         """生成单张图片"""
-        
+        if seed is None:
+            seed = random.randint(1, 2**32 - 1)
+    
         if not self.secret_id or not self.secret_key:
             raise ValueError("请设置 HUNYUAN_SECRET_ID 和 HUNYUAN_SECRET_KEY")
         

@@ -6,7 +6,7 @@ import requests
 from PIL import Image
 import io
 import time
-
+import random 
 
 class YigeEngine:
     """文心一格 API 引擎"""
@@ -58,7 +58,10 @@ class YigeEngine:
         seed: int = None,
     ) -> Image.Image:
         """生成单张图片"""
-        
+
+        if seed is None:
+            seed = random.randint(1, 2**32 - 1)
+    
         if not self.api_key or not self.secret_key:
             raise ValueError("请设置 YIGE_API_KEY 和 YIGE_SECRET_KEY")
         
