@@ -138,6 +138,8 @@ class ChatApp:
         self.llm_status = ttk.Label(toolbar, text="●", foreground="gray")
         self.llm_status.pack(side=tk.LEFT, padx=2)
         
+        # 新闻简报
+        ttk.Button(toolbar, text="📰 新闻简报", command=self._fetch_news).pack(side=tk.RIGHT, padx=5)
         ttk.Button(toolbar, text="🗑️ 清除对话", command=self._clear_chat).pack(side=tk.RIGHT, padx=5)
         ttk.Button(toolbar, text="📁 输出目录", command=self._open_output).pack(side=tk.RIGHT, padx=5)
         
@@ -549,6 +551,75 @@ class ChatApp:
                 os.startfile(output_dir)
             else:
                 os.system(f'open "{output_dir}"')
+
+    def _fetch_news(self):
+        """抓取新闻并显示摘要"""
+        import threading
+        from skills import NewsAggregator
+        
+        self._append_message("system", "📰 正在抓取新闻...")
+        self.status_var.set("📰 抓取中...")
+        
+        def fetch_thread():
+            try:
+                aggregator = NewsAggregator({
+                    "output_dir": "./output/news",
+                    "ai_model": self.settings.ollama_model,
+                    "ollama_url": self.settings.ollama_url,
+                    "validate_feeds": True,
+                    "top_n": 15,
+                })
+                
+                result = aggregator.execute(category="world", top_n=15)
+                
+                if result["status"] == "success":
+                    data = result["result"]
+                    report = data.get("report", "")
+                    
+                    # 精简显示（只显示 AI 摘要 + 新闻标题列表）
+                    lines = report.split("\n")
+                    # 提取 AI 摘要部分（在 【AI 智能摘要】 和 分隔线之间）
+                    ai_summary = ""
+                    in_summary = False
+                    for line in lines:
+                        if "【AI 智能摘要】" in line:
+                            in_summary = True
+                            continue
+                        if in_summary and "---" in line:
+                            break
+                        if in_summary and line.strip():
+                            ai_summary += line + "\n"
+                    
+                    # 显示
+                    display_text = f"📰 新闻简报（共 {len(data['articles'])} 条）\n"
+                    display_text += "─" * 40 + "\n"
+                    display_text += ai_summary or "（AI 摘要生成中）\n"
+                    display_text += "─" * 40 + "\n"
+                    # 显示新闻标题列表
+                    for i, article in enumerate(data['articles'][:10], 1):
+                        display_text += f"{i}. {article.get('title', '无标题')}\n"
+                    if len(data['articles']) > 10:
+                        display_text += f"... 共 {len(data['articles'])} 条，查看完整报告请打开输出目录"
+                    
+                    self.root.after(0, lambda: self._append_message("assistant", display_text))
+                    
+                    if data.get("report_file"):
+                        self.root.after(0, lambda: self._append_message(
+                            "system", f"📁 完整报告: {data['report_file']}"
+                        ))
+                else:
+                    self.root.after(0, lambda: self._append_message(
+                        "system", f"❌ 新闻抓取失败: {result.get('error', '未知错误')}"
+                    ))
+                    
+            except Exception as e:
+                self.root.after(0, lambda: self._append_message(
+                    "system", f"❌ 错误: {str(e)}"
+                ))
+            finally:
+                self.root.after(0, lambda: self.status_var.set("就绪"))
+        
+        threading.Thread(target=fetch_thread, daemon=True).start()
     
     # ============================================================
     # 消息添加（文本）
