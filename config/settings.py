@@ -26,10 +26,7 @@ class Settings:
     ollama_model: str = os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b")
     
     # --- API 配置 ---
-    # 图像生成模式: "local" 或 "api"
     generation_mode: str = os.getenv("GENERATION_MODE", "local")
-    
-    # 默认 API 提供商
     api_provider: str = os.getenv("API_PROVIDER", "pollinations")
     
     # ----- 通义万相 (阿里云百炼) -----
@@ -55,9 +52,16 @@ class Settings:
     # ----- Agnes AI (需注册获取 API Key) -----
     agnes_api_key: str = os.getenv("AGNES_API_KEY", "")
     agnes_model: str = os.getenv("AGNES_MODEL", "flux")
+    
+    # ✅ 新增 Agnes 多模态配置
+    agnes_image_model: str = os.getenv("AGNES_IMAGE_MODEL", "agnes-image-2.1-flash")
+    agnes_text_model: str = os.getenv("AGNES_TEXT_MODEL", "agnes-2.5-flash")
+    agnes_video_model: str = os.getenv("AGNES_VIDEO_MODEL", "agnes-video-v2.0")
+    agnes_vision_model: str = os.getenv("AGNES_VISION_MODEL", "agnes-2.5-flash")
+    agnes_base_url: str = os.getenv("AGNES_BASE_URL", "https://apihub.agnes-ai.com/v1")
 
     # ----- Free API (社区免费代理，无需注册) -----
-    freeapi_model: str = os.getenv("FREEAPI_MODEL", "qwen-image-plus")
+    freeapi_model: str = os.getenv("FREEAPI_MODEL", "flux")
     
     # --- 生成参数 ---
     default_steps: int = int(os.getenv("DEFAULT_STEPS", "20"))
@@ -103,13 +107,19 @@ class Settings:
             "pollinations": {
                 "POLLINATIONS_MODEL": self.pollinations_model,
             },
+            # ✅ 更新 Agnes 配置
             "agnes": {
                 "AGNES_API_KEY": self.agnes_api_key,
                 "AGNES_MODEL": self.agnes_model,
+                "AGNES_IMAGE_MODEL": self.agnes_image_model,
+                "AGNES_TEXT_MODEL": self.agnes_text_model,
+                "AGNES_VIDEO_MODEL": self.agnes_video_model,
+                "AGNES_VISION_MODEL": self.agnes_vision_model,
+                "AGNES_BASE_URL": self.agnes_base_url,
             },
             "freeapi": {
                 "FREEAPI_MODEL": self.freeapi_model,
-            },            
+            },
         }
     
     def get_provider_info(self, provider: str) -> dict:
