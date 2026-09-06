@@ -33,6 +33,13 @@ class IntentAnalyzer:
                       'beautiful', 'gorgeous', 'scenery', 'nature', 'ocean',
                       'sunset', 'city', 'forest', 'mountain', 'river',
                       'flower', 'cat', 'dog', 'animal', 'vehicle']
+
+    # 对话意图关键词（疑问句、请求信息）
+    CHAT_KEYWORDS = [
+        '是什么', '什么是', '怎么回事', '如何', '怎样', '怎么', 
+        '为什么', '介绍', '描述', '解释', '说明', '告诉我',
+        'what', 'how', 'why', 'explain', 'describe', 'introduce'
+    ]
     
     def __init__(self):
         self._safety = None
@@ -46,19 +53,27 @@ class IntentAnalyzer:
         if self._is_unsafe(text):
             return self._safe_fallback(text)
         
-        # 2. 双人合成
+        # ✅ 2. 优先检测对话意图（疑问句、请求信息）
+        if any(k in text_lower for k in self.CHAT_KEYWORDS):
+            return IntentResult(
+                type="chat",
+                original_text=text,
+                confidence=0.9
+            )
+        
+        # 3. 双人合成
         if has_multiple and any(k in text_lower for k in self.COUPLE_KEYWORDS):
             return self._analyze_couple(text)
         
-        # 3. 图生图
+        # 4. 图生图
         if has_image and any(k in text_lower for k in self.EDIT_KEYWORDS):
             return self._analyze_img2img(text)
         
-        # 4. 文生图
+        # 5. 文生图（只有明确包含生成词或场景词时才触发）
         if self._is_gen_intent(text):
             return self._analyze_txt2img(text)
         
-        # 5. 普通对话
+        # 6. 普通对话（默认）
         return IntentResult(
             type="chat",
             original_text=text,
@@ -66,11 +81,14 @@ class IntentAnalyzer:
         )
     
     def _is_gen_intent(self, text: str) -> bool:
+        """判断是否为图像生成意图 - 必须包含明确的生成词或场景词"""
         text_lower = text.lower()
-        # ✅ 触发词 + 场景词 + 长度判断
-        return (any(k in text_lower for k in self.GEN_KEYWORDS) or 
-                any(k in text_lower for k in self.SCENE_KEYWORDS) or
-                len(text) > 10)  # 较长的描述也视为图像生成意图
+        
+        # 必须有生成词或场景词（不再仅凭长度判断）
+        has_gen_keyword = any(k in text_lower for k in self.GEN_KEYWORDS)
+        has_scene_keyword = any(k in text_lower for k in self.SCENE_KEYWORDS)
+        
+        return has_gen_keyword or has_scene_keyword
     
     def _analyze_txt2img(self, text: str) -> IntentResult:
         keywords = self._extract_keywords(text)
