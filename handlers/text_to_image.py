@@ -69,12 +69,24 @@ class TextToImageHandler(BaseHandler):
         
         # 安全检查
         if self.app.settings.safe_mode:
-            is_unsafe, _ = SafetyChecker.check(prompt)
+            is_unsafe, matched = SafetyChecker.check(prompt)
             if is_unsafe:
-                prompt = SafetyChecker.sanitize(prompt)
-                if not prompt:
-                    self._reply("🛡️ 内容被安全过滤")
+                # 记录触发词（用于日志）
+                self._append_log(f"⚠️ 安全拦截: {matched}")
+                
+                # 尝试清理
+                cleaned_prompt = SafetyChecker.sanitize(prompt)
+                
+                # 如果清理后为空，或者评分过高，强制拦截
+                if not cleaned_prompt or SafetyChecker.get_score(prompt) > 30:
+                    self._reply("🛡️ 检测到不安全内容，已阻止生成")
+                    self._reply("💡 请修改描述，避免使用敏感词汇")
+                    self._update_status("⛔ 安全拦截")
                     return
+                
+                # 使用清理后的提示词，并告知用户
+                prompt = cleaned_prompt
+                self._append_message("system", f"⚠️ 已自动过滤敏感词，生成安全版本")
         
         params = self._estimate_params(original_text or prompt)
         steps = max(params["steps"], 25)
