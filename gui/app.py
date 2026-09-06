@@ -3,6 +3,8 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import threading
 import os
+import re
+from PIL import Image, ImageTk
 
 from config.settings import settings
 from core.intent_analyzer import IntentAnalyzer
@@ -17,7 +19,7 @@ class ChatApp:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("💬 智能生图")
-        self.root.geometry("850x650")  # 稍微加宽以容纳更多控件
+        self.root.geometry("850x650")
         
         self.settings = settings
         self.intent_analyzer = IntentAnalyzer()
@@ -35,6 +37,10 @@ class ChatApp:
         self.uploaded_images = []
         self.uploaded_image = None
         
+        # ---------- 新增：图片显示相关 ----------
+        self.image_refs = []          # 保存 PhotoImage 引用，防止被GC
+        self._bound_double_click = False  # 标记是否已绑定双击事件
+        
         self._setup_ui()
         self._check_llm()
     
@@ -49,7 +55,7 @@ class ChatApp:
         self._build_status_bar()
     
     # ============================================================
-    # ✅ 修改点 1：在工具栏中添加模式切换
+    # 工具栏
     # ============================================================
     def _build_toolbar(self, parent):
         """构建工具栏"""
@@ -94,7 +100,6 @@ class ChatApp:
         # --- 第四组：生成模式切换 ---
         ttk.Label(toolbar, text="模式:").pack(side=tk.LEFT, padx=2)
         
-        # 模式下拉框：local / api
         self.mode_var = tk.StringVar(value=self.settings.generation_mode)
         self.mode_combo = ttk.Combobox(
             toolbar,
@@ -106,11 +111,9 @@ class ChatApp:
         self.mode_combo.pack(side=tk.LEFT, padx=2)
         self.mode_combo.bind('<<ComboboxSelected>>', self._on_mode_changed)
         
-        # API 提供商下拉框（只有 api 模式时可用）
         ttk.Label(toolbar, text="API:").pack(side=tk.LEFT, padx=5)
         
         self.provider_var = tk.StringVar(value=self.settings.api_provider)
-        # ✅ 添加所有可用的 API 提供商
         self.provider_combo = ttk.Combobox(
             toolbar,
             textvariable=self.provider_var,
@@ -121,7 +124,6 @@ class ChatApp:
         self.provider_combo.pack(side=tk.LEFT, padx=2)
         self.provider_combo.bind('<<ComboboxSelected>>', self._on_provider_changed)
         
-        # 模式状态提示
         self.mode_hint = ttk.Label(
             toolbar,
             text="🖥️ 本地模式",
@@ -133,24 +135,18 @@ class ChatApp:
         # --- 第五组：右侧按钮 ---
         ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=10)
         
-        # LLM状态
         self.llm_status = ttk.Label(toolbar, text="●", foreground="gray")
         self.llm_status.pack(side=tk.LEFT, padx=2)
         
-        # 清除对话
         ttk.Button(toolbar, text="🗑️ 清除对话", command=self._clear_chat).pack(side=tk.RIGHT, padx=5)
-        
-        # 打开输出
         ttk.Button(toolbar, text="📁 输出目录", command=self._open_output).pack(side=tk.RIGHT, padx=5)
         
-        # 初始化模式状态
         self._update_mode_ui()
     
     # ============================================================
-    # ✅ 新增方法：模式切换处理
+    # 模式切换
     # ============================================================
     def _on_mode_changed(self, event=None):
-        """模式切换"""
         mode = self.mode_var.get()
         self.settings.generation_mode = mode
         
@@ -162,18 +158,13 @@ class ChatApp:
             self.provider_combo.config(state="readonly")
             self._append_message("system", f"☁️ 切换到 API 模式 ({self.provider_var.get()})")
             
-            # ✅ 检查 API 配置（支持所有提供商）
             provider = self.provider_var.get()
             config = self.settings.get_api_config().get(provider, {})
-            
-            # 不需要 API Key 的提供商
             no_key_providers = ["pollinations", "freeapi"]
-            
             if provider in no_key_providers:
                 self._append_message("system", f"✅ {provider} 无需 API Key，可直接使用")
                 return
             
-            # 需要 API Key 的提供商
             has_token = False
             if provider == "huggingface":
                 has_token = bool(config.get("HF_API_TOKEN"))
@@ -190,45 +181,28 @@ class ChatApp:
                 self._append_message("system", f"⚠️ {provider} API 密钥未配置，请检查 .env 文件")
             else:
                 self._append_message("system", f"✅ {provider} API 密钥已配置")
-                
         else:
-            self.mode_hint.config(
-                text="🖥️ 本地模式",
-                foreground="blue"
-            )
+            self.mode_hint.config(text="🖥️ 本地模式", foreground="blue")
             self.provider_combo.config(state="disabled")
             self._append_message("system", "🖥️ 切换到本地模式")
-            
-            # 检查本地模型
             if not self.settings.get_model_path():
                 self._append_message("system", "⚠️ 本地模型路径未配置，请选择模型文件")
-            
-
+    
     def _on_provider_changed(self, event=None):
-        """API 提供商切换"""
         provider = self.provider_var.get()
         self.settings.api_provider = provider
-        self._api_engine = None  # 重置引擎缓存
+        self._api_engine = None
         
         if self.settings.generation_mode == "api":
-            self.mode_hint.config(
-                text=f"☁️ API: {provider}",
-                foreground="green"
-            )
+            self.mode_hint.config(text=f"☁️ API: {provider}", foreground="green")
             self._append_message("system", f"☁️ 切换到 {provider} API")
             
-            # ✅ 检查 API 配置（区分是否需要 API Key）
             config = self.settings.get_api_config().get(provider, {})
-            
-            # 不需要 API Key 的提供商
             no_key_providers = ["pollinations", "freeapi"]
-            
             if provider in no_key_providers:
-                # 无需 API Key，直接可用
                 self._append_message("system", f"✅ {provider} 无需 API Key，可直接使用")
                 return
             
-            # 需要 API Key 的提供商
             has_token = False
             if provider == "huggingface":
                 has_token = bool(config.get("HF_API_TOKEN"))
@@ -245,47 +219,34 @@ class ChatApp:
                 self._append_message("system", f"⚠️ {provider} API 密钥未配置，请检查 .env 文件")
             else:
                 self._append_message("system", f"✅ {provider} API 密钥已配置")
-            
+    
     def _update_mode_ui(self):
-        """更新模式 UI 状态"""
         mode = self.settings.generation_mode
-        
         if mode == "api":
-            self.mode_hint.config(
-                text=f"☁️ API: {self.provider_var.get()}",
-                foreground="green"
-            )
+            self.mode_hint.config(text=f"☁️ API: {self.provider_var.get()}", foreground="green")
             self.provider_combo.config(state="readonly")
         else:
-            self.mode_hint.config(
-                text="🖥️ 本地模式",
-                foreground="blue"
-            )
+            self.mode_hint.config(text="🖥️ 本地模式", foreground="blue")
             self.provider_combo.config(state="disabled")
     
     # ============================================================
-    # 以下方法保持不变
+    # 选择模型
     # ============================================================
-    
     def _select_model_file(self):
-        """选择模型文件"""
         from tkinter import filedialog
-        
         filepath = filedialog.askopenfilename(
             title="选择 SD 模型文件",
-            filetypes=[
-                ("模型文件", "*.safetensors *.ckpt"),
-                ("所有文件", "*.*")
-            ]
+            filetypes=[("模型文件", "*.safetensors *.ckpt"), ("所有文件", "*.*")]
         )
-        
         if filepath:
             self.settings.model_path = filepath
             self._append_message("system", f"📦 已选择模型: {os.path.basename(filepath)}")
             self._load_model()
     
+    # ============================================================
+    # 聊天区域
+    # ============================================================
     def _build_chat_area(self, parent):
-        """构建对话区域"""
         container = ttk.Frame(parent)
         container.pack(fill=tk.BOTH, expand=True, pady=5)
         
@@ -305,12 +266,18 @@ class ChatApp:
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.chat_text.config(state=tk.DISABLED)
         
+        # ---------- 绑定双击事件（用于图片预览） ----------
+        self.chat_text.bind("<Double-Button-1>", self._on_image_double_click)
+        self._bound_double_click = True
+        
         self._append_message("system", "👋 欢迎！输入描述即可生成图片")
         self._append_message("system", "💡 试试说：生成一张美丽的日落风景")
         self._append_message("system", f"🔄 当前模式: {self.settings.generation_mode}")
     
+    # ============================================================
+    # 输入区域
+    # ============================================================
     def _build_input_area(self, parent):
-        """构建输入区域"""
         input_frame = ttk.Frame(parent)
         input_frame.pack(fill=tk.X, pady=5)
         
@@ -344,8 +311,10 @@ class ChatApp:
         
         self.input_text.bind("<Control-Return>", lambda e: self._on_send())
     
+    # ============================================================
+    # 状态栏
+    # ============================================================
     def _build_status_bar(self):
-        """构建状态栏"""
         status_frame = ttk.Frame(self.root)
         status_frame.pack(fill=tk.X, padx=10, pady=5)
         
@@ -355,8 +324,10 @@ class ChatApp:
         self.progress_bar = ttk.Progressbar(status_frame, length=200, mode='determinate')
         self.progress_bar.pack(side=tk.RIGHT, padx=5)
     
+    # ============================================================
+    # 模型加载
+    # ============================================================
     def _load_model(self):
-        """加载模型"""
         if self.is_model_loaded:
             return
         
@@ -374,7 +345,6 @@ class ChatApp:
                 import torch
                 
                 self._update_status_progress(0.1, "加载中...")
-                
                 print(f"📦 加载模型: {model_path}")
                 
                 pipe = StableDiffusionPipeline.from_single_file(
@@ -387,7 +357,6 @@ class ChatApp:
                 )
                 pipe.to("cpu")
                 
-                # 内存优化
                 try:
                     if hasattr(pipe.vae, 'enable_slicing'):
                         pipe.vae.enable_slicing()
@@ -404,7 +373,6 @@ class ChatApp:
                 
                 self.pipe = pipe
                 self.is_model_loaded = True
-                
                 self.root.after(0, self._on_load_complete)
             except Exception as err:
                 error_msg = str(err)
@@ -416,14 +384,12 @@ class ChatApp:
         threading.Thread(target=load_thread, daemon=True).start()
     
     def _on_load_complete(self):
-        """加载完成"""
         self.load_btn.config(state=tk.NORMAL)
         self.model_status.config(text="🟢 已加载", foreground="green")
         self.status_var.set("✅ 模型加载完成")
         self._append_message("system", "✅ 模型已就绪，可以开始生图了！")
     
     def _on_load_error(self, error):
-        """加载失败"""
         self.load_btn.config(state=tk.NORMAL)
         self.model_status.config(text="🔴 加载失败", foreground="red")
         self.status_var.set(f"❌ 加载失败")
@@ -431,12 +397,13 @@ class ChatApp:
         messagebox.showerror("错误", f"模型加载失败:\n{error}")
     
     def _update_status_progress(self, value, msg):
-        """更新进度"""
         self.root.after(0, lambda: self.progress_bar.config(value=value * 100))
         self.root.after(0, lambda: self.status_var.set(msg))
     
+    # ============================================================
+    # 图片上传
+    # ============================================================
     def _upload_image(self):
-        """上传图片"""
         from tkinter import filedialog
         from PIL import Image
         
@@ -465,14 +432,15 @@ class ChatApp:
             self._append_message("system", "✅ 已上传2张图片！输入指令可生成双人图")
     
     def _clear_upload(self):
-        """清除上传的图片"""
         self.uploaded_images = []
         self.uploaded_image = None
         self.upload_status.config(text="")
         self._append_message("system", "🗑️ 已清除所有图片")
     
+    # ============================================================
+    # 发送消息
+    # ============================================================
     def _on_send(self):
-        """发送消息"""
         if hasattr(self, '_is_processing') and self._is_processing:
             return
         
@@ -490,7 +458,6 @@ class ChatApp:
         threading.Thread(target=self._process, args=(user_input,), daemon=True).start()
     
     def _process(self, text: str):
-        """处理用户输入"""
         try:
             intent = self.intent_analyzer.analyze(
                 text,
@@ -500,12 +467,10 @@ class ChatApp:
             
             self._append_log(f"🔍 意图: {intent.type}")
             
-            # LLM增强
             if self.llm.is_available() and self.settings.llm_enabled:
                 if intent.type in ["text_to_image"]:
                     self._enhance_with_llm(intent)
             
-            # 路由
             from handlers import TextToImageHandler, ImageToImageHandler, CoupleHandler, ChatHandler
             
             handlers = {
@@ -532,14 +497,12 @@ class ChatApp:
             self.root.after(0, self._reset_ui)
     
     def _enhance_with_llm(self, intent):
-        """使用LLM增强提示词"""
         self._append_log("🧠 LLM 增强中...")
         prompt = f"""请将以下描述转换为Stable Diffusion英文提示词（用逗号分隔），添加质量词：
         
 用户需求：{intent.original_text}
 
 只输出英文提示词："""
-        
         result = self.llm.generate(prompt, timeout=20, max_tokens=200)
         if result:
             intent.prompt = result
@@ -547,30 +510,31 @@ class ChatApp:
             self._append_log("✅ LLM 增强完成")
     
     def _reset_ui(self):
-        """重置UI状态"""
         self.send_btn.config(state=tk.NORMAL)
         self.cancel_btn.config(state=tk.DISABLED)
         self.progress_bar.config(value=0)
     
     def _cancel_generation(self):
-        """取消生成"""
         if hasattr(self, 'cancel_flag'):
             self.cancel_flag = True
         self.status_var.set("⏹️ 已取消")
         self._append_message("system", "⏹️ 已取消")
         self._reset_ui()
     
+    # ============================================================
+    # LLM 检查
+    # ============================================================
     def _check_llm(self):
-        """检查LLM状态"""
         status = self.llm.get_status_message()
         color = "green" if "✅" in status else "gray" if "⚠️" in status else "red"
         self.llm_status.config(text="●", foreground=color)
-        
         if "⚠️" in status:
             self._append_message("system", status)
     
+    # ============================================================
+    # 清空对话 & 打开目录
+    # ============================================================
     def _clear_chat(self):
-        """清除对话"""
         self.chat_text.config(state=tk.NORMAL)
         self.chat_text.delete("1.0", tk.END)
         self.chat_text.config(state=tk.DISABLED)
@@ -578,7 +542,6 @@ class ChatApp:
         self._append_message("system", "🗑️ 对话已清空")
     
     def _open_output(self):
-        """打开输出目录"""
         output_dir = str(self.settings.output_dir)
         if os.path.exists(output_dir):
             import sys
@@ -587,21 +550,119 @@ class ChatApp:
             else:
                 os.system(f'open "{output_dir}"')
     
+    # ============================================================
+    # 消息添加（文本）
+    # ============================================================
     def _append_message(self, role: str, content: str):
-        """添加消息"""
         self.chat_text.config(state=tk.NORMAL)
-        
         timestamps = {"user": "👤 你", "assistant": "🤖 助手", "system": "📌 系统"}
         prefix = timestamps.get(role, "📝")
-        
         self.chat_text.insert(tk.END, f"{prefix}: {content}\n\n")
         self.chat_text.see(tk.END)
         self.chat_text.config(state=tk.DISABLED)
     
     def _append_log(self, msg: str):
-        """添加日志（仅状态栏）"""
         self.root.after(0, lambda: self.status_var.set(msg))
     
+    # ============================================================
+    # ---------- 新增：图片预览功能 ----------
+    # ============================================================
+    def _append_image(self, image_path: str, caption: str = ""):
+        """
+        在聊天框中插入图片缩略图，并绑定双击事件
+        """
+        if not os.path.exists(image_path):
+            self._append_message("system", f"⚠️ 图片文件不存在: {image_path}")
+            return
+        
+        try:
+            img = Image.open(image_path)
+            img.thumbnail((200, 200))   # 缩略图大小
+            photo = ImageTk.PhotoImage(img)
+            self.image_refs.append(photo)  # 保持引用
+        except Exception as e:
+            self._append_message("system", f"⚠️ 图片加载失败: {e}")
+            return
+        
+        self.chat_text.config(state=tk.NORMAL)
+        
+        if caption:
+            self.chat_text.insert(tk.END, f"📷 {caption}\n")
+        
+        # 插入图片
+        self.chat_text.image_create(tk.END, image=photo, padx=5, pady=5)
+        
+        # 插入隐藏标记（用于双击时定位图片路径）
+        marker = f"__IMG__{image_path}__"
+        self.chat_text.insert(tk.END, marker)
+        # 将标记隐藏（设置极小字体或与背景同色）
+        self.chat_text.tag_add("hidden", tk.END + "-" + f"{len(marker)}c", tk.END)
+        self.chat_text.tag_config("hidden", foreground="#f5f5f5", font=("", 1))
+        
+        self.chat_text.insert(tk.END, "\n\n")
+        self.chat_text.see(tk.END)
+        self.chat_text.config(state=tk.DISABLED)
+    
+    def _on_image_double_click(self, event):
+        """双击检测图片路径，打开大图预览窗口"""
+        # 获取点击位置的索引
+        index = self.chat_text.index(f"@%d,%d" % (event.x, event.y))
+        # 获取该行文本
+        line_start = self.chat_text.index(f"{index} linestart")
+        line_end = self.chat_text.index(f"{index} lineend")
+        line_text = self.chat_text.get(line_start, line_end)
+        
+        # 查找隐藏标记 __IMG__...__
+        match = re.search(r"__IMG__(.+?)__", line_text)
+        if match:
+            image_path = match.group(1)
+            if os.path.exists(image_path):
+                self._show_image_preview(image_path)
+            else:
+                self._append_message("system", f"⚠️ 图片已删除: {image_path}")
+    
+    def _show_image_preview(self, image_path: str):
+        """显示大图预览窗口"""
+        preview = tk.Toplevel(self.root)
+        preview.title(f"图片预览 - {os.path.basename(image_path)}")
+        preview.geometry("800x600")
+        preview.grab_set()
+        
+        try:
+            img = Image.open(image_path)
+            # 适应窗口大小
+            img.thumbnail((750, 550))
+            photo = ImageTk.PhotoImage(img)
+        except Exception as e:
+            messagebox.showerror("错误", f"无法加载图片: {e}")
+            preview.destroy()
+            return
+        
+        label = tk.Label(preview, image=photo)
+        label.image = photo
+        label.pack(padx=20, pady=20, fill=tk.BOTH, expand=True)
+        
+        btn_frame = tk.Frame(preview)
+        btn_frame.pack(pady=10)
+        
+        tk.Button(btn_frame, text="📁 打开文件位置",
+                  command=lambda: self._open_file_location(image_path)).pack(side=tk.LEFT, padx=5)
+        tk.Button(btn_frame, text="关闭", command=preview.destroy).pack(side=tk.LEFT, padx=5)
+    
+    def _open_file_location(self, file_path: str):
+        """打开文件所在文件夹并选中文件"""
+        import sys
+        import subprocess
+        path = os.path.normpath(file_path)
+        if sys.platform == 'win32':
+            subprocess.Popen(f'explorer /select,"{path}"')
+        elif sys.platform == 'darwin':
+            subprocess.Popen(['open', '-R', path])
+        else:
+            subprocess.Popen(['xdg-open', os.path.dirname(path)])
+    
+    # ============================================================
+    # 运行
+    # ============================================================
     def run(self):
-        """运行应用"""
         self.root.mainloop()
