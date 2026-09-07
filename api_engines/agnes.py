@@ -305,12 +305,13 @@ class AgnesEngine:
             data["seed"] = seed
         
         # ✅ 支持 steps 参数（如果模型支持）
-        if steps and steps > 0:
-            data["steps"] = steps
+        #if steps and steps > 0:
+        #    data["steps"] = steps
         
+        # guidance_scale 不被 Agnes 图像模型支持，已移除
         # ✅ 支持 guidance_scale
-        if cfg and cfg > 0:
-            data["guidance_scale"] = cfg
+        #if cfg and cfg > 0:
+        #    data["guidance_scale"] = cfg
         
         print(f"🔍 Agnes AI 文生图")
         print(f"🔍 模型: {self.image_model}, 尺寸: {size}, 步数: {steps}")
@@ -389,11 +390,11 @@ class AgnesEngine:
         if seed is not None:
             data["seed"] = seed
         
-        if steps and steps > 0:
-            data["steps"] = steps
+        #if steps and steps > 0:
+        #    data["steps"] = steps
         
-        if cfg and cfg > 0:
-            data["guidance_scale"] = cfg
+        #if cfg and cfg > 0:
+        #    data["guidance_scale"] = cfg
         
         if strength and 0 < strength < 1:
             data["strength"] = strength

@@ -1,4 +1,13 @@
 # config/settings.py - 在 Settings 类中添加
+# config/settings.py
+import os
+from pathlib import Path
+from dataclasses import dataclass, field   # ✅ 添加这一行
+from typing import Optional
+
+from dotenv import load_dotenv
+
+load_dotenv()
 
 @dataclass
 class Settings:
