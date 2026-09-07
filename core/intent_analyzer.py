@@ -55,6 +55,9 @@ class IntentAnalyzer:
         'like this', 'similar', 'reference', 'same style'
     ]    
     
+    # 在类属性中添加
+    VIDEO_KEYWORDS = ['视频', '生成视频', '制作视频', 'video', 'animate', '动图']
+    
     def __init__(self):
         self._safety = None
     
@@ -66,6 +69,15 @@ class IntentAnalyzer:
         # 1. 安全检查
         if self._is_unsafe(text):
             return self._safe_fallback(text)
+
+        # 检测是否为视频生成意图
+        if any(k in text_lower for k in self.VIDEO_KEYWORDS):
+            return IntentResult(
+                type="video",  # 新类型
+                prompt=text,
+                original_text=text,
+                confidence=0.9
+            )
         
         # 2. ✅ 图生图优先（有图片时优先判断）
         if has_image:

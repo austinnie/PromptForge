@@ -10,7 +10,7 @@ from config.settings import settings
 from core.intent_analyzer import IntentAnalyzer
 from core.context_manager import ContextManager
 from services.llm_service import LLMService
-from handlers import TextToImageHandler, ChatHandler
+from handlers import TextToImageHandler, ImageToImageHandler, CoupleHandler,ChatHandler, VideoHandler
 
 
 class ChatApp:
@@ -488,6 +488,7 @@ class ChatApp:
                 "image_to_image": ImageToImageHandler(self),
                 "couple": CoupleHandler(self),
                 "chat": ChatHandler(self),
+                "video": VideoHandler(self),  # ✅ 新增
             }
             
             handler = handlers.get(intent.type)

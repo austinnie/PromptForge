@@ -514,7 +514,9 @@ class AgnesEngine:
         return self.chat(messages)
     
     # ==================== 视频生成 ====================
-    
+        
+    # api_engines/agnes.py
+
     def video_generation(
         self,
         prompt: str,
@@ -526,19 +528,7 @@ class AgnesEngine:
         callback_url: str = None,
     ) -> Dict[str, Any]:
         """
-        视频生成（可能为异步任务，返回任务ID）
-        
-        Args:
-            prompt: 提示词
-            image: 参考图（图生视频，可选）
-            duration: 视频时长（秒）
-            width: 视频宽度
-            height: 视频高度
-            model: 模型名称
-            callback_url: 回调地址（可选）
-        
-        Returns:
-            任务信息（包含 task_id）
+        视频生成（使用正确的端点 POST /v1/videos）
         """
         model = model or self.video_model
         
@@ -559,18 +549,24 @@ class AgnesEngine:
         print(f"🔍 Agnes AI 视频生成")
         print(f"🔍 模型: {model}, 时长: {duration}s, 尺寸: {width}x{height}")
         
-        # ✅ 使用官方端点 /videos/generations
-        result = self._request("videos/generations", data, timeout=300)
+        # ✅ 修正端点：使用 /videos 而不是 /videos/generations
+        result = self._request("videos", data, timeout=300)
         return result
     
-    def video_status(self, task_id: str) -> Dict[str, Any]:
-        """查询视频生成状态"""
+    # api_engines/agnes.py
+
+    def video_status(self, video_id: str) -> Dict[str, Any]:
+        """
+        查询视频生成状态
+        使用 GET /agnesapi?video_id=<VIDEO_ID>
+        """
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
         }
         
-        url = f"{self.base_url}/videos/status/{task_id}"
+        # ✅ 修正轮询端点
+        url = f"{self.base_url}/agnesapi?video_id={video_id}"
         
         response = requests.get(url, headers=headers, timeout=30)
         if response.status_code != 200:
@@ -578,12 +574,14 @@ class AgnesEngine:
         
         return response.json()
     
-    def wait_for_video(self, task_id: str, max_wait: int = 300) -> str:
+    # api_engines/agnes.py
+
+    def wait_for_video(self, video_id: str, max_wait: int = 300) -> str:
         """
         等待视频生成完成
         
         Args:
-            task_id: 任务ID
+            video_id: 任务ID
             max_wait: 最大等待时间（秒）
         
         Returns:
@@ -591,13 +589,15 @@ class AgnesEngine:
         """
         start_time = time.time()
         while time.time() - start_time < max_wait:
-            status = self.video_status(task_id)
-            state = status.get('state', '')
+            status = self.video_status(video_id)
+            # 根据实际返回格式调整字段名
+            state = status.get('state', status.get('status', ''))
             
             if state == 'completed':
-                return status.get('video_url', '')
+                return status.get('video_url', status.get('url', ''))
             elif state == 'failed':
-                raise Exception(f"视频生成失败: {status.get('error', '未知错误')}")
+                error = status.get('error', '未知错误')
+                raise Exception(f"视频生成失败: {error}")
             
             print(f"⏳ 视频生成中... ({state})")
             time.sleep(5)
