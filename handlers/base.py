@@ -20,12 +20,19 @@ class BaseHandler(ABC):
         pass
     
     def _reply(self, content: str):
-        """回复消息"""
-        self.app._append_message("assistant", content)
-    
+        if hasattr(self.app, '_append_message'):
+            self.app._append_message("assistant", content)
+        else:
+            print(f"[assistant] {content}")
+
     def _update_status(self, msg: str):
-        """更新状态"""
-        self.app.status_var.set(msg)
+        if hasattr(self.app, 'status_var') and self.app.status_var is not None:
+            try:
+                self.app.status_var.set(msg)
+            except Exception:
+                print(f"[STATUS] {msg}")
+        else:
+            print(f"[STATUS] {msg}")
     
     def _get_pipeline(self):
         """获取Pipeline（子类可重写）"""

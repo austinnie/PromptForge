@@ -256,18 +256,49 @@ class MultimediaWorkflow:
         return self.video_handler.generate_video_from_prompt(prompt, duration=5)
 
     def _generate_music(self, theme: str, emotion: str, duration: int) -> Optional[str]:
-        """生成背景音乐，时长匹配视频总时长"""
         result = self.music_gen.execute(
             topic=theme,
             emotion=emotion,
-            duration=duration,  # 传入估算的视频总时长
+            duration=duration,
             language='zh',
             use_enhanced=True,
             force_mode=None
         )
-        if result['status'] in ('success', 'partial_success'):
-            return result['result'].get('audio_file')
-        return None
+        if result['status'] not in ('success', 'partial_success'):
+            return None
+
+        audio_file = result['result'].get('audio_file')
+        if not audio_file or not os.path.exists(audio_file):
+            return None
+
+        # 如果是 MIDI，转换为 WAV
+        if audio_file.lower().endswith('.mid'):
+            wav_file = audio_file.replace('.mid', '.wav')
+            if not os.path.exists(wav_file):
+                print(f"🎵 转换 MIDI 到 WAV: {audio_file} -> {wav_file}")
+                # 使用 fluidsynth 转换（需安装 fluidsynth 并指定 SoundFont）
+                soundfont = self.music_gen.engine.config.get('soundfont', '')  # 可在配置中指定
+                if not soundfont:
+                    # 尝试常见路径
+                    soundfont = './skills/music_generator/soundfonts/GeneralUser-GS.sf2'
+                    if not os.path.exists(soundfont):
+                        soundfont = './skills/music_generator/soundfonts/SGM-V2.01.sf2'
+                if not os.path.exists(soundfont):
+                    print("⚠️ 未找到 SoundFont，无法转换 MIDI，跳过音乐")
+                    return None
+
+                cmd = ['fluidsynth', '-ni', soundfont, audio_file, '-F', wav_file, '-r', '44100']
+                try:
+                    subprocess.run(cmd, check=True, timeout=60, capture_output=True)
+                    print(f"✅ MIDI 转换成功: {wav_file}")
+                    audio_file = wav_file
+                except Exception as e:
+                    print(f"❌ MIDI 转换失败: {e}")
+                    return None
+            else:
+                audio_file = wav_file
+
+        return audio_file
 
     def _generate_voice(self, text: str, voice: str) -> Optional[str]:
         """合成语音，限制文本长度"""

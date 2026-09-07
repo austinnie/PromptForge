@@ -30,7 +30,11 @@ def assemble_video(
     if voice_path and os.path.exists(voice_path):
         voice_audio = AudioFileClip(voice_path)
         audio_tracks.append(voice_audio)
-    if music_path and os.path.exists(music_path):
+    # 跳过 MIDI 文件
+    if music_path.lower().endswith('.mid'):
+        print("⚠️ 跳过 MIDI 文件（moviepy 不支持），仅使用语音")
+        music_path = None
+    else:
         bg_audio = AudioFileClip(music_path).volumex(0.3)
         if bg_audio.duration < final_video.duration:
             bg_audio = bg_audio.loop(duration=final_video.duration)
