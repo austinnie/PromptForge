@@ -17,7 +17,7 @@ from skills.music_generator.skill import MusicMaestro
 from handlers.video_handler import VideoHandler
 from .subtitle import generate_srt_from_script
 from .assembler import assemble_video
-
+from skills.music_generator.music_generator_cli import MusicGenerator
 
 class MultimediaWorkflow:
     def __init__(self, app):
@@ -255,7 +255,7 @@ class MultimediaWorkflow:
         # 调用 VideoHandler 的方法
         return self.video_handler.generate_video_from_prompt(prompt, duration=5)
 
-    def _generate_music(self, theme: str, emotion: str, duration: int) -> Optional[str]:
+    def _generate_music_midi(self, theme: str, emotion: str, duration: int) -> Optional[str]:
         result = self.music_gen.execute(
             topic=theme,
             emotion=emotion,
@@ -300,6 +300,32 @@ class MultimediaWorkflow:
 
         return audio_file
 
+    def _generate_music(self, theme: str, emotion: str, duration: int) -> Optional[str]:
+        """生成背景音乐，优先使用 MP3（MusicGenerator），失败则回退到 MIDI（MusicMaestro）"""
+        # 方式1：MP3（首选）
+        try:
+            from skills.music_generator.music_generator_cli import MusicGenerator
+            gen = MusicGenerator()
+            result = gen.create_music(
+                topic=theme,
+                emotion=emotion,
+                duration=duration,
+                language='zh'
+            )
+            if result["status"] == "success":
+                audio_file = result["audio_file"]
+                if audio_file and os.path.exists(audio_file):
+                    print(f"✅ 使用 MP3 音乐: {audio_file}")
+                    return audio_file
+            else:
+                print(f"⚠️ MP3 生成失败: {result.get('message', '未知错误')}")
+        except Exception as e:
+            print(f"⚠️ MP3 生成异常: {e}")
+        
+        # 方式2：MIDI（备选）
+        print("🔄 回退到 MIDI 模式...")
+        return self._generate_music_midi(theme, emotion, duration)
+    
     def _generate_voice(self, text: str, voice: str) -> Optional[str]:
         """合成语音，限制文本长度"""
         # 限制旁白长度
