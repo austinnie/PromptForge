@@ -56,7 +56,54 @@ class IntentAnalyzer:
     ]    
     
     # 在类属性中添加
-    VIDEO_KEYWORDS = ['视频', '生成视频', '制作视频', 'video', 'animate', '动图']
+    VIDEO_KEYWORDS = [
+        # === 核心词 ===
+        '视频', '生成视频', '制作视频', '视频生成', 'video', 'animate', '动图', '动画',
+        
+        # === 动作类（人物） ===
+        '走路', '跑步', '奔跑', '跳跃', '跳', '飞', '飞翔', '游泳', '游', '潜水',
+        '跳舞', '舞蹈', '旋转', '转身', '挥手', '招手', '点头', '摇头', '弯腰',
+        '蹲下', '站立', '坐下', '躺下', '睡觉', '醒来', '打哈欠', '伸懒腰',
+        '说话', '唱歌', '演奏', '弹琴', '打鼓', '吹奏',
+        '开车', '骑行', '骑马', '划船', '滑冰', '滑雪', '冲浪',
+        '做饭', '烹饪', '吃饭', '喝水', '喝咖啡', '饮茶',
+        '工作', '学习', '阅读', '写作', '绘画', '设计',
+        '打扫', '洗衣', '购物', '散步',
+        
+        # === 动作类（自然/物体） ===
+        '日出', '日落', '升起', '落下', '流动', '流淌', '瀑布', '喷发',
+        '飘动', '摇曳', '摆动', '旋转', '转动', '爆炸', '燃烧',
+        '下雨', '下雪', '风暴', '闪电', '波浪', '潮汐', '涨潮', '退潮',
+        
+        # === 场景/主题 ===
+        '海滩', '海边', '沙滩', '海洋', '大海', '湖泊', '河流', '溪流',
+        '森林', '树林', '花园', '草原', '沙漠', '雪山', '火山', '洞穴',
+        '城市', '街道', '大楼', '夜景', '星空', '银河', '极光',
+        '演唱会', '音乐会', '庆典', '节日', '派对', '婚礼', '宴会',
+        '体育比赛', '足球', '篮球', '网球', '跑步比赛',
+        '动物', '宠物', '猫', '狗', '鸟', '马', '狮子', '老虎', '大象',
+        '花朵', '植物', '树木',
+        
+        # === 视频类型 ===
+        '短视频', '长视频', '微电影', '纪录片', '动画片', '宣传片',
+        '广告', 'MV', '音乐视频', '教程', 'vlog', '直播',
+        
+        # === 风格/效果 ===
+        '慢动作', '快进', '延时摄影', '慢镜头', '特效', 'CGI', '3D',
+        '卡通风格', '写实风格', '水彩风格', '油画风格', '动漫风格',
+        '复古', '黑白', '彩色', '高清', '4K', '8K',
+        
+        # === 英文补充 ===
+        'walk', 'run', 'jump', 'fly', 'swim', 'dance', 'sing', 'drive',
+        'ride', 'cook', 'eat', 'drink', 'work', 'study', 'read',
+        'sunrise', 'sunset', 'flow', 'wave', 'rain', 'snow', 'storm',
+        'beach', 'ocean', 'forest', 'city', 'night', 'stars',
+        'animal', 'bird', 'cat', 'dog', 'horse', 'flower',
+        'short video', 'long video', 'movie', 'documentary', 'animation',
+        'slow motion', 'time-lapse', 'timelapse', 'special effect',
+        'cartoon', 'realistic', 'watercolor', 'oil painting', 'anime',
+        'HD', '4K', '8K',
+    ]
     
     def __init__(self):
         self._safety = None
@@ -120,6 +167,23 @@ class IntentAnalyzer:
             confidence=0.3
         )
 
+    def _is_video_intent(self, text: str) -> bool:
+        text_lower = text.lower()
+        
+        # 直接命中
+        if any(k in text_lower for k in self.VIDEO_KEYWORDS):
+            return True
+        
+        # 组合匹配：动作 + 场景
+        action_words = ['走路', '跑步', '跳', '飞', '游泳', '跳舞', '开车', '做饭', '唱歌', '演奏']
+        scene_words = ['海滩', '森林', '城市', '星空', '草原', '沙漠', '雪山', '花园']
+        has_action = any(k in text_lower for k in action_words)
+        has_scene = any(k in text_lower for k in scene_words)
+        if has_action and has_scene:
+            return True
+        
+        return False
+    
     def _analyze_img2img_reference(self, text: str) -> IntentResult:
         """基于参考图的图生图"""
         prompt = text
