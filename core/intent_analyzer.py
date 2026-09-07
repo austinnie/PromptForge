@@ -16,6 +16,7 @@ class IntentResult:
     llm_enhanced: bool = False
     params: Dict = field(default_factory=dict)
     confidence: float = 0.5
+    system_hint: str = ""  # ✅ 新增
 
 
 class IntentAnalyzer:
@@ -111,13 +112,10 @@ class IntentAnalyzer:
     def analyze(self, text: str, has_image: bool = False, 
                 has_multiple: bool = False) -> IntentResult:
         """分析用户输入意图"""
-        text_lower = text.lower()
-        
-        # 1. 安全检查
-        if self._is_unsafe(text):
-            return self._safe_fallback(text)
+        text_lower = text.lower()       
 
-        # 检测是否为视频生成意图
+
+        # 先检测意图（视频优先）
         if any(k in text_lower for k in self.VIDEO_KEYWORDS):
             return IntentResult(
                 type="video",  # 新类型
@@ -125,7 +123,20 @@ class IntentAnalyzer:
                 original_text=text,
                 confidence=0.9
             )
-        
+            
+        if self._is_video_intent(text):
+            return IntentResult(
+                type="video",
+                prompt=text,
+                original_text=text,
+                confidence=0.9,
+                system_hint="⚠️ 视频生成受 API 政策限制，请合理使用内容"  # ✅
+            )
+    
+        # 1. 安全检查（仅对非视频意图生效）
+        if self._is_unsafe(text):
+            return self._safe_fallback(text)
+            
         # 2. ✅ 图生图优先（有图片时优先判断）
         if has_image:
             # 2.1 显式修改关键词
@@ -167,18 +178,22 @@ class IntentAnalyzer:
             confidence=0.3
         )
 
+    # core/intent_analyzer.py
+
     def _is_video_intent(self, text: str) -> bool:
+        """判断是否为视频生成意图"""
         text_lower = text.lower()
         
-        # 直接命中
+        # 1. 直接命中关键词
         if any(k in text_lower for k in self.VIDEO_KEYWORDS):
             return True
         
-        # 组合匹配：动作 + 场景
+        # 2. 组合匹配：动作 + 场景
         action_words = ['走路', '跑步', '跳', '飞', '游泳', '跳舞', '开车', '做饭', '唱歌', '演奏']
         scene_words = ['海滩', '森林', '城市', '星空', '草原', '沙漠', '雪山', '花园']
         has_action = any(k in text_lower for k in action_words)
         has_scene = any(k in text_lower for k in scene_words)
+        
         if has_action and has_scene:
             return True
         

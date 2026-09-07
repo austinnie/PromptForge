@@ -20,6 +20,11 @@ class VideoHandler(BaseHandler):
         if self.app.settings.generation_mode != "api":
             self._reply("❌ 视频生成仅支持 API 模式")
             return
+
+        # 检查模式
+        if self.app.settings.generation_mode != "api":
+            self._reply("❌ 视频生成仅支持 API 模式")
+            return
         
         prompt = intent.get("prompt", "")
         if not prompt:
