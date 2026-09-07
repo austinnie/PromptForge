@@ -1,13 +1,4 @@
-# config/settings.py
-import os
-from pathlib import Path
-from dataclasses import dataclass, field
-from typing import Optional
-
-from dotenv import load_dotenv
-
-load_dotenv()
-
+# config/settings.py - 在 Settings 类中添加
 
 @dataclass
 class Settings:
@@ -52,8 +43,6 @@ class Settings:
     # ----- Agnes AI (需注册获取 API Key) -----
     agnes_api_key: str = os.getenv("AGNES_API_KEY", "")
     agnes_model: str = os.getenv("AGNES_MODEL", "flux")
-    
-    # ✅ 新增 Agnes 多模态配置
     agnes_image_model: str = os.getenv("AGNES_IMAGE_MODEL", "agnes-image-2.1-flash")
     agnes_text_model: str = os.getenv("AGNES_TEXT_MODEL", "agnes-2.5-flash")
     agnes_video_model: str = os.getenv("AGNES_VIDEO_MODEL", "agnes-video-v2.0")
@@ -62,6 +51,14 @@ class Settings:
 
     # ----- Free API (社区免费代理，无需注册) -----
     freeapi_model: str = os.getenv("FREEAPI_MODEL", "flux")
+    
+    # ✅ 新增 Replicate API
+    replicate_api_token: str = os.getenv("REPLICATE_API_TOKEN", "")
+    replicate_model: str = os.getenv("REPLICATE_MODEL", "stability-ai/stable-diffusion")
+    
+    # ✅ 新增 Stability AI API
+    stability_api_key: str = os.getenv("STABILITY_API_KEY", "")
+    stability_model: str = os.getenv("STABILITY_MODEL", "stable-diffusion-xl-1024-v1-0")
     
     # --- 生成参数 ---
     default_steps: int = int(os.getenv("DEFAULT_STEPS", "20"))
@@ -107,7 +104,6 @@ class Settings:
             "pollinations": {
                 "POLLINATIONS_MODEL": self.pollinations_model,
             },
-            # ✅ 更新 Agnes 配置
             "agnes": {
                 "AGNES_API_KEY": self.agnes_api_key,
                 "AGNES_MODEL": self.agnes_model,
@@ -119,6 +115,16 @@ class Settings:
             },
             "freeapi": {
                 "FREEAPI_MODEL": self.freeapi_model,
+            },
+            # ✅ 新增 Replicate
+            "replicate": {
+                "REPLICATE_API_TOKEN": self.replicate_api_token,
+                "REPLICATE_MODEL": self.replicate_model,
+            },
+            # ✅ 新增 Stability
+            "stability": {
+                "STABILITY_API_KEY": self.stability_api_key,
+                "STABILITY_MODEL": self.stability_model,
             },
         }
     
@@ -160,6 +166,19 @@ class Settings:
                 "requires_key": True,
                 "free": False,
                 "description": "腾讯混元，按量付费",
+            },
+            # ✅ 新增
+            "replicate": {
+                "name": "Replicate",
+                "requires_key": True,
+                "free": False,
+                "description": "按量付费，支持真正的图生图",
+            },
+            "stability": {
+                "name": "Stability AI",
+                "requires_key": True,
+                "free": False,
+                "description": "按量付费，支持真正的图生图",
             },
         }
         return providers.get(provider, {})

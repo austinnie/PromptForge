@@ -117,7 +117,7 @@ class ChatApp:
         self.provider_combo = ttk.Combobox(
             toolbar,
             textvariable=self.provider_var,
-            values=["pollinations", "huggingface", "tongyi", "yige", "hunyuan", "agnes", "freeapi"],
+            values=["pollinations", "huggingface", "tongyi", "yige", "hunyuan", "agnes", "freeapi","replicate", "stability" ],
             width=12,
             state="readonly"
         )
@@ -178,6 +178,14 @@ class ChatApp:
                 has_token = bool(config.get("HUNYUAN_SECRET_ID") and config.get("HUNYUAN_SECRET_KEY"))
             elif provider == "agnes":
                 has_token = bool(config.get("AGNES_API_KEY"))
+
+            # ✅ 新增 Replicate
+            elif provider == "replicate":
+                has_token = bool(config.get("REPLICATE_API_TOKEN"))
+            # ✅ 新增 Stability
+            elif provider == "stability":
+                has_token = bool(config.get("STABILITY_API_KEY"))
+            
             
             if not has_token:
                 self._append_message("system", f"⚠️ {provider} API 密钥未配置，请检查 .env 文件")

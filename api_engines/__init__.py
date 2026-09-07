@@ -10,9 +10,12 @@ from .huggingface import HuggingFaceEngine
 from .pollinations import PollinationsEngine
 from .agnes import AgnesEngine
 from .freeapi import FreeAPIEngine
+# ✅ 新增
+from .replicate import ReplicateEngine
+from .stability import StabilityEngine
 
 
-def create_api_engine(provider: str, config: dict) -> BaseEngine:
+def create_engine(provider: str, config: dict) -> BaseEngine:
     """创建 API 引擎实例"""
     
     if provider == "tongyi":
@@ -60,14 +63,26 @@ def create_api_engine(provider: str, config: dict) -> BaseEngine:
             model=config.get("FREEAPI_MODEL", "grok-imagine-image-lite")
         )
     
+    # ✅ 新增 Replicate
+    elif provider == "replicate":
+        return ReplicateEngine(
+            api_token=config.get("REPLICATE_API_TOKEN"),
+            model=config.get("REPLICATE_MODEL", "stability-ai/stable-diffusion")
+        )
+    
+    # ✅ 新增 Stability AI
+    elif provider == "stability":
+        return StabilityEngine(
+            api_key=config.get("STABILITY_API_KEY"),
+            model=config.get("STABILITY_MODEL", "stable-diffusion-xl-1024-v1-0")
+        )
+    
     else:
         raise ValueError(f"不支持的 API 提供商: {provider}")
 
 
-# ✅ create_engine 直接调用 create_api_engine，无递归
-def create_engine(provider: str, config: dict) -> BaseEngine:
-    return create_api_engine(provider, config)
-
+# 兼容旧名称
+create_api_engine = create_engine
 
 __all__ = [
     'BaseEngine',
@@ -78,6 +93,8 @@ __all__ = [
     'PollinationsEngine',
     'AgnesEngine',
     'FreeAPIEngine',
+    'ReplicateEngine',      # ✅ 新增
+    'StabilityEngine',      # ✅ 新增
     'create_engine',
     'create_api_engine',
 ]
