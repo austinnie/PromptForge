@@ -26,7 +26,7 @@ psutil>=7.0.0
 tqdm>=4.67.0
 
 # --- 可选 (用于更好的兼容性) ---
-# scipy>=1.13.0
+# scipy>=1.13.0             # MusicGen 保存音频
 # opencv-python-headless>=4.10.0  # 无GUI版本
 # 添加 dotenv
 python-dotenv>=1.0.0
@@ -35,3 +35,15 @@ python-dotenv>=1.0.0
 # dashscope>=1.14.0          # 通义万相
 # tencentcloud-sdk-python    # 腾讯混元
 # 百度文心一格用 REST API，无需额外 SDK
+
+
+
+# --- 新增必需依赖 ---
+edge-tts>=6.1.0
+mutagen>=1.47.0
+midiutil>=1.2.1
+moviepy>=2.0.0
+
+# --- 可选依赖（按需安装） ---
+# openai-whisper>=20231117    # 语音识别
+# sounddevice>=0.4.6          # 录音设备

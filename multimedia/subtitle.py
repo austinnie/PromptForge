@@ -1,8 +1,8 @@
 # multimedia/subtitle.py
 import os
 import re
-from pydub import AudioSegment
 from datetime import timedelta
+from mutagen import File  # 需要安装 mutagen
 
 def generate_srt_from_script(script: dict, voice_path: str, words_per_second: float = 3.0) -> str:
     """根据旁白文本和语音时长生成简单的 SRT 字幕"""
@@ -12,10 +12,13 @@ def generate_srt_from_script(script: dict, voice_path: str, words_per_second: fl
 
     # 获取语音时长（秒）
     try:
-        audio = AudioSegment.from_file(voice_path)
-        total_duration = audio.duration_seconds
-    except:
-        total_duration = len(narration) / words_per_second  # 估算
+        audio = File(voice_path)
+        if audio:
+            total_duration = audio.info.length
+        else:
+            total_duration = len(narration) / words_per_second
+    except Exception:
+        total_duration = len(narration) / words_per_second
 
     # 按句子拆分
     sentences = re.split(r'[，。！？；\n]+', narration)
@@ -24,7 +27,6 @@ def generate_srt_from_script(script: dict, voice_path: str, words_per_second: fl
     if not sentences:
         return None
 
-    # 简单按字数分配时间
     total_chars = sum(len(s) for s in sentences)
     base_dir = os.path.dirname(voice_path)
     srt_path = os.path.join(base_dir, "subtitle.srt")

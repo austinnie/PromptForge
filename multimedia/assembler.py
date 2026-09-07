@@ -3,11 +3,12 @@ import os
 from pathlib import Path
 from typing import List, Optional
 from datetime import datetime
-from moviepy.editor import (
-    VideoFileClip, AudioFileClip, CompositeAudioClip, 
+
+# 新版 moviepy 导入方式
+from moviepy import VideoFileClip, AudioFileClip, CompositeAudioClip, \
     concatenate_videoclips, TextClip, CompositeVideoClip
-)
-from moviepy.video.tools.subtitles import SubtitlesClip
+from moviepy.video.tools.subtitles import SubtitlesClip  # 新版位置
+
 
 def assemble_video(
     video_segments: List[str],
@@ -30,9 +31,7 @@ def assemble_video(
         voice_audio = AudioFileClip(voice_path)
         audio_tracks.append(voice_audio)
     if music_path and os.path.exists(music_path):
-        # 背景音乐音量降低
         bg_audio = AudioFileClip(music_path).volumex(0.3)
-        # 如果音乐比视频短，循环
         if bg_audio.duration < final_video.duration:
             bg_audio = bg_audio.loop(duration=final_video.duration)
         else:
@@ -47,7 +46,7 @@ def assemble_video(
     if subtitle_path and os.path.exists(subtitle_path):
         try:
             generator = lambda txt: TextClip(
-                txt, font='Arial', fontsize=24, 
+                txt, font='Arial', fontsize=24,
                 color='white', stroke_color='black', stroke_width=1
             )
             subtitles = SubtitlesClip(subtitle_path, generator)
