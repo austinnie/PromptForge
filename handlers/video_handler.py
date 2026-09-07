@@ -61,7 +61,7 @@ class VideoHandler(BaseHandler):
             result = engine.video_generation(
                 prompt=prompt,
                 image=init_image,
-                duration=5,
+                duration=self.app.settings.video_duration,  # 从配置读取
                 width=768,
                 height=768
             )

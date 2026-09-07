@@ -58,6 +58,8 @@ class Settings:
     agnes_vision_model: str = os.getenv("AGNES_VISION_MODEL", "agnes-2.5-flash")
     agnes_base_url: str = os.getenv("AGNES_BASE_URL", "https://apihub.agnes-ai.com/v1")
 
+    video_duration: int = int(os.getenv("VIDEO_DURATION", "5"))
+    
     # ----- Free API (社区免费代理，无需注册) -----
     freeapi_model: str = os.getenv("FREEAPI_MODEL", "flux")
     
