@@ -1,0 +1,100 @@
+{
+  "name": "voice_assistant",
+  "version": "1.0.0",
+  "description": "语音合成（TTS）和语音识别（STT）助手",
+  "tags": [],
+  "dependencies": [
+    "edge-tts",
+    "openai-whisper",
+    "pydub",
+    "sounddevice",
+    "numpy",
+    "scipy"
+  ],
+  "inputs": [
+    {
+      "name": "action",
+      "type": "string",
+      "description": "操作类型 (tts/stt/list_voices) (必填)",
+      "required": true
+    },
+    {
+      "name": "text",
+      "type": "string",
+      "description": "要合成的文本 (tts 操作需要)",
+      "required": true
+    },
+    {
+      "name": "audio_file",
+      "type": "string",
+      "description": "要识别的音频文件路径 (stt 操作需要)",
+      "required": true
+    },
+    {
+      "name": "voice",
+      "type": "string",
+      "description": "语音类型 (zh-CN-XiaoxiaoNeural/zh-CN-YunxiNeural/en-US-JennyNeural)，默认 zh-CN-XiaoxiaoNeural",
+      "required": false
+    },
+    {
+      "name": "speed",
+      "type": "float",
+      "description": "语速 0.5-2.0，默认 1.0",
+      "required": false
+    },
+    {
+      "name": "pitch",
+      "type": "string",
+      "description": "音调 (default/high/low)，默认 default",
+      "required": false
+    },
+    {
+      "name": "output_file",
+      "type": "string",
+      "description": "输出文件路径，默认 ./output/audio_{timestamp}.mp3",
+      "required": false
+    },
+    {
+      "name": "language",
+      "type": "string",
+      "description": "识别语言 (zh-CN/en-US)，默认 zh-CN",
+      "required": false
+    },
+    {
+      "name": "sample_rate",
+      "type": "integer",
+      "description": "采样率，默认 16000",
+      "required": false
+    },
+    {
+      "name": "silence_threshold",
+      "type": "float",
+      "description": "静音检测阈值，默认 1.0",
+      "required": false
+    }
+  ],
+  "outputs": [
+    {
+      "name": "audio_path",
+      "description": "合成的音频路径 (tts)"
+    },
+    {
+      "name": "transcript",
+      "description": "识别的文本内容 (stt)"
+    },
+    {
+      "name": "duration",
+      "description": "音频时长(秒)"
+    },
+    {
+      "name": "voices",
+      "description": "可用语音列表 (list_voices)"
+    },
+    {
+      "name": "processing_time",
+      "description": "处理耗时"
+    }
+  ],
+  "config": {},
+  "class_name": "VoiceAssistant"
+}

@@ -1,0 +1,104 @@
+{
+  "name": "novel_writer_ollama",
+  "version": "1.0.0",
+  "description": "使用本地 Ollama 大模型自动写小说",
+  "tags": [],
+  "dependencies": [
+    "requests",
+    "json"
+  ],
+  "inputs": [
+    {
+      "name": "genre",
+      "type": "string",
+      "description": "小说类型 (科幻/奇幻/言情/悬疑/武侠/都市)",
+      "required": true
+    },
+    {
+      "name": "title",
+      "type": "string",
+      "description": "小说标题",
+      "required": true
+    },
+    {
+      "name": "outline",
+      "type": "string",
+      "description": "故事大纲，描述主要情节",
+      "required": true
+    },
+    {
+      "name": "characters",
+      "type": "string",
+      "description": "主要角色设定",
+      "required": true
+    },
+    {
+      "name": "chapter_count",
+      "type": "integer",
+      "description": "要生成的章节数量，默认 3，范围 1-10",
+      "required": false
+    },
+    {
+      "name": "words_per_chapter",
+      "type": "integer",
+      "description": "每章目标字数，默认 500，范围 200-2000",
+      "required": false
+    },
+    {
+      "name": "style",
+      "type": "string",
+      "description": "写作风格 (简洁/细腻/幽默/严肃)，默认 细腻",
+      "required": false
+    },
+    {
+      "name": "temperature",
+      "type": "float",
+      "description": "创意程度 0-1，默认 0.85",
+      "required": false
+    },
+    {
+      "name": "model",
+      "type": "string",
+      "description": "使用的模型，默认 qwen2.5:7b",
+      "required": false
+    },
+    {
+      "name": "ollama_url",
+      "type": "string",
+      "description": "Ollama 服务地址，默认 http://localhost:11434",
+      "required": false
+    }
+  ],
+  "outputs": [
+    {
+      "name": "title",
+      "description": "小说标题"
+    },
+    {
+      "name": "genre",
+      "description": "小说类型"
+    },
+    {
+      "name": "chapters",
+      "description": "所有章节列表，每章包含标题和内容"
+    },
+    {
+      "name": "summary",
+      "description": "小说简介"
+    },
+    {
+      "name": "total_words",
+      "description": "总字数"
+    },
+    {
+      "name": "model_used",
+      "description": "使用的模型名称"
+    },
+    {
+      "name": "generated_at",
+      "description": "生成时间"
+    }
+  ],
+  "config": {},
+  "class_name": "NovelWriterOllama"
+}

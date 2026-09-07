@@ -166,7 +166,16 @@ class IntentAnalyzer:
                 original_text=text,
                 confidence=0.9
             )
-        
+
+        # 新增视频创作
+        if any(k in text_lower for k in ['创作视频', '全自动', '生成故事', '自动生成']):
+            return IntentResult(
+                type="multimedia",
+                prompt=text,
+                original_text=text,
+                confidence=0.9
+            )
+            
         # 5. 文生图
         if self._is_gen_intent(text):
             return self._analyze_txt2img(text)

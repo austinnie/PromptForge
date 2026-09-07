@@ -353,3 +353,79 @@ class VideoHandler(BaseHandler):
         else:
             self._reply(f"⚠️ 下载失败，请点击上面的链接直接查看")
             self._update_status("❌ 下载失败")
+
+    # handlers/video_handler.py - 替换末尾两个方法
+
+    def generate_video_from_prompt(self, prompt: str, duration: int = 5) -> Optional[str]:
+        """
+        生成单个视频片段并返回本地路径（供工作流调用）
+        注意：此方法为同步等待，可能耗时较长
+        """
+        # 检查模式
+        if self.app.settings.generation_mode != "api":
+            print(f"⚠️ 视频生成仅支持 API 模式，当前为 {self.app.settings.generation_mode}")
+            return None
+
+        # 获取 API 引擎
+        from handlers.text_to_image import TextToImageHandler
+        api_handler = TextToImageHandler(self.app)
+        engine = api_handler._get_api_engine()
+
+        if engine is None:
+            print("❌ API 引擎初始化失败")
+            return None
+
+        if not hasattr(engine, 'video_generation'):
+            print(f"❌ {engine.get_name()} 不支持视频生成")
+            return None
+
+        try:
+            # 获取参考图（如果有）
+            init_image = self._get_reference_image()
+
+            # 调用视频生成 API
+            result = engine.video_generation(
+                prompt=prompt,
+                image=init_image,
+                duration=duration,
+                width=768,
+                height=768
+            )
+
+            video_id = result.get('video_id')
+            if not video_id:
+                print(f"❌ 未能获取视频任务ID: {result}")
+                return None
+
+            print(f"⏳ 视频任务已提交 (ID: {video_id})，等待完成...")
+
+            # 等待视频完成
+            video_url = engine.wait_for_video(video_id, max_wait=300)
+
+            if not video_url:
+                print("❌ 视频生成超时或失败")
+                return None
+
+            # 下载到临时文件
+            timestamp = __import__('datetime').datetime.now().strftime("%Y%m%d_%H%M%S")
+            safe_prompt = "".join(c for c in prompt[:20] if c.isalnum() or c in " _-") or "video"
+            filename = f"{timestamp}_segment_{safe_prompt}.mp4"
+            filepath = os.path.join(self.app.settings.output_dir, filename)
+
+            if self._download_video_file(video_url, filepath):
+                print(f"✅ 视频片段已保存: {filepath}")
+                return filepath
+            else:
+                print(f"❌ 视频下载失败: {video_url}")
+                return None
+
+        except Exception as e:
+            print(f"❌ 视频生成异常: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+
+
+    def generate_single_video(self, prompt: str) -> Optional[str]:
+        """生成单个视频片段并返回路径（供工作流调用）"""
+        return self.generate_video_from_prompt(prompt, duration=self.SEGMENT_DURATION)      

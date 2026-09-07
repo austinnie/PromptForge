@@ -1,0 +1,50 @@
+{
+  "name": "AI音乐大师",
+  "description": "从文字到天籁之音，自动写词、谱曲，智能适配硬件",
+  "version": "2.0.0",
+  "inputs": [
+    {
+      "name": "topic",
+      "type": "string",
+      "description": "歌曲主题",
+      "required": true,
+      "default": "星辰大海"
+    },
+    {
+      "name": "emotion",
+      "type": "string",
+      "description": "情绪基调",
+      "required": false,
+      "default": "epic",
+      "enum": ["joyful", "melancholic", "epic", "peaceful", "mysterious"]
+    },
+    {
+      "name": "language",
+      "type": "string",
+      "description": "歌词语言",
+      "required": false,
+      "default": "zh"
+    },
+    {
+      "name": "duration",
+      "type": "integer",
+      "description": "时长(秒)",
+      "required": false,
+      "default": 30
+    },
+    {
+      "name": "force_mode",
+      "type": "string",
+      "description": "强制模式 (midi/musicgen)",
+      "required": false
+    }
+  ],
+  "outputs": [
+    {"name": "audio_file", "description": "生成的音频文件"},
+    {"name": "lyrics", "description": "歌词"},
+    {"name": "mode_used", "description": "使用的生成模式"}
+  ],
+  "dependencies": ["midiutil", "requests"],
+  "optional_dependencies": ["torch", "transformers", "scipy"],
+  "tags": ["music", "ai", "creative"]
+}
