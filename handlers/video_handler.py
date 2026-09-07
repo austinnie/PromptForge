@@ -13,6 +13,8 @@ import requests
 
 from .base import BaseHandler
 
+# 视频下载超时（秒）
+VIDEO_DOWNLOAD_TIMEOUT = 300
 
 class VideoHandler(BaseHandler):
     """视频生成处理器"""
@@ -187,7 +189,7 @@ class VideoHandler(BaseHandler):
                     continue
                 
                 # 下载到临时文件
-                response = requests.get(video_url, stream=True, timeout=(10, None))
+                response = requests.get(video_url, stream=True, timeout=VIDEO_DOWNLOAD_TIMEOUT)
                 if response.status_code == 200:
                     temp_file = os.path.join(temp_dir, f"segment_{i:03d}.mp4")
                     with open(temp_file, 'wb') as f:
@@ -326,7 +328,7 @@ class VideoHandler(BaseHandler):
             self._reply("⬇️ 正在下载视频文件...")
             self._update_status("⬇️ 下载中...")
             
-            response = requests.get(video_url, stream=True, timeout=(10, None))
+            response = requests.get(video_url, stream=True, timeout=VIDEO_DOWNLOAD_TIMEOUT)
             if response.status_code == 200:
                 timestamp = __import__('datetime').datetime.now().strftime("%Y%m%d_%H%M%S")
                 safe_prompt = "".join(c for c in prompt[:20] if c.isalnum() or c in " _-") or "video"
