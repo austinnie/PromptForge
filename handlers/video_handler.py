@@ -270,29 +270,56 @@ class VideoHandler(BaseHandler):
             return self.app.uploaded_images[0].copy().convert('RGB')
         return None
     
-    def _merge_videos(self, video_files: List[str], temp_dir: str) -> Optional[str]:
+    def _merge_videos(self, video_files: List[str], temp_dir: str, prompt: str = "") -> Optional[str]:
         """使用 FFmpeg 合并多个视频"""
         try:
             # 检查 FFmpeg
-            subprocess.run(['ffmpeg', '-version'], capture_output=True, timeout=5, check=False)
+            result = subprocess.run(
+                ['ffmpeg', '-version'],
+                capture_output=True,
+                timeout=5
+            )
+            if result.returncode != 0:
+                self._reply("⚠️ 未找到 FFmpeg，请安装 FFmpeg 或使用分段视频")
+                return None
             
+            # 创建文件列表
             list_file = os.path.join(temp_dir, "file_list.txt")
             with open(list_file, 'w', encoding='utf-8') as f:
                 for file in video_files:
-                    f.write(f"file '{os.path.abspath(file)}'\n")
+                    abs_path = os.path.abspath(file)
+                    f.write(f"file '{abs_path}'\n")
             
+            # 输出文件
             output_file = os.path.join(temp_dir, "merged.mp4")
             
+            # FFmpeg 合并命令
             subprocess.run([
-                'ffmpeg', '-f', 'concat', '-safe', '0',
-                '-i', list_file, '-c', 'copy', '-y', output_file
+                'ffmpeg',
+                '-f', 'concat',
+                '-safe', '0',
+                '-i', list_file,
+                '-c', 'copy',
+                '-y',
+                output_file
             ], capture_output=True, timeout=120, check=True)
+            
+            # ✅ 如果提供了 prompt，可以用它生成更好的日志
+            if prompt:
+                print(f"✅ 合并完成，原始提示词: {prompt[:30]}...")
             
             return output_file if os.path.exists(output_file) else None
             
-        except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
+        except subprocess.TimeoutExpired:
+            self._reply("⚠️ FFmpeg 合并超时")
             return None
-    
+        except subprocess.CalledProcessError as e:
+            self._reply(f"⚠️ FFmpeg 合并失败: {e.stderr.decode()[:200]}")
+            return None
+        except FileNotFoundError:
+            self._reply("⚠️ 未找到 FFmpeg，请安装 FFmpeg")
+            return None
+        
     def _download_video(self, video_url: str, prompt: str, prefix: str) -> None:
         """下载单个视频"""
         try:
