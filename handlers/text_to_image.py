@@ -149,6 +149,16 @@ class TextToImageHandler(BaseHandler):
         if self.is_generating:
             self._reply("⏳ 正在生成中，请稍候...")
             return
+
+        # ✅ 检查是否为图生图
+        intent_type = intent.get("type", "text_to_image")
+        is_img2img = (intent_type == "image_to_image" or 
+                      intent.get("params", {}).get("mode") == "reference")
+        
+        # 如果是图生图，调用专门的 API 图生图方法
+        if is_img2img:
+            self._handle_api_img2img(intent)
+            return
         
         prompt = intent.get("prompt", "")
         original_text = intent.get("original_text", "")
@@ -275,6 +285,96 @@ class TextToImageHandler(BaseHandler):
             else:
                 self._reply(f"❌ API 生成失败: {error_msg}")
                 self._update_status("❌ API 生成失败")
+            import traceback
+            traceback.print_exc()
+        finally:
+            self.is_generating = False
+
+
+
+    # handlers/text_to_image.py - 新增方法
+    def _handle_api_img2img(self, intent: Dict[str, Any]) -> None:
+        """API 图生图"""
+        # 检查是否有图片
+        if not hasattr(self.app, 'uploaded_images') or not self.app.uploaded_images:
+            self._reply("❌ 图生图需要上传一张参考图片")
+            return
+        
+        prompt = intent.get("prompt", "")
+        original_text = intent.get("original_text", "")
+        
+        if not prompt:
+            self._reply("❌ 请描述您想如何修改这张图片")
+            return
+        
+        # 安全检查
+        if self.app.settings.safe_mode:
+            is_unsafe, _ = SafetyChecker.check(prompt)
+            if is_unsafe:
+                prompt = SafetyChecker.sanitize(prompt)
+                if not prompt:
+                    self._reply("🛡️ 内容被安全过滤")
+                    return
+        
+        # 获取 API 引擎
+        engine = self._get_api_engine()
+        if engine is None:
+            self._reply("❌ API 引擎初始化失败，请检查 API 密钥配置")
+            return
+        
+        # ✅ 检查引擎是否支持图生图
+        if not hasattr(engine, 'image_to_image'):
+            self._reply(f"❌ {engine.get_name()} 不支持图生图，请切换到支持图生图的 API (如 Agnes)")
+            return
+        
+        # 参数
+        params = self._estimate_params(original_text or prompt)
+        width = min(params["width"], 1024)
+        height = min(params["height"], 1024)
+        steps = max(params["steps"], 20)
+        cfg = params["cfg"]
+        
+        self._update_status(f"☁️ API 图生图中...")
+        self.is_generating = True
+        self.cancel_flag = False
+        
+        try:
+            # 获取参考图
+            init_image = self.app.uploaded_images[0].copy().convert('RGB')
+            
+            # 构建提示词
+            full_prompt = self._build_quality_prompt(original_text, intent.get("keywords", {}))
+            negative = self._build_negative(original_text)
+            
+            # 调用 API 图生图
+            image = engine.image_to_image(
+                prompt=full_prompt,
+                image=init_image,
+                strength=0.7,
+                width=width,
+                height=height,
+                steps=steps,
+                cfg=cfg,
+                seed=random.randint(1, 2**32 - 1)
+            )
+            
+            filepath = self._save_image(image, prompt[:50], "img2img_api")
+            
+            self._reply(f"✅ 图生图完成（{engine.get_name()} API）！\n📁 {os.path.basename(filepath)}")
+            self._update_status("✅ API 图生图完成")
+            
+            if self.context:
+                self.context.update(
+                    {"type": "image_to_image", "prompt": prompt},
+                    {"image_path": filepath}
+                )
+            
+        except Exception as e:
+            if self.cancel_flag:
+                self._reply("⏹️ 已取消")
+            else:
+                self._reply(f"❌ API 图生图失败: {str(e)}")
+                self._update_status("❌ API 图生图失败")
             import traceback
             traceback.print_exc()
         finally:

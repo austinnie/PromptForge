@@ -26,14 +26,21 @@ class AgnesMode(Enum):
 class AgnesEngine:
     """Agnes AI 多模态引擎"""
     
-    # 默认模型映射
+    # ✅ 根据官方文档更新模型名称
     DEFAULT_MODELS = {
-        "text-to-image": "agnes-image-2.1-flash",
-        "image-to-image": "agnes-image-2.1-flash",
-        "chat": "agnes-text-2.1-flash",
-        "video": "agnes-video-2.1-flash",
-        "vision": "agnes-vision-2.1-flash",
+        "text-to-image": "agnes-image-2.1-flash",  # ✅ 官方文档确认
+        "image-to-image": "agnes-image-2.1-flash", # ✅ 官方文档确认
+        "chat": "agnes-2.5-flash",                 # ✅ 官方文档：agnes-2.5-flash
+        "video": "agnes-video-v2.0",               # ✅ 官方文档：agnes-video-v2.0
+        "vision": "agnes-2.5-flash",               # ✅ 官方文档：agnes-2.5-flash 支持视觉
     }
+    
+    # ✅ Agnes 官方服务路由（按优先级排序）
+    ROUTES = [
+        "https://apihub.agnes-ai.com/v1",   # 国际服务（主）
+        "https://apihub.agnes-ai.cn/v1",    # 国际服务（备用）
+        "https://api.agnes-ai.cn/v1",       # 中国服务
+    ]
     
     def __init__(
         self,
@@ -50,7 +57,7 @@ class AgnesEngine:
         
         Args:
             api_key: Agnes AI API Key
-            base_url: API 地址
+            base_url: API 地址（如果不指定，将使用主路由）
             model: 默认模型（不指定时使用各能力默认模型）
             image_model: 图像生成模型
             text_model: 文本模型
@@ -58,7 +65,16 @@ class AgnesEngine:
             vision_model: 视觉模型
         """
         self.api_key = api_key
-        self.base_url = base_url or "https://apihub.agnes-ai.com/v1"
+        
+        # ✅ 设置基础 URL
+        if base_url:
+            self.base_url = base_url
+        else:
+            self.base_url = self.ROUTES[0]  # 默认主路由
+        
+        # ✅ 记录当前使用的路由索引
+        self._current_route_index = 0
+        self._failed_routes = set()
         
         # 各能力模型配置
         self.image_model = image_model or model or self.DEFAULT_MODELS["text-to-image"]
@@ -77,14 +93,47 @@ class AgnesEngine:
         self.last_request_time = 0
         self.min_interval = 0.5
         
+        # ✅ 重试配置
+        self.max_retries = 3
+        self.retry_delay = 2
+        
         if not self.api_key:
-            print("⚠️ 未设置 AGNES_API_KEY，请从 https://apihub.agnes-ai.com 注册获取")
+            print("⚠️ 未设置 AGNES_API_KEY，请从 https://platform.agnes-ai.com/ 注册获取")
         
         print(f"🔍 Agnes AI 引擎初始化")
         print(f"🔍 API 地址: {self.base_url}")
+        print(f"🔍 备用路由: {self.ROUTES[1:]}")
         print(f"🔍 图像模型: {self.image_model}")
         print(f"🔍 文本模型: {self.text_model}")
         print(f"🔍 视频模型: {self.video_model}")
+    
+    def _get_working_route(self) -> str:
+        """获取可用的路由"""
+        # 如果有当前路由且未失败，直接使用
+        if self._current_route_index < len(self.ROUTES):
+            route = self.ROUTES[self._current_route_index]
+            if route not in self._failed_routes:
+                return route
+        
+        # 尝试其他路由
+        for i, route in enumerate(self.ROUTES):
+            if route not in self._failed_routes:
+                self._current_route_index = i
+                self.base_url = route
+                print(f"🔄 切换到备用路由: {route}")
+                return route
+        
+        # 所有路由都失败，重置并返回第一个
+        print("⚠️ 所有路由均不可用，重置路由列表...")
+        self._failed_routes.clear()
+        self._current_route_index = 0
+        self.base_url = self.ROUTES[0]
+        return self.ROUTES[0]
+    
+    def _mark_route_failed(self, route: str):
+        """标记路由为失败"""
+        self._failed_routes.add(route)
+        print(f"⚠️ 路由 {route} 已标记为不可用")
     
     def _get_size(self, width: int, height: int) -> str:
         """获取支持的尺寸"""
@@ -110,7 +159,7 @@ class AgnesEngine:
         data: Dict[str, Any],
         timeout: int = 120,
     ) -> Dict[str, Any]:
-        """发送请求到 Agnes AI API"""
+        """发送请求到 Agnes AI API（带路由切换）"""
         if not self.api_key:
             raise ValueError("请设置 AGNES_API_KEY")
         
@@ -124,36 +173,71 @@ class AgnesEngine:
             "Content-Type": "application/json"
         }
         
-        url = f"{self.base_url}/{endpoint.lstrip('/')}"
+        # ✅ 尝试多个路由
+        max_attempts = len(self.ROUTES) * 2
+        for attempt in range(max_attempts):
+            route = self._get_working_route()
+            url = f"{route}/{endpoint.lstrip('/')}"
+            
+            try:
+                response = requests.post(
+                    url,
+                    headers=headers,
+                    json=data,
+                    timeout=timeout
+                )
+                
+                self.last_request_time = time.time()
+                
+                # ✅ 503 错误 - 服务不可用，切换路由
+                if response.status_code == 503:
+                    print(f"⚠️ 路由 {route} 返回 503，尝试切换...")
+                    self._mark_route_failed(route)
+                    time.sleep(1)
+                    continue
+                
+                # ✅ 429 错误 - 限流，等待后重试
+                if response.status_code == 429:
+                    print(f"⚠️ 请求限流 (429)，等待后重试...")
+                    time.sleep(3)
+                    continue
+                
+                if response.status_code != 200:
+                    error_detail = {}
+                    try:
+                        error_detail = response.json()
+                    except:
+                        pass
+                    
+                    if error_detail:
+                        error_msg = error_detail.get('error', {}).get('message', str(error_detail))
+                    else:
+                        error_msg = response.text[:200]
+                    
+                    raise Exception(f"Agnes AI API 调用失败 (状态码 {response.status_code}): {error_msg}")
+                
+                return response.json()
+                
+            except requests.exceptions.ConnectionError:
+                print(f"⚠️ 路由 {route} 连接失败，尝试切换...")
+                self._mark_route_failed(route)
+                time.sleep(1)
+                continue
+                
+            except requests.exceptions.Timeout:
+                print(f"⚠️ 路由 {route} 超时，尝试切换...")
+                self._mark_route_failed(route)
+                time.sleep(1)
+                continue
+                
+            except requests.exceptions.RequestException as e:
+                if attempt == max_attempts - 1:
+                    raise Exception(f"Agnes AI 请求失败: {e}")
+                print(f"⚠️ 请求异常 (尝试 {attempt+1}/{max_attempts}): {e}")
+                time.sleep(2)
+                continue
         
-        try:
-            response = requests.post(
-                url,
-                headers=headers,
-                json=data,
-                timeout=timeout
-            )
-            
-            self.last_request_time = time.time()
-            
-            if response.status_code != 200:
-                error_detail = {}
-                try:
-                    error_detail = response.json()
-                except:
-                    pass
-                
-                if error_detail:
-                    error_msg = error_detail.get('error', {}).get('message', str(error_detail))
-                else:
-                    error_msg = response.text[:200]
-                
-                raise Exception(f"Agnes AI API 调用失败 (状态码 {response.status_code}): {error_msg}")
-            
-            return response.json()
-            
-        except requests.exceptions.RequestException as e:
-            raise Exception(f"Agnes AI 请求失败: {e}")
+        raise Exception("Agnes AI 所有路由均不可用，请稍后重试")
     
     def _download_image(self, image_url: str) -> Image.Image:
         """下载图片"""
@@ -202,6 +286,13 @@ class AgnesEngine:
         """文生图"""
         size = self._get_size(width, height)
         
+        # ✅ Agnes 的 seed 范围：-1 到 999
+        if seed is not None:
+            if seed > 999:
+                seed = seed % 1000
+            elif seed < -1:
+                seed = -1
+        
         data = {
             "model": self.image_model,
             "prompt": prompt,
@@ -210,23 +301,19 @@ class AgnesEngine:
             "response_format": "url",
         }
         
-        #if negative:
-        #    data["negative_prompt"] = negative
-        
         if seed is not None:
-            # Agnes AI 要求 seed 在 -1 到 999 之间
-            if seed > 999:
-                seed = seed % 1000   # 取模，保证 0-999
-            elif seed < -1:
-                seed = -1
             data["seed"] = seed
-        #if steps:
-        #    data["steps"] = steps
-        #if cfg:
-        #    data["guidance_scale"] = cfg
+        
+        # ✅ 支持 steps 参数（如果模型支持）
+        if steps and steps > 0:
+            data["steps"] = steps
+        
+        # ✅ 支持 guidance_scale
+        if cfg and cfg > 0:
+            data["guidance_scale"] = cfg
         
         print(f"🔍 Agnes AI 文生图")
-        print(f"🔍 模型: {self.image_model}, 尺寸: {size}")
+        print(f"🔍 模型: {self.image_model}, 尺寸: {size}, 步数: {steps}")
         
         result = self._request("images/generations", data)
         
@@ -249,11 +336,13 @@ class AgnesEngine:
     
     # ==================== 图生图 ====================
     
+    # api_engines/agnes.py - 完整的 image_to_image 方法
+
     def image_to_image(
         self,
         prompt: str,
         image: Image.Image,
-        strength: float = 0.7,   # 保留但不使用
+        strength: float = 0.7,
         width: int = None,
         height: int = None,
         steps: int = 20,
@@ -261,74 +350,78 @@ class AgnesEngine:
         seed: int = None,
     ) -> Image.Image:
         """
-        图生图 - 使用 multipart/form-data 上传
+        图生图 - 使用 OpenAI 兼容格式
         """
-        # 获取尺寸（用于显示）
+        # 获取尺寸
         if width is None or height is None:
             width, height = image.size
-        size = f"{width}x{height}"
-
-        # 将图片转为 bytes
-        img_bytes = io.BytesIO()
-        image.save(img_bytes, format='PNG')
-        img_bytes.seek(0)
-
-        # 构建 multipart 数据
+        
+        # 限制最大尺寸
+        max_size = 1024
+        if width > max_size or height > max_size:
+            scale = max_size / max(width, height)
+            width = int(width * scale)
+            height = int(height * scale)
+            width = ((width + 7) // 8) * 8
+            height = ((height + 7) // 8) * 8
+        
+        size = self._get_size(width, height)
+        
+        # Agnes 的 seed 范围：-1 到 999
+        if seed is not None:
+            if seed > 999:
+                seed = seed % 1000
+            elif seed < -1:
+                seed = -1
+        
+        # 将图片转为 Base64
+        img_base64 = self._image_to_base64(image)
+        
+        # ✅ 构建请求数据（不包含 response_format）
         data = {
             "model": self.image_model,
             "prompt": prompt,
-            "n": "1",
+            "n": 1,
             "size": size,
-            "response_format": "url",
+            "image": f"data:image/png;base64,{img_base64}",
         }
-        # ⭐ 不发送 strength, steps, cfg, seed（这些参数可能不支持）
-
-        files = {
-            "image": ("image.png", img_bytes, "image/png")
-        }
-
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            # 不设置 Content-Type，让 requests 自动处理 multipart
-        }
-
-        url = f"{self.base_url}/images/edits"
-
-        print(f"🔍 Agnes AI 图生图 (multipart)")
-        print(f"🔍 模型: {self.image_model}, 尺寸: {size}")
-
-        try:
-            response = requests.post(
-                url,
-                headers=headers,
-                data=data,
-                files=files,
-                timeout=120
-            )
-
-            if response.status_code != 200:
-                error_detail = {}
-                try:
-                    error_detail = response.json()
-                    error_msg = error_detail.get('error', {}).get('message', str(error_detail))
-                except:
-                    error_msg = response.text[:200]
-                raise Exception(f"Agnes AI API 调用失败 (状态码 {response.status_code}): {error_msg}")
-
-            result = response.json()
-
-            # 解析图片 URL
-            image_url = None
-            if 'data' in result and result['data']:
-                image_url = result['data'][0].get('url')
-            if not image_url:
-                raise Exception(f"无法解析图片URL，响应: {json.dumps(result)[:300]}")
-
-            return self._download_image(image_url)
-
-        except requests.exceptions.RequestException as e:
-            raise Exception(f"Agnes AI 请求失败: {e}")
         
+        if seed is not None:
+            data["seed"] = seed
+        
+        if steps and steps > 0:
+            data["steps"] = steps
+        
+        if cfg and cfg > 0:
+            data["guidance_scale"] = cfg
+        
+        if strength and 0 < strength < 1:
+            data["strength"] = strength
+        
+        print(f"🔍 Agnes AI 图生图")
+        print(f"🔍 模型: {self.image_model}, 尺寸: {size}, 强度: {strength}")
+        print(f"🔍 请求参数: {list(data.keys())}")
+        
+        # 发送请求
+        result = self._request("images/generations", data)
+        
+        # 解析图片 URL
+        image_url = None
+        if 'data' in result and result['data']:
+            image_url = result['data'][0].get('url')
+        
+        if not image_url and 'output' in result:
+            output = result['output']
+            if 'results' in output and output['results']:
+                image_url = output['results'][0].get('url')
+            elif 'image_url' in output:
+                image_url = output['image_url']
+        
+        if not image_url:
+            raise Exception(f"无法解析图片URL，响应: {json.dumps(result)[:300]}")
+        
+        return self._download_image(image_url)
+    
     # ==================== 推理/对话 ====================
     
     def chat(
@@ -400,7 +493,7 @@ class AgnesEngine:
                         except:
                             pass
             
-            print()  # 换行
+            print()
             return result_text
         
         # 非流式
@@ -465,20 +558,9 @@ class AgnesEngine:
         print(f"🔍 Agnes AI 视频生成")
         print(f"🔍 模型: {model}, 时长: {duration}s, 尺寸: {width}x{height}")
         
-        # 注意：视频生成可能需要异步处理，实际端点可能不同
-        # 这里使用 images/generations 的变体，实际可能需要调整
-        # 尝试不同的端点
-        endpoints = ["videos/generations", "video/generations", "generations/video", "video"]
-        for endpoint in endpoints:
-            try:
-                result = self._request(endpoint, data, timeout=300)
-                # 如果成功则返回
-                return result
-            except Exception as e:
-                if "404" in str(e):
-                    continue
-                raise
-        raise Exception("所有视频端点均不可用")
+        # ✅ 使用官方端点 /videos/generations
+        result = self._request("videos/generations", data, timeout=300)
+        return result
     
     def video_status(self, task_id: str) -> Dict[str, Any]:
         """查询视频生成状态"""
@@ -575,8 +657,7 @@ class AgnesEngine:
     
     def get_usage(self) -> Dict[str, Any]:
         """获取使用量信息"""
-        # Agnes AI 可能没有公开的用量查询 API
-        return {"info": "请登录 Agnes AI 控制台查看使用量"}
+        return {"info": "请登录 https://platform.agnes-ai.com/ 查看使用量"}
     
     def get_name(self) -> str:
         return f"Agnes AI (图像: {self.image_model}, 文本: {self.text_model})"

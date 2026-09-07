@@ -50,13 +50,25 @@ class BaseHandler(ABC):
         
         return filepath
     
+    # handlers/base.py
+
     def _ensure_model_loaded(self) -> bool:
-        """确保模型已加载"""
+        """确保模型已加载（仅本地模式）"""
+        # ✅ 如果是 API 模式，跳过本地模型检查
+        if self.app.settings.generation_mode == "api":
+            return True
+        
         if hasattr(self.app, 'is_model_loaded') and self.app.is_model_loaded:
             return True
         
         if hasattr(self.app, '_load_model'):
             self.app._load_model()
+            # 等待加载完成（简单轮询）
+            import time
+            for _ in range(30):  # 最多等待 30 秒
+                if self.app.is_model_loaded:
+                    return True
+                time.sleep(0.5)
             return self.app.is_model_loaded
         
         self._reply("⚠️ 模型未加载，请先加载模型")
