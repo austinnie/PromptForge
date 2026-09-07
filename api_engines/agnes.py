@@ -590,6 +590,7 @@ class AgnesEngine:
         start_time = time.time()
         while time.time() - start_time < max_wait:
             status = self.video_status(video_id)
+            print(f"📊 完整状态: {json.dumps(status, indent=2)}")  # ✅ 添加日志
             # 根据实际返回格式调整字段名
             state = status.get('state', status.get('status', ''))
             

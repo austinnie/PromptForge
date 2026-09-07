@@ -7,7 +7,15 @@ from typing import Optional
 
 from dotenv import load_dotenv
 
+# ✅ 添加调试：打印 .env 加载状态
+env_path = Path(__file__).parent.parent / ".env"
+print(f"📂 .env 文件路径: {env_path}")
+print(f"📂 .env 文件是否存在: {env_path.exists()}")
+
 load_dotenv()
+
+# ✅ 添加调试：打印读取到的值
+print(f"📂 VIDEO_DURATION 原始值: {os.getenv('VIDEO_DURATION')}")
 
 @dataclass
 class Settings:
@@ -58,7 +66,14 @@ class Settings:
     agnes_vision_model: str = os.getenv("AGNES_VISION_MODEL", "agnes-2.5-flash")
     agnes_base_url: str = os.getenv("AGNES_BASE_URL", "https://apihub.agnes-ai.com/v1")
 
+    # 视频生成默认时长（秒）- Agnes API 固定 5 秒
     video_duration: int = int(os.getenv("VIDEO_DURATION", "5"))
+
+    # ✅ 新增：是否启用循环拼接（将长视频拆分为 5 秒片段）
+    video_auto_merge: bool = os.getenv("VIDEO_AUTO_MERGE", "false").lower() == "true"
+    
+    # ✅ 新增：API 固定单段时长
+    video_segment_duration: int = 5  # Agnes 固定 5 秒
     
     # ----- Free API (社区免费代理，无需注册) -----
     freeapi_model: str = os.getenv("FREEAPI_MODEL", "flux")
@@ -86,6 +101,10 @@ class Settings:
     
     def __post_init__(self):
         self.output_dir.mkdir(exist_ok=True)
+        
+        # ✅ 添加调试
+        print(f"📂 Settings.video_duration = {self.video_duration}")
+        print(f"📂 类型: {type(self.video_duration)}")        
     
     def get_model_path(self) -> Optional[str]:
         if self.model_path and os.path.exists(self.model_path):
