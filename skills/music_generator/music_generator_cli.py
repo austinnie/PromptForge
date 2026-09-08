@@ -251,7 +251,7 @@ class MusicGenerator:
                     "ffmpeg",
                     "-i", tmp_wav.name,
                     "-b:a", "192k",
-                    "-vol", "400",  # ✅ 增加音量（100=原始，400=4倍）
+                    "-af", "volume=4",      # 替换 -vol 400, ✅ 增加音量
                     "-y",
                     tmp_mp3.name
                 ]
