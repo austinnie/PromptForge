@@ -22,7 +22,7 @@ class VideoHandler(BaseHandler):
     """视频生成处理器"""
 
     # Agnes 固定单段时长
-    SEGMENT_DURATION = 5
+    # SEGMENT_DURATION = 5
 
     def __init__(self, app):
         super().__init__(app)
@@ -85,7 +85,7 @@ class VideoHandler(BaseHandler):
             result = engine.video_generation(
                 prompt=prompt,
                 image=init_image,
-                duration=self.SEGMENT_DURATION,
+                duration=self.app.settings.video_segment_duration,# 修改
                 width=768,
                 height=768
             )
@@ -161,7 +161,7 @@ class VideoHandler(BaseHandler):
                 result = engine.video_generation(
                     prompt=segment_prompt,
                     image=init_image if i == 0 else None,
-                    duration=self.SEGMENT_DURATION,
+                    duration=self.app.settings.video_segment_duration,  # 修改
                     width=768,
                     height=768
                 )
@@ -387,7 +387,7 @@ class VideoHandler(BaseHandler):
             result = engine.video_generation(
                 prompt=prompt,
                 image=init_image,
-                duration=duration,
+                duration=self.app.settings.video_segment_duration  # 修改
                 width=768,
                 height=768
             )

@@ -66,14 +66,14 @@ class Settings:
     agnes_vision_model: str = os.getenv("AGNES_VISION_MODEL", "agnes-2.5-flash")
     agnes_base_url: str = os.getenv("AGNES_BASE_URL", "https://apihub.agnes-ai.com/v1")
 
-    # 视频生成默认时长（秒）- Agnes API 固定 5 秒
-    video_duration: int = int(os.getenv("VIDEO_DURATION", "5"))
+    # 视频生成默认时长（秒）- Agnes API 固定 60 秒
+    video_duration: int = int(os.getenv("VIDEO_DURATION", "60"))
 
-    # ✅ 新增：是否启用循环拼接（将长视频拆分为 5 秒片段）
+    # ✅ 新增：是否启用循环拼接（将长视频拆分为 10 秒片段）
     video_auto_merge: bool = os.getenv("VIDEO_AUTO_MERGE", "false").lower() == "true"
     
     # ✅ 新增：API 固定单段时长
-    video_segment_duration: int = 5  # Agnes 固定 5 秒
+    video_segment_duration: int = int(os.getenv("VIDEO_SEGMENT_DURATION", "10"))
     
     # ----- Free API (社区免费代理，无需注册) -----
     freeapi_model: str = os.getenv("FREEAPI_MODEL", "flux")

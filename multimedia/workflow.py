@@ -25,6 +25,8 @@ class MultimediaWorkflow:
         self.output_dir = app.settings.output_dir / "multimedia"
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
+        self.segment_duration = app.settings.video_segment_duration
+        
         # 初始化各技能（传入配置字典）
         self.novel_writer = NovelWriterOllama({
             'default_model': app.settings.ollama_model,
@@ -82,7 +84,7 @@ class MultimediaWorkflow:
         emotion = self._extract_emotion_from_script(novel_data)
 
         # 5. 估算视频总时长（每个场景 5 秒）
-        total_video_duration = len(scenes) * 5  # 秒
+        total_video_duration = len(scenes) * self.segment_duration  # 秒
 
         # 6. 并行生成语音、音乐，但视频片段串行生成（避免 API 限流）
         self.app._append_message("system", f"🎬 准备生成 {len(scenes)} 个视频片段（每个 5 秒），总时长约 {total_video_duration} 秒")
@@ -264,7 +266,7 @@ class MultimediaWorkflow:
         full_prompt = f"{prompt}, {continuity}"
         if emotion:
             full_prompt += f", {emotion} style"
-        return self.video_handler.generate_video_from_prompt(full_prompt, duration=5)
+        return self.video_handler.generate_video_from_prompt(full_prompt, duration=self.segment_duration)
 
     def _generate_music_midi(self, theme: str, emotion: str, duration: int) -> Optional[str]:
         result = self.music_gen.execute(
