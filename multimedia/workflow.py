@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
+import subprocess
 
 # 导入技能
 from skills.novel_writer.skill import NovelWriterOllama

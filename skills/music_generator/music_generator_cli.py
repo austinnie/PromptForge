@@ -12,7 +12,7 @@ from datetime import datetime
 import tempfile
 
 # 添加项目根目录
-project_root = Path(__file__).parent.parent
+project_root = Path(__file__).parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
