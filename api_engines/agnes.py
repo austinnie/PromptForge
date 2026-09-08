@@ -521,58 +521,71 @@ class AgnesEngine:
         self,
         prompt: str,
         image: Optional[Image.Image] = None,
-        duration: int = None,   # 改为 None，不再提供默认值
+        duration: int = 10,
         width: int = 768,
         height: int = 768,
         model: str = None,
         callback_url: str = None,
     ) -> Dict[str, Any]:
         """
-        视频生成（使用正确的端点 POST /v1/videos）
+        视频生成（POST /v1/videos）
+        严格按照官方文档：https://apihub.agnes-ai.com/v1
+        使用 agnes-video-2.5-flash 模型
         """
-
-        # 1. 如果未传入 duration，使用默认值
+        # 1. 默认值处理
         if duration is None:
             duration = 10
             print(f"ℹ️ duration 未指定，使用默认值: {duration} 秒")
-        
-        # 2. 范围钳制（Agnes API 支持 4-12 秒）
-        MIN_DURATION = 5
-        MAX_DURATION = 12
-        original_duration = duration
-        if duration < MIN_DURATION:
-            duration = MIN_DURATION
-            print(f"⚠️ 视频时长 {original_duration} 秒小于 API 支持的最小值 {MIN_DURATION}，已调整为 {duration} 秒")
-        elif duration > MAX_DURATION:
-            duration = MAX_DURATION
-            print(f"⚠️ 视频时长 {original_duration} 秒大于 API 支持的最大值 {MAX_DURATION}，已调整为 {duration} 秒")
-        
-        # 3. 最终确认日志
-        print(f"🔍 [Agnes API] video_generation 最终使用 duration: {duration} 秒")
-    
+
+        # 2. 钳制（官方支持 4-12 秒）
+        original = duration
+        if duration < 4:
+            duration = 5
+            print(f"⚠️ 视频时长 {original} 秒小于 4，已调整为 {duration} 秒")
+        elif duration > 12:
+            duration = 12
+            print(f"⚠️ 视频时长 {original} 秒大于 12，已调整为 {duration} 秒")
+
+        print(f"🔍 [Agnes API] 最终使用 duration: {duration} 秒")
+
         model = model or self.video_model
-        
+        # 如果模型不是 2.5-flash，给出建议
+        if "2.5-flash" not in model:
+            print(f"⚠️ 建议使用 agnes-video-2.5-flash 模型，当前为: {model}")
+
+        # 3. 构建官方格式参数
         data = {
             "model": model,
             "prompt": prompt,
-            "duration": duration,
-            "width": width,
-            "height": height,
+            "seconds": str(duration),          # 官方示例为字符串
+            "mode": "reference" if image else "text",
+            "size": "720P",                    # 官方示例固定 720P
+            "aspect_ratio": "1:1",             # 根据宽高比动态调整
         }
-        
+
+        # 根据传入的宽高比调整 aspect_ratio
+        if width == height:
+            data["aspect_ratio"] = "1:1"
+        elif width > height:
+            data["aspect_ratio"] = "16:9"
+        else:
+            data["aspect_ratio"] = "9:16"
+
+        # 4. 图生图模式：添加 images 字段（官方示例为数组）
         if image:
-            data["image"] = f"data:image/png;base64,{self._image_to_base64(image)}"
-        
+            data["images"] = [f"data:image/png;base64,{self._image_to_base64(image)}"]
+
+        # 5. 回调（可选）
         if callback_url:
             data["callback_url"] = callback_url
-        
-        print(f"🔍 Agnes AI 视频生成")
-        print(f"🔍 模型: {model}, 时长: {duration}s, 尺寸: {width}x{height}")
-        
-        # ✅ 修正端点：使用 /videos 而不是 /videos/generations
+
+        print(f"🔍 [Agnes API] 发送数据: {data}")  # 调试日志
+
+        # 6. 发送请求
         result = self._request("videos", data, timeout=300)
         return result
     
+
     # api_engines/agnes.py
 
     def video_status(self, video_id: str) -> Dict[str, Any]:
