@@ -558,9 +558,9 @@ class AgnesEngine:
             "model": model,
             "prompt": prompt,
             "seconds": str(duration),          # 官方示例为字符串
-            "mode": "reference" if image else "text",
+            "mode": "text",
             "size": "720P",                    # 官方示例固定 720P
-            "aspect_ratio": "1:1",             # 根据宽高比动态调整
+            "aspect_ratio": "16:9",             # 根据宽高比动态调整
         }
 
         # 根据传入的宽高比调整 aspect_ratio
