@@ -29,6 +29,10 @@ class VideoHandler(BaseHandler):
         self.is_generating = False
         self.cancel_flag = False
 
+        # ✅ 统一从 settings 读取分段时长
+        self.segment_duration = app.settings.video_segment_duration
+        print(f"🔍 [VideoHandler] 初始化，分段时长 = {self.segment_duration} 秒")        
+
     def handle(self, intent: Dict[str, Any]) -> None:
         """处理视频生成意图"""
         # 检查模式
@@ -82,6 +86,9 @@ class VideoHandler(BaseHandler):
         try:
             init_image = self._get_reference_image()
 
+            # ✅ 调试打印
+            # print(f"🔍 [单段模式] 使用分段时长: {self.segment_duration}")
+            print(f"🔍 [DEBUG] _handle_single_mode,准备调用 video_generation，duration = {self.app.settings.video_segment_duration}")
             result = engine.video_generation(
                 prompt=prompt,
                 image=init_image,
@@ -127,11 +134,11 @@ class VideoHandler(BaseHandler):
 
     def _handle_merge_mode(self, engine, prompt: str, target_duration: int) -> None:
         """循环拼接模式：生成多个 5 秒片段并合并"""
-        segment_count = target_duration // self.SEGMENT_DURATION
+        segment_count = target_duration // self.segment_duration
         if target_duration % self.SEGMENT_DURATION != 0:
             segment_count += 1
 
-        self._reply(f"🎬 目标时长 {target_duration} 秒，将生成 {segment_count} 个 {self.SEGMENT_DURATION} 秒片段")
+        self._reply(f"🎬 目标时长 {target_duration} 秒，将生成 {segment_count} 个 {self.segment_duration} 秒片段")
         self._reply(f"⏳ 预计总耗时 {segment_count * 60} 秒左右，请耐心等待...")
         self._update_status(f"🎬 准备生成 {segment_count} 段视频...")
 
@@ -157,11 +164,12 @@ class VideoHandler(BaseHandler):
                 segment_prompt = prompt
                 if i > 0:
                     segment_prompt = f"{prompt}，继续上一段的动作，保持连贯"
-
+                    
+                print(f"🔍 [DEBUG] _handle_merge_mode 准备调用 video_generation，duration = {self.app.settings.video_segment_duration}")
                 result = engine.video_generation(
                     prompt=segment_prompt,
                     image=init_image if i == 0 else None,
-                    duration=self.app.settings.video_segment_duration,  # 修改
+                    duration=self.segment_duration,   # 使用统一变量
                     width=768,
                     height=768
                 )
@@ -356,12 +364,14 @@ class VideoHandler(BaseHandler):
 
     # handlers/video_handler.py - 替换末尾两个方法
 
-    def generate_video_from_prompt(self, prompt: str, duration: int = 10) -> Optional[str]:
+    def generate_video_from_prompt(self, prompt: str, duration: int = None) -> Optional[str]:
         """
         生成单个视频片段并返回本地路径（供工作流调用）
-        注意：此方法为同步等待，可能耗时较长
+        duration 参数如果未指定，则使用 self.segment_duration
         """
-        print(f"🔍 调用 generate_video_from_prompt: duration={duration}")        
+        # 如果调用方传入了 duration，优先使用，否则用统一值
+        actual_duration = duration if duration is not None else self.segment_duration
+        print(f"🔍 [generate_video_from_prompt] 实际使用时长: {actual_duration}")     
         
         # 检查模式
         if self.app.settings.generation_mode != "api":
@@ -386,10 +396,12 @@ class VideoHandler(BaseHandler):
             init_image = self._get_reference_image()
 
             # 调用视频生成 API
+            
+            print(f"🔍 [DEBUG] generate_video_from_prompt,准备调用 video_generation，duration = {self.app.settings.video_segment_duration}")
             result = engine.video_generation(
                 prompt=prompt,
                 image=init_image,
-                duration=self.app.settings.video_segment_duration,  # 修改
+                duration=actual_duration,   # 使用实际值
                 width=768,
                 height=768
             )
@@ -430,4 +442,5 @@ class VideoHandler(BaseHandler):
 
     def generate_single_video(self, prompt: str) -> Optional[str]:
         """生成单个视频片段并返回路径（供工作流调用）"""
-        return self.generate_video_from_prompt(prompt, duration=self.SEGMENT_DURATION)      
+        # 直接调用通用方法，不传 duration，使用默认
+        return self.generate_video_from_prompt(prompt)     

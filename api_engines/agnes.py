@@ -521,7 +521,7 @@ class AgnesEngine:
         self,
         prompt: str,
         image: Optional[Image.Image] = None,
-        duration: int = 5,
+        duration: int = None,   # 改为 None，不再提供默认值
         width: int = 768,
         height: int = 768,
         model: str = None,

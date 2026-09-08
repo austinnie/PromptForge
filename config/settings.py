@@ -101,11 +101,10 @@ class Settings:
     
     def __post_init__(self):
         self.output_dir.mkdir(exist_ok=True)
-        
-        # ✅ 添加调试
+        # 调试打印
+        print(f"📂 Settings.video_segment_duration = {self.video_segment_duration}")
         print(f"📂 Settings.video_duration = {self.video_duration}")
-        print(f"📂 类型: {type(self.video_duration)}")        
-    
+        
     def get_model_path(self) -> Optional[str]:
         if self.model_path and os.path.exists(self.model_path):
             return self.model_path

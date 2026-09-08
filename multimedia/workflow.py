@@ -46,7 +46,9 @@ class MultimediaWorkflow:
         self.output_dir = app.settings.output_dir / "multimedia"
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
+        # ✅ 统一从 settings 读取
         self.segment_duration = app.settings.video_segment_duration
+        print(f"🔍 [MultimediaWorkflow] 分段时长 = {self.segment_duration} 秒")
         
         # 初始化各技能（传入配置字典）
         self.novel_writer = NovelWriterOllama({
@@ -291,8 +293,11 @@ class MultimediaWorkflow:
         full_prompt = f"{prompt}, {continuity}"
         if emotion:
             full_prompt += f", {emotion} style"
-        return self.video_handler.generate_video_from_prompt(full_prompt, duration=self.segment_duration)
 
+        # ✅ 调用时明确传入时长（或者不传，让 VideoHandler 使用其默认值）
+        # 这里我们显式传递，保持一致性
+        return self.video_handler.generate_video_from_prompt(full_prompt, duration=self.segment_duration)
+        
     def _generate_music_midi(self, theme: str, emotion: str, duration: int) -> Optional[str]:
         result = self.music_gen.execute(
             topic=theme,
