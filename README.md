@@ -1,4 +1,4 @@
-# 💬 智能生图 (AI Chat Image Generator)
+# 💬 智能生图 (PromptForge: a AI Chat Image Generator)
 
 一个基于 Stable Diffusion 和多种 AI API 的智能对话式图像生成工具。用户通过自然语言描述即可生成高质量图片，支持本地模型和云端 API 双模式。
 
@@ -28,7 +28,7 @@
 
 1. **克隆项目**
 ```bash
-git clone https://github.com/yourusername/chat_image_generator.git
+git clone https://github.com/yourusername/PromptForge.git
 cd chat_image_generator
 ```
 
@@ -113,7 +113,28 @@ POLLINATIONS_MODEL=flux
 
 # Agnes AI (免费)
 AGNES_API_KEY=your_api_key_here
+# 备用路由（主路由不可用时自动切换）
+# AGNES_BASE_URL=https://apihub.agnes-ai.cn/v1
+# AGNES_BASE_URL=https://api.agnes-ai.cn/v1
 AGNES_IMAGE_MODEL=agnes-image-2.1-flash
+AGNES_TEXT_MODEL=agnes-2.5-flash
+AGNES_VIDEO_MODEL=agnes-video-v2.0
+AGNES_VISION_MODEL=agnes-2.5-flash
+# ============================================================
+# 视频生成配置
+# ============================================================
+
+# 单个视频分段长度
+VIDEO_SEGMENT_DURATION=10
+
+# ✅ 是否启用自动循环拼接
+# true  = 自动拆分并合并多个 10 秒片段
+# false = 只生成 10 秒
+VIDEO_AUTO_MERGE=true
+
+# 目标视频时长（秒）
+# 注意：Agnes API 单次4-12 秒
+VIDEO_DURATION=60
 
 # 通义万相 (阿里云)
 TONGYI_API_KEY=your_api_key
