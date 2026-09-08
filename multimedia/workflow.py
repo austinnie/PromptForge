@@ -209,22 +209,31 @@ class MultimediaWorkflow:
         return ""
 
     def _novel_to_scenes(self, novel_data: dict) -> List[dict]:
-        """将小说拆分为场景列表，限制最多 5 个场景"""
+        """将小说拆分为场景列表，限制最多 8 个场景"""
+        import re
         scenes = []
-        max_scenes = 5
+        max_scenes = 8
 
         for chapter in novel_data.get('chapters', []):
-            # 按段落拆分
-            paragraphs = chapter.get('content', '').split('\n')
+            content = chapter.get('content', '')
+            # 首先按段落拆分
+            paragraphs = [p.strip() for p in content.split('\n') if p.strip()]
+            # 如果段落太少（少于2），则按句子拆分
+            if len(paragraphs) < 2:
+                # 按中文句号、问号、感叹号拆分
+                sentences = re.split(r'[。！？；\n]+', content)
+                paragraphs = [s.strip() for s in sentences if s.strip()]
+            
             for para in paragraphs:
-                para = para.strip()
                 if len(para) < 30:
                     continue
-                # 取前 80 字作为视频描述
-                desc = para[:80] + "，高质量视觉画面" if len(para) > 80 else para + "，高质量视觉画面"
+                # 取前 120 字作为视频描述（增加描述长度）
+                desc = para[:120] + "，高质量视觉画面" if len(para) > 120 else para + "，高质量视觉画面"
+                # 旁白取前 300 字
+                narration = para[:300]
                 scenes.append({
                     'scene_description': desc,
-                    'narration': para[:200]  # 限制旁白长度
+                    'narration': narration
                 })
                 if len(scenes) >= max_scenes:
                     break
@@ -249,11 +258,13 @@ class MultimediaWorkflow:
         return 'epic'
 
     def _generate_video_segment(self, prompt: str, idx: int, emotion: str = '') -> Optional[str]:
-        """生成单个视频片段"""
+        """生成单个视频片段，加入连贯性提示"""
+        # 加入场景编号和连贯性提示
+        continuity = f"Scene {idx+1}, continuation of the story, consistent characters and visual style"
+        full_prompt = f"{prompt}, {continuity}"
         if emotion:
-            prompt = f"{prompt}, {emotion} style"
-        # 调用 VideoHandler 的方法
-        return self.video_handler.generate_video_from_prompt(prompt, duration=5)
+            full_prompt += f", {emotion} style"
+        return self.video_handler.generate_video_from_prompt(full_prompt, duration=5)
 
     def _generate_music_midi(self, theme: str, emotion: str, duration: int) -> Optional[str]:
         result = self.music_gen.execute(
