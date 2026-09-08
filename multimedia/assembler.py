@@ -57,17 +57,17 @@ def assemble_video(
     # 3. 添加字幕
     if subtitle_path and os.path.exists(subtitle_path):
         try:
-            generator = lambda txt: TextClip(
-                txt, font='Arial', fontsize=24,
-                color='white', stroke_color='black', stroke_width=1
-            )
-            subtitles = SubtitlesClip(subtitle_path, generator)
-            final_video = CompositeVideoClip([
-                final_video,
-                subtitles.set_position(('center', 'bottom'))
-            ])
+            from io import StringIO
+            # 以 UTF-8 读取文件内容
+            with open(subtitle_path, 'r', encoding='utf-8') as f:
+                srt_content = f.read()
+            generator = lambda txt: TextClip(txt, font='Arial', fontsize=24, color='white', stroke_color='black', stroke_width=1)
+            # 使用 StringIO 传递给 SubtitlesClip，避免文件编码问题
+            subtitles = SubtitlesClip(StringIO(srt_content), generator)
+            final_video = CompositeVideoClip([final_video, subtitles.set_position(('center', 'bottom'))])
         except Exception as e:
             print(f"字幕加载失败: {e}")
+            subtitles = None
 
     # 4. 输出
     output_dir = output_dir or Path("output")
