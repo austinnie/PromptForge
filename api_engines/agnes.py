@@ -531,13 +531,24 @@ class AgnesEngine:
         视频生成（使用正确的端点 POST /v1/videos）
         """
 
-        # 如果没有传入 duration，使用默认值 10
+        # 1. 如果未传入 duration，使用默认值
         if duration is None:
             duration = 10
-            print(f"⚠️ duration 未指定，使用默认值: {duration} 秒")
+            print(f"ℹ️ duration 未指定，使用默认值: {duration} 秒")
         
-        # ✅ 添加调试日志，明确显示最终使用的 duration
-        print(f"🔍 [Agnes API] video_generation 收到的 duration 参数: {duration}")
+        # 2. 范围钳制（Agnes API 支持 4-12 秒）
+        MIN_DURATION = 5
+        MAX_DURATION = 12
+        original_duration = duration
+        if duration < MIN_DURATION:
+            duration = MIN_DURATION
+            print(f"⚠️ 视频时长 {original_duration} 秒小于 API 支持的最小值 {MIN_DURATION}，已调整为 {duration} 秒")
+        elif duration > MAX_DURATION:
+            duration = MAX_DURATION
+            print(f"⚠️ 视频时长 {original_duration} 秒大于 API 支持的最大值 {MAX_DURATION}，已调整为 {duration} 秒")
+        
+        # 3. 最终确认日志
+        print(f"🔍 [Agnes API] video_generation 最终使用 duration: {duration} 秒")
     
         model = model or self.video_model
         
