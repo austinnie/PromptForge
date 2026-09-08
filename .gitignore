@@ -62,4 +62,4 @@ htmlcov/
 # 打包文件
 dist/
 build/
-*.egg-info/
+*.egg-info/"skills/music_generator/soundfonts/SGM-V2.01.sf2" 
