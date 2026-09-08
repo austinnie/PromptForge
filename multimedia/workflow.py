@@ -1,6 +1,7 @@
 # multimedia/workflow.py
 import json
 import os
+import re
 import time
 import tempfile
 from pathlib import Path
@@ -18,6 +19,25 @@ from handlers.video_handler import VideoHandler
 from .subtitle import generate_srt_from_script
 from .assembler import assemble_video
 from skills.music_generator.music_generator_cli import MusicGenerator
+
+# ==================== 常量配置 ====================
+# 视频拆分
+MAX_SCENES = 16                      # 最大场景数
+MIN_PARAGRAPH_LEN = 30               # 最小段落长度（字符）
+DESC_CHARS = 100                     # 场景描述最大字数
+NARRATION_CHARS = 300                # 旁白最大字数（初步截断）
+
+# 语音合成
+VOICE_CHARS_PER_SECOND = 2.8         # 中文语速（字/秒）
+MAX_VOICE_CHARS = 2000               # 语音最大字符数（安全限制）
+VOICE_SPEED = 1.0                    # TTS 语速
+
+# 小说生成
+DEFAULT_CHAPTER_COUNT = 1
+DEFAULT_WORDS_PER_CHAPTER = 168      # 从 200 提高到 300，配合 max_scenes=16
+DEFAULT_STYLE = '简洁'
+DEFAULT_TEMPERATURE = 0.85
+
 
 class MultimediaWorkflow:
     def __init__(self, app):
@@ -83,16 +103,21 @@ class MultimediaWorkflow:
         # 4. 提取情绪
         emotion = self._extract_emotion_from_script(novel_data)
 
-        # 5. 估算视频总时长（每个场景 5 秒）
+        # 5. 估算视频总时长（每个场景时长由配置决定）
         total_video_duration = len(scenes) * self.segment_duration  # 秒
 
         # 6. 并行生成语音、音乐，但视频片段串行生成（避免 API 限流）
-        self.app._append_message("system", f"🎬 准备生成 {len(scenes)} 个视频片段（每个 5 秒），总时长约 {total_video_duration} 秒")
+        self.app._append_message("system", f"🎬 准备生成 {len(scenes)} 个视频片段（每个 {self.segment_duration} 秒），总时长约 {total_video_duration} 秒")
 
         # 语音（完整旁白）
         full_narration = "\n".join([s['narration'] for s in scenes])
         self.app._append_message("system", "🎙️ 正在合成语音旁白...")
-        voice_path = self._generate_voice(full_narration, kwargs.get('voice', 'zh-CN-XiaoxiaoNeural'))
+        # ✅ 传入 max_duration=total_video_duration，使语音长度匹配视频时长
+        voice_path = self._generate_voice(
+            full_narration,
+            kwargs.get('voice', 'zh-CN-XiaoxiaoNeural'),
+            max_duration=total_video_duration
+        )
 
         # 音乐（根据估算时长）
         self.app._append_message("system", "🎵 正在生成背景音乐...")
@@ -184,11 +209,11 @@ class MultimediaWorkflow:
             if k in user_kwargs and user_kwargs[k]:
                 params[k] = user_kwargs[k]
 
-        # ✅ 设置极短篇默认值
-        params.setdefault('chapter_count', 1)         # 只生成 1 章
-        params.setdefault('words_per_chapter', 200)   # 每章 200 字
-        params.setdefault('style', '简洁')            # 简洁风格
-        params.setdefault('temperature', 0.85)
+        # ✅ 使用常量
+        params.setdefault('chapter_count', DEFAULT_CHAPTER_COUNT)
+        params.setdefault('words_per_chapter', DEFAULT_WORDS_PER_CHAPTER)
+        params.setdefault('style', DEFAULT_STYLE)
+        params.setdefault('temperature', DEFAULT_TEMPERATURE)
         params.setdefault('language', 'zh')
         return params
 
@@ -211,10 +236,9 @@ class MultimediaWorkflow:
         return ""
 
     def _novel_to_scenes(self, novel_data: dict) -> List[dict]:
-        """将小说拆分为场景列表，限制最多 8 个场景"""
+        """将小说拆分为场景列表，限制最多 MAX_SCENES 个场景"""
         import re
         scenes = []
-        max_scenes = 8
 
         for chapter in novel_data.get('chapters', []):
             content = chapter.get('content', '')
@@ -227,19 +251,19 @@ class MultimediaWorkflow:
                 paragraphs = [s.strip() for s in sentences if s.strip()]
             
             for para in paragraphs:
-                if len(para) < 30:
+                if len(para) < MIN_PARAGRAPH_LEN:
                     continue
-                # 取前 120 字作为视频描述（增加描述长度）
-                desc = para[:120] + "，高质量视觉画面" if len(para) > 120 else para + "，高质量视觉画面"
-                # 旁白取前 300 字
-                narration = para[:300]
+                # 取前 DESC_CHARS 字作为视频描述
+                desc = para[:DESC_CHARS] + "，高质量视觉画面" if len(para) > DESC_CHARS else para + "，高质量视觉画面"
+                # 旁白取前 NARRATION_CHARS 字
+                narration = para[:NARRATION_CHARS]
                 scenes.append({
                     'scene_description': desc,
                     'narration': narration
                 })
-                if len(scenes) >= max_scenes:
+                if len(scenes) >= MAX_SCENES:
                     break
-            if len(scenes) >= max_scenes:
+            if len(scenes) >= MAX_SCENES:
                 break
 
         return scenes
@@ -338,21 +362,49 @@ class MultimediaWorkflow:
         # 方式2：MIDI（备选）
         print("🔄 回退到 MIDI 模式...")
         return self._generate_music_midi(theme, emotion, duration)
-    
-    def _generate_voice(self, text: str, voice: str) -> Optional[str]:
-        """合成语音，限制文本长度"""
-        # 限制旁白长度
-        if len(text) > 2000:
-            text = text[:2000] + " ..."
+        
+    def _generate_voice(self, text: str, voice: str, max_duration: int = None) -> Optional[str]:
+        """合成语音，根据视频总时长限制文本长度"""
+        # 如果指定了最大时长，按语速估算截断
+        if max_duration and max_duration > 0:
+            max_chars = int(max_duration * VOICE_CHARS_PER_SECOND)
+            if len(text) > max_chars:
+                import re
+                sentences = re.split(r'[。！？；\n]+', text)
+                truncated = ""
+                for sent in sentences:
+                    if len(truncated) + len(sent) + 1 <= max_chars:
+                        truncated += sent + "。"
+                    else:
+                        break
+                text = truncated if truncated else text[:max_chars]
+                print(f"⚠️ 旁白从 {len(text)} 字截断至约 {max_duration} 秒语音")
+        
+        # 安全限制（防止超长文本）
+        if len(text) > MAX_VOICE_CHARS:
+            text = text[:MAX_VOICE_CHARS] + " ..."
+        
         result = self.tts.execute(
             action='tts',
             text=text,
             voice=voice,
-            speed=1.0,
+            speed=VOICE_SPEED,
             output_file=None
         )
+        
         if result['status'] == 'success':
-            return result['result'].get('audio_path')
+            audio_path = result['result'].get('audio_path')
+            # 打印实际语音信息（用于验证语速）
+            if audio_path:
+                try:
+                    from mutagen import File
+                    audio = File(audio_path)
+                    if audio:
+                        actual_duration = audio.info.length
+                        print(f"🎤 实际语音: {actual_duration:.1f} 秒, {len(text)} 字, 语速 {len(text)/actual_duration:.1f} 字/秒")
+                except:
+                    pass
+            return audio_path
         return None
 
     def _generate_subtitle(self, text: str, voice_path: str) -> Optional[str]:

@@ -22,8 +22,14 @@ def assemble_video(
         raise ValueError("至少需要一个视频片段")
 
     # 1. 拼接视频
-    clips = [VideoFileClip(p) for p in video_segments]
+    clips = []
+    for i, p in enumerate(video_segments):
+        clip = VideoFileClip(p)
+        print(f"🎬 片段 {i+1} 时长: {clip.duration:.2f} 秒")  # ← 加在这里
+        clips.append(clip)
+
     final_video = concatenate_videoclips(clips, method="compose")
+    print(f"📊 拼接后总视频时长: {final_video.duration:.2f} 秒")  # ← 再加一条总时长日志
 
     # 2. 准备音频
     audio_tracks = []
