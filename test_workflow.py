@@ -18,5 +18,5 @@ app = DummyApp()
 wf = MultimediaWorkflow(app)
 
 # 执行全自动创作
-result = wf.execute("月光下的森林", duration=10)
+result = wf.execute("月光下的森林")
 print("最终视频:", result['final_video'])

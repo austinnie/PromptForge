@@ -30,11 +30,11 @@ NARRATION_CHARS = 300                # 旁白最大字数（初步截断）
 # 语音合成
 VOICE_CHARS_PER_SECOND = 2.8         # 中文语速（字/秒）
 MAX_VOICE_CHARS = 2000               # 语音最大字符数（安全限制）
-VOICE_SPEED = 1.0                    # TTS 语速
+VOICE_SPEED = 1.1                    # TTS 语速
 
 # 小说生成
 DEFAULT_CHAPTER_COUNT = 1
-DEFAULT_WORDS_PER_CHAPTER = 168      # 从 200 提高到 300，配合 max_scenes=16
+DEFAULT_WORDS_PER_CHAPTER = 200      # 从 200 提高到 300，配合 max_scenes=16
 DEFAULT_STYLE = '简洁'
 DEFAULT_TEMPERATURE = 0.85
 
