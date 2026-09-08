@@ -46,7 +46,7 @@ def assemble_video(
 
     if audio_tracks:
         final_audio = CompositeAudioClip(audio_tracks)
-        final_video = final_video.set_audio(final_audio)
+        final_video = final_video.with_audio(final_audio)
 
     # 3. 添加字幕
     if subtitle_path and os.path.exists(subtitle_path):
