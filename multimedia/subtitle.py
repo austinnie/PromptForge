@@ -31,7 +31,7 @@ def generate_srt_from_script(script: dict, voice_path: str, words_per_second: fl
     base_dir = os.path.dirname(voice_path)
     srt_path = os.path.join(base_dir, "subtitle.srt")
 
-    with open(srt_path, 'w', encoding='utf-8') as f:
+    with open(srt_path, 'w', encoding='utf-8-sig') as f:
         start_time = 0.0
         for idx, sent in enumerate(sentences, 1):
             duration = (len(sent) / total_chars) * total_duration
