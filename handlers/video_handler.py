@@ -356,11 +356,13 @@ class VideoHandler(BaseHandler):
 
     # handlers/video_handler.py - 替换末尾两个方法
 
-    def generate_video_from_prompt(self, prompt: str, duration: int = 5) -> Optional[str]:
+    def generate_video_from_prompt(self, prompt: str, duration: int = 10) -> Optional[str]:
         """
         生成单个视频片段并返回本地路径（供工作流调用）
         注意：此方法为同步等待，可能耗时较长
         """
+        print(f"🔍 调用 generate_video_from_prompt: duration={duration}")        
+        
         # 检查模式
         if self.app.settings.generation_mode != "api":
             print(f"⚠️ 视频生成仅支持 API 模式，当前为 {self.app.settings.generation_mode}")
