@@ -68,7 +68,7 @@ class VideoHandler(BaseHandler):
         target_duration = self.app.settings.video_duration
         auto_merge = self.app.settings.video_auto_merge
 
-        if auto_merge and target_duration > self.SEGMENT_DURATION:
+        if auto_merge and target_duration > self.segment_duration:
             self._handle_merge_mode(engine, prompt, target_duration)
         else:
             self._handle_single_mode(engine, prompt)
@@ -106,7 +106,7 @@ class VideoHandler(BaseHandler):
             self._reply(f"⏳ 预计等待 30-120 秒...")
             self._update_status(f"🎬 等待视频完成...")
 
-            video_url = engine.wait_for_video(video_id, max_wait=300)
+            video_url = engine.wait_for_video(video_id)
 
             if video_url:
                 self._reply(f"✅ 视频生成完成！🎬")
@@ -135,7 +135,7 @@ class VideoHandler(BaseHandler):
     def _handle_merge_mode(self, engine, prompt: str, target_duration: int) -> None:
         """循环拼接模式：生成多个 5 秒片段并合并"""
         segment_count = target_duration // self.segment_duration
-        if target_duration % self.SEGMENT_DURATION != 0:
+        if target_duration % self.segment_duration != 0:
             segment_count += 1
 
         self._reply(f"🎬 目标时长 {target_duration} 秒，将生成 {segment_count} 个 {self.segment_duration} 秒片段")
@@ -179,7 +179,7 @@ class VideoHandler(BaseHandler):
                     self._reply(f"❌ 第 {i+1} 段未能获取任务ID")
                     continue
 
-                video_url = engine.wait_for_video(video_id, max_wait=300)
+                video_url = engine.wait_for_video(video_id)
 
                 if not video_url:
                     self._reply(f"❌ 第 {i+1} 段生成失败")
@@ -414,7 +414,7 @@ class VideoHandler(BaseHandler):
             print(f"⏳ 视频任务已提交 (ID: {video_id})，等待完成...")
 
             # 等待视频完成
-            video_url = engine.wait_for_video(video_id, max_wait=300)
+            video_url = engine.wait_for_video(video_id)
 
             if not video_url:
                 print("❌ 视频生成超时或失败")
