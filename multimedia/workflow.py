@@ -102,7 +102,13 @@ class MultimediaWorkflow:
 
         # 4. 提取情绪
         emotion = self._extract_emotion_from_script(novel_data)
-
+        
+        # ✅ 提取全局信息（在循环前执行一次）
+        character_name = self._extract_character_name(novel_data)
+        global_style = novel_data.get('genre', '科幻')
+        self.app._append_message("system", f"👤 角色: {character_name or '未命名'}, 风格: {global_style}")
+          
+              
         total_scenes = len(scenes)
         self.app._append_message("system", f"🎬 共 {total_scenes} 个场景，每个 {self.segment_duration} 秒")
 
@@ -119,8 +125,8 @@ class MultimediaWorkflow:
             if not narration:
                 narration = "这是一个美丽的场景。"
 
-            # 5.1 生成视频片段
-            video_path = self._generate_video_segment(desc, idx, emotion)
+            # 5.1 生成视频片段          
+            video_path = self._generate_video_segment(desc, idx, emotion, global_style, character_name)
             if not video_path:
                 self.app._append_message("system", f"  ⚠️ 场景 {idx+1} 视频生成失败，跳过")
                 continue
@@ -353,29 +359,119 @@ class MultimediaWorkflow:
         return ""
 
     def _novel_to_scenes(self, novel_data: dict) -> List[dict]:
+        """将小说拆分为场景列表，优先解析【场景】标记"""
         import re
         scenes = []
+        target_chars = max(20, int(self.segment_duration * VOICE_CHARS_PER_SECOND * 1.1))
+        print(f"🔍 [场景拆分] 目标每场景旁白字数: {target_chars} 字")
+
         for chapter in novel_data.get('chapters', []):
             content = chapter.get('content', '')
-            paragraphs = [p.strip() for p in content.split('\n') if p.strip()]
-            if len(paragraphs) < 2:
-                sentences = re.split(r'[。！？；\n]+', content)
-                paragraphs = [s.strip() for s in sentences if s.strip()]
-            for para in paragraphs:
-                if len(para) < MIN_PARAGRAPH_LEN:
-                    continue
-                desc = para[:DESC_CHARS] + "，高质量视觉画面" if len(para) > DESC_CHARS else para + "，高质量视觉画面"
-                narration = para[:NARRATION_CHARS]
-                scenes.append({
-                    'scene_description': desc,
-                    'narration': narration
-                })
+            
+            # 尝试按 【场景】 分割
+            # 匹配 【场景】 开头，直到下一个 【场景】 或结束
+            scene_blocks = re.split(r'【场景】\s*', content)
+            # 如果分割后长度>1，说明有标记
+            if len(scene_blocks) > 1:
+                for block in scene_blocks:
+                    block = block.strip()
+                    if not block:
+                        continue
+                    # 提取画面和旁白
+                    desc_match = re.search(r'画面[：:]\s*(.+?)(?:\n|$)', block)
+                    narr_match = re.search(r'旁白[：:]\s*(.+?)(?:\n|$)', block)
+                    # 如果没有明确的画面或旁白，尝试整段作为描述
+                    if desc_match:
+                        desc = desc_match.group(1).strip()
+                    else:
+                        # 取第一行作为描述
+                        lines = block.split('\n')
+                        desc = lines[0].strip()
+                    if narr_match:
+                        narration = narr_match.group(1).strip()
+                    else:
+                        # 取剩余部分作为旁白
+                        if desc_match:
+                            # 移除描述部分
+                            rest = re.sub(r'画面[：:]\s*.+?\n', '', block, count=1)
+                        else:
+                            rest = block
+                        narration = rest.strip()
+                    # 如果描述太长，截断
+                    if len(desc) > DESC_CHARS:
+                        desc = desc[:DESC_CHARS] + "，高质量视觉画面"
+                    # 如果旁白太长，截断
+                    if len(narration) > NARRATION_CHARS:
+                        narration = narration[:NARRATION_CHARS]
+                    scenes.append({
+                        'scene_description': desc,
+                        'narration': narration
+                    })
+                    if len(scenes) >= MAX_SCENES:
+                        break
                 if len(scenes) >= MAX_SCENES:
                     break
+                continue
+
+            # 如果没有场景标记，回退到按句子拆分
+            sentences = re.split(r'(?<=[。！？；\n])\s*', content)
+            sentences = [s.strip() for s in sentences if s.strip()]
+            if not sentences:
+                continue
+            current_block = ""
+            for sent in sentences:
+                if len(current_block) + len(sent) <= target_chars:
+                    current_block += sent
+                else:
+                    if current_block:
+                        desc = current_block[:DESC_CHARS] + "，高质量视觉画面"
+                        scenes.append({
+                            'scene_description': desc,
+                            'narration': current_block.strip()
+                        })
+                    current_block = sent
+            if current_block:
+                desc = current_block[:DESC_CHARS] + "，高质量视觉画面"
+                scenes.append({
+                    'scene_description': desc,
+                    'narration': current_block.strip()
+                })
             if len(scenes) >= MAX_SCENES:
                 break
+
+        if not scenes:
+            scenes = [{
+                'scene_description': '美丽的风景，高质量视觉画面',
+                'narration': novel_data.get('summary', '一个美丽的故事')
+            }]
+
+        print(f"✅ 拆分为 {len(scenes)} 个场景，平均每场景约 {sum(len(s['narration']) for s in scenes) // len(scenes)} 字")
         return scenes
 
+    def _extract_character_name(self, novel_data: dict) -> str:
+        """从小说数据中提取主角名称"""
+        import re
+        summary = novel_data.get('summary', '')
+        # 匹配 "主角李明" 或 "李明是一位"
+        patterns = [
+            r'主角[：:]\s*([^\s，。、]+)',
+            r'([^\s，。、]{2,4})[是为]一位',
+            r'([^\s，。、]{2,4})[是为]一个',
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, summary)
+            if match:
+                return match.group(1)
+        # 从第一章提取
+        chapters = novel_data.get('chapters', [])
+        if chapters:
+            content = chapters[0].get('content', '')
+            for pattern in patterns:
+                match = re.search(pattern, content)
+                if match:
+                    return match.group(1)
+        return None
+    
     def _extract_emotion_from_script(self, novel_data: dict) -> str:
         full_text = "".join([c.get('content', '') for c in novel_data.get('chapters', [])])
         emotion_map = {
@@ -390,12 +486,20 @@ class MultimediaWorkflow:
                 return emotion
         return 'epic'
 
-    def _generate_video_segment(self, prompt: str, idx: int, emotion: str = '') -> Optional[str]:
-        continuity = f"Scene {idx+1}, continuation of the story, consistent characters and visual style"
+    def _generate_video_segment(self, prompt: str, idx: int, emotion: str = '',
+                                global_style: str = None, character_name: str = None) -> Optional[str]:
+        continuity_parts = [f"Scene {idx+1}", "continuation of the story"]
+        if character_name:
+            continuity_parts.append(f"character '{character_name}' appears in all scenes, consistent appearance")
+        if global_style:
+            continuity_parts.append(f"{global_style} style, cinematic coherence")
+        continuity_parts.append("same visual style, consistent color tone")
+        continuity = ", ".join(continuity_parts)
         full_prompt = f"{prompt}, {continuity}"
         if emotion:
             full_prompt += f", {emotion} style"
         return self.video_handler.generate_video_from_prompt(full_prompt, duration=self.segment_duration)
-
+        
+    
     def __repr__(self):
         return f"<MultimediaWorkflow(segment_duration={self.segment_duration})>"

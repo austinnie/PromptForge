@@ -661,8 +661,7 @@ class NovelWriterOllama:
                           outline: str, characters: str, chapter_index: int,
                           total_chapters: int, style: str, temperature: float,
                           lang_config: Dict, prev_chapters: List[Dict] = None) -> Dict[str, str]:
-        """生成单个章节（多语言）"""
-
+        """生成单个章节（多语言），要求按场景组织"""
         system_template = lang_config.get('system_prompt', '你是一位专业的小说作家')
         language_instruction = lang_config.get('language_instruction', '')
 
@@ -676,6 +675,7 @@ class NovelWriterOllama:
         system_prompt += f"当前正在写第 {chapter_index}/{total_chapters} 章\n\n"
         system_prompt += language_instruction
 
+        # 添加上下文
         context = ""
         if prev_chapters:
             recent = prev_chapters[-2:]
@@ -691,8 +691,21 @@ class NovelWriterOllama:
         if not chapter_title:
             chapter_title = f"第{chapter_index}章"
 
-        # 生成章节内容
-        content_prompt = f"{system_prompt}\n{context}\n\n章节标题：{chapter_title}\n\n请写出第{chapter_index}章的完整内容："
+        # 生成章节内容（按场景）
+        content_prompt = f"""{system_prompt}\n{context}\n\n章节标题：{chapter_title}\n
+请以场景为单位写出本章内容。每个场景应包含两部分：
+1. 场景描述：描述画面、环境、动作（用于生成视频）。
+2. 旁白/对话：角色说的话或叙述（用于语音）。
+
+每个场景的旁白字数控制在 30-50 字（中文），场景描述不超过 30 字。
+请用 '【场景】' 标记每个场景的开始，场景内先写场景描述（以 '画面：' 开头），再写旁白（以 '旁白：' 开头）。
+例如：
+【场景】
+画面：月光洒在森林小径上，寂静无声。
+旁白：探索者李明轻声说：“这片森林似乎隐藏着什么秘密。”
+
+请写出第{chapter_index}章的完整内容，注意每个场景独立："""
+        
         chapter_content = self._call_ollama(ollama_url, model, content_prompt, temperature)
 
         return {
@@ -700,7 +713,7 @@ class NovelWriterOllama:
             "title": chapter_title,
             "content": chapter_content
         }
-
+        
     def _generate_summary(self, ollama_url: str, model: str, genre: str, title: str,
                           outline: str, characters: str, chapters: List[Dict],
                           lang_config: Dict) -> str:
