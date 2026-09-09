@@ -1,0 +1,44 @@
+{
+  "name": "技术热点文章生成器",
+  "description": "基于实时技术热点，生成技术文章，自动生成配图，输出Word文档",
+  "version": "1.0.0",
+  "inputs": [
+    {
+      "name": "style",
+      "type": "string",
+      "required": false,
+      "description": "写作风格 (专业分析型/通俗科普型/深度技术型/行业观察型/趋势预测型)",
+      "default": ""
+    },
+    {
+      "name": "hot_index",
+      "type": "integer",
+      "required": false,
+      "description": "选择第几个热点 (0-9)，不指定则随机",
+      "default": ""
+    },
+    {
+      "name": "model",
+      "type": "string",
+      "required": false,
+      "description": "使用的模型",
+      "default": "qwen2.5:7b"
+    }
+  ],
+  "outputs": [
+    {"name": "title", "description": "文章标题"},
+    {"name": "hot_topic", "description": "热点标题"},
+    {"name": "hot_source", "description": "热点来源"},
+    {"name": "style", "description": "写作风格"},
+    {"name": "word_file", "description": "Word文档路径"},
+    {"name": "image_file", "description": "配图路径"},
+    {"name": "article_file", "description": "文章JSON路径"}
+  ],
+  "dependencies": [
+    "feedparser",
+    "python-docx",
+    "Pillow",
+    "requests",
+    "ollama"
+  ]
+}

@@ -4,11 +4,13 @@
 from .news_aggregator import NewsAggregator
 from .novel_writer.skill import NovelWriterOllama
 from .voice_assistant.skill import VoiceAssistant
-from .music_generator.skill import MusicMaestro  # 正确类名
+from .music_generator.skill import MusicMaestro
+from .tech_hot_article.skill import TechHotArticle  # ✅ 新增
 
 __all__ = [
     'NewsAggregator',
     'NovelWriterOllama',
     'VoiceAssistant',
     'MusicMaestro',
+    'TechHotArticle',  # ✅ 新增
 ]
