@@ -2,8 +2,8 @@
 import re
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
-
-
+from core.safety import SafetyChecker
+from config.settings import settings  # ✅ 新增导入
 @dataclass
 class IntentResult:
     """意图分析结果"""
@@ -56,7 +56,7 @@ class IntentAnalyzer:
         'like this', 'similar', 'reference', 'same style'
     ]    
     
-    # 在类属性中添加
+    # ✅ 保留原有 VIDEO_KEYWORDS（用于直接命中判断）
     VIDEO_KEYWORDS = [
         # === 核心词 ===
         '视频', '生成视频', '制作视频', '视频生成', 'video', 'animate', '动图', '动画',
@@ -114,26 +114,7 @@ class IntentAnalyzer:
         """分析用户输入意图"""
         text_lower = text.lower()       
 
-
-        # 先检测意图（视频优先）
-        if any(k in text_lower for k in self.VIDEO_KEYWORDS):
-            return IntentResult(
-                type="video",  # 新类型
-                prompt=text,
-                original_text=text,
-                confidence=0.9
-            )
-            
-        if self._is_video_intent(text):
-            return IntentResult(
-                type="video",
-                prompt=text,
-                original_text=text,
-                confidence=0.9,
-                system_hint="⚠️ 视频生成受 API 政策限制，请合理使用内容"  # ✅
-            )
-    
-        # 1. 安全检查（仅对非视频意图生效）
+        # 1. 安全检查（最优先）
         if self._is_unsafe(text):
             return self._safe_fallback(text)
             
@@ -159,7 +140,7 @@ class IntentAnalyzer:
         if has_multiple and any(k in text_lower for k in self.COUPLE_KEYWORDS):
             return self._analyze_couple(text)
         
-        # 4. 对话意图（放在图生图之后，避免误判）
+        # 4. 对话意图（放在视频之前，减少误触）
         if any(k in text_lower for k in self.CHAT_KEYWORDS):
             return IntentResult(
                 type="chat",
@@ -167,7 +148,17 @@ class IntentAnalyzer:
                 confidence=0.9
             )
 
-        # 新增视频创作
+        # 5. 视频意图检测（移到后面，条件更严格）
+        if self._is_video_intent(text):
+            return IntentResult(
+                type="video",
+                prompt=text,
+                original_text=text,
+                confidence=0.9,
+                system_hint="⚠️ 视频生成受 API 政策限制，请合理使用内容"
+            )
+        
+        # 6. 全自动视频创作
         if any(k in text_lower for k in ['创作视频', '全自动', '生成故事', '自动生成']):
             return IntentResult(
                 type="multimedia",
@@ -176,30 +167,43 @@ class IntentAnalyzer:
                 confidence=0.9
             )
             
-        # 5. 文生图
+        # 7. 文生图
         if self._is_gen_intent(text):
             return self._analyze_txt2img(text)
         
-        # 6. 普通对话
+        # 8. 普通对话
         return IntentResult(
             type="chat",
             original_text=text,
             confidence=0.3
         )
 
-    # core/intent_analyzer.py
-
     def _is_video_intent(self, text: str) -> bool:
-        """判断是否为视频生成意图"""
+        """
+        判断是否为视频生成意图（严格模式）
+        - 直接命中 VIDEO_KEYWORDS（明确视频相关词）
+        - 或组合条件：动作词 + 场景词 同时出现
+        """
         text_lower = text.lower()
         
-        # 1. 直接命中关键词
-        if any(k in text_lower for k in self.VIDEO_KEYWORDS):
-            return True
+        # 1. 直接命中关键词（包括"视频"、动作词等）
+        # 但为了提高准确性，增加一个过滤：如果命中的是日常动作词但没有场景词，不触发
+        for kw in self.VIDEO_KEYWORDS:
+            if kw in text_lower:
+                # 如果是常见的日常词，需要检查是否有场景词辅助
+                daily_words = ['走路', '跑步', '吃饭', '喝水', '工作', '学习', '阅读', '散步', '睡觉', '醒来']
+                if kw in daily_words:
+                    # 必须有场景词才触发
+                    scene_words = ['海滩', '森林', '城市', '星空', '草原', '沙漠', '雪山', '花园', '公园', '街道', '夜景', '大海', '湖泊']
+                    if any(s in text_lower for s in scene_words):
+                        return True
+                    # 没有场景词，不触发
+                    continue
+                return True
         
-        # 2. 组合匹配：动作 + 场景
-        action_words = ['走路', '跑步', '跳', '飞', '游泳', '跳舞', '开车', '做饭', '唱歌', '演奏']
-        scene_words = ['海滩', '森林', '城市', '星空', '草原', '沙漠', '雪山', '花园']
+        # 2. 组合匹配：动作 + 场景（更严格的补充）
+        action_words = ['走路', '跑步', '跳', '飞', '游泳', '跳舞', '开车', '做饭', '唱歌', '演奏', '奔跑', '飞翔', '骑行']
+        scene_words = ['海滩', '森林', '城市', '星空', '草原', '沙漠', '雪山', '花园', '公园', '街道', '夜景']
         has_action = any(k in text_lower for k in action_words)
         has_scene = any(k in text_lower for k in scene_words)
         
@@ -313,9 +317,15 @@ class IntentAnalyzer:
         return [en for cn, en in mapping.items() if cn in text]
     
     def _is_unsafe(self, text: str) -> bool:
-        unsafe = ['性交', '做爱', '裸体', '色情', '阴茎', '阴道', 
-                  'sex', 'nude', 'porn', 'explicit', 'fuck']
-        return any(k in text.lower() for k in unsafe)
+        """检查是否包含不安全内容（使用完整 SafetyChecker，受开关控制）"""
+        # ✅ 如果安全检测被禁用，直接返回 False
+        if not settings.enable_safety_check:
+            return False
+        
+        is_unsafe, matched = SafetyChecker.check(text)
+        if is_unsafe and matched:
+            print(f"⚠️ 安全检测触发: {matched[:5]}")
+        return is_unsafe
     
     def _safe_fallback(self, text: str) -> IntentResult:
         return IntentResult(

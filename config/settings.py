@@ -98,12 +98,15 @@ class Settings:
     
     # --- 安全 ---
     safe_mode: bool = os.getenv("SAFE_MODE", "true").lower() == "true"
+    # ✅ 新增：是否启用安全检测（独立开关，默认跟随 safe_mode）
+    enable_safety_check: bool = os.getenv("ENABLE_SAFETY_CHECK", "true").lower() == "true"    
     
     def __post_init__(self):
         self.output_dir.mkdir(exist_ok=True)
         # 调试打印
         print(f"📂 Settings.video_segment_duration = {self.video_segment_duration}")
         print(f"📂 Settings.video_duration = {self.video_duration}")
+        print(f"🔒 安全检测开关: {'启用' if self.enable_safety_check else '禁用'}")
         
     def get_model_path(self) -> Optional[str]:
         if self.model_path and os.path.exists(self.model_path):
