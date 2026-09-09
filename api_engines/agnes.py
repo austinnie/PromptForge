@@ -383,8 +383,7 @@ class AgnesEngine:
             "model": self.image_model,
             "prompt": prompt,
             "n": 1,
-            "size": size,            
-            "response_format": "url",   # ← 添加这一行
+            "size": size, 
             "image": f"data:image/png;base64,{img_base64}",
         }
         
