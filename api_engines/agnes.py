@@ -31,7 +31,7 @@ class AgnesEngine:
         "text-to-image": "agnes-image-2.1-flash",  # ✅ 官方文档确认
         "image-to-image": "agnes-image-2.1-flash", # ✅ 官方文档确认
         "chat": "agnes-2.5-flash",                 # ✅ 官方文档：agnes-2.5-flash
-        "video": "agnes-video-v2.0",               # ✅ 官方文档：agnes-video-v2.0
+        "video": "agnes-video-2.5-flash",               # ✅ 官方文档：agnes-video-v2.0
         "vision": "agnes-2.5-flash",               # ✅ 官方文档：agnes-2.5-flash 支持视觉
     }
     
@@ -599,7 +599,7 @@ class AgnesEngine:
         }
         
         # ✅ 修正轮询端点
-        url = f"{self.base_url}/agnesapi?video_id={video_id}"
+        url = f"{self.base_url}/agnesapi?video_id={video_id}&model_name={self.video_model}"
         
         response = requests.get(url, headers=headers, timeout=30)
         if response.status_code != 200:
@@ -609,7 +609,7 @@ class AgnesEngine:
     
     # api_engines/agnes.py
 
-    def wait_for_video(self, video_id: str, max_wait: int = 300) -> str:
+    def wait_for_video_old(self, video_id: str, max_wait: int = 300) -> str:
         """
         等待视频生成完成
         
@@ -625,7 +625,7 @@ class AgnesEngine:
             status = self.video_status(video_id)
             print(f"📊 完整状态: {json.dumps(status, indent=2)}")  # ✅ 添加日志
             # 根据实际返回格式调整字段名
-            state = status.get('state', status.get('status', ''))
+            state = status.get('status', '')
             
             if state == 'completed':
                 return status.get('video_url', status.get('url', ''))
@@ -635,6 +635,42 @@ class AgnesEngine:
             
             print(f"⏳ 视频生成中... ({state})")
             time.sleep(5)
+        
+        raise Exception(f"视频生成超时 ({max_wait}s)")
+
+    def wait_for_video(self, video_id: str, max_wait: int = 600) -> str:
+        """等待视频生成完成（改进版：更频繁轮询）"""
+        start_time = time.time()
+        last_progress = -1
+        while time.time() - start_time < max_wait:
+            status = self.video_status(video_id)
+            state = status.get('status', '')
+            progress = status.get('progress', 0)
+            
+            # 打印进度
+            if progress != last_progress:
+                print(f"⏳ 视频生成进度: {progress}%")
+                last_progress = progress
+            
+            if state in ('completed', 'succeeded'):
+                video_url = status.get('video_url', status.get('url', ''))
+                if video_url:
+                    return video_url
+                else:
+                    # 有时候完成但没有 URL，再等几秒
+                    time.sleep(2)
+                    continue
+            
+            if state in ('failed', 'error'):
+                error = status.get('error', '未知错误')
+                raise Exception(f"视频生成失败: {error}")
+            
+            # 动态轮询间隔：前60秒每2秒查一次，之后每5秒查一次
+            elapsed = time.time() - start_time
+            if elapsed < 60:
+                time.sleep(2)
+            else:
+                time.sleep(5)
         
         raise Exception(f"视频生成超时 ({max_wait}s)")
     

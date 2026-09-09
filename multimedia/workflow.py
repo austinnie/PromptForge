@@ -192,7 +192,7 @@ class MultimediaWorkflow:
         return None
 
     def _generate_music_segment(self, emotion: str, duration: int, idx: int) -> Optional[str]:
-        """生成单个场景的背景音乐（短片段）"""
+        """生成单个场景的背景音乐"""
         result = self.music_gen.execute(
             topic="背景音乐",
             emotion=emotion,
@@ -204,24 +204,10 @@ class MultimediaWorkflow:
         if result['status'] in ('success', 'partial_success'):
             audio_file = result['result'].get('audio_file')
             if audio_file and os.path.exists(audio_file):
-                # 如果是 MIDI，转换为 WAV
+                # 如果是 MIDI，跳过（无法被 moviepy 读取）
                 if audio_file.lower().endswith('.mid'):
-                    wav_file = audio_file.replace('.mid', '.wav')
-                    if not os.path.exists(wav_file):
-                        soundfont = './skills/music_generator/soundfonts/GeneralUser-GS.sf2'
-                        if not os.path.exists(soundfont):
-                            soundfont = './skills/music_generator/soundfonts/SGM-V2.01.sf2'
-                        if os.path.exists(soundfont):
-                            fluidsynth = './skills/music_generator/soundfonts/fluidsynth-v2.6.0-win10-x64-cpp11/bin/fluidsynth.exe'
-                            if os.path.exists(fluidsynth):
-                                cmd = [fluidsynth, '-ni', soundfont, audio_file, '-F', wav_file, '-r', '44100']
-                                try:
-                                    subprocess.run(cmd, check=True, timeout=60, capture_output=True)
-                                    audio_file = wav_file
-                                except:
-                                    pass
-                    else:
-                        audio_file = wav_file
+                    print(f"⚠️ 音乐生成返回 MIDI，moviepy 不支持，跳过")
+                    return None
                 # 截取准确时长
                 try:
                     audio_clip = AudioFileClip(audio_file)
@@ -243,7 +229,7 @@ class MultimediaWorkflow:
                     print(f"音乐剪辑异常: {e}")
                     return audio_file
         return None
-
+    
     def _generate_subtitle_for_segment(self, text: str, voice_path: str, idx: int) -> Optional[str]:
         """生成单个场景的字幕"""
         script = {"narration": text}
@@ -261,12 +247,19 @@ class MultimediaWorkflow:
                 audio_tracks.append(voice_audio)
 
             if music_path and os.path.exists(music_path):
-                bg_audio = AudioFileClip(music_path).with_volume_scaling(0.3)
-                if bg_audio.duration < video.duration:
-                    bg_audio = bg_audio.loop(duration=video.duration)
+                # 跳过 MIDI 文件（moviepy 不支持）
+                if music_path.lower().endswith('.mid'):
+                    print(f"⚠️ 跳过 MIDI 文件（moviepy 不支持）: {music_path}")
                 else:
-                    bg_audio = bg_audio.subclip(0, video.duration)
-                audio_tracks.append(bg_audio)
+                    try:
+                        bg_audio = AudioFileClip(music_path).with_volume_scaling(0.3)
+                        if bg_audio.duration < video.duration:
+                            bg_audio = bg_audio.loop(duration=video.duration)
+                        else:
+                            bg_audio = bg_audio.subclip(0, video.duration)
+                        audio_tracks.append(bg_audio)
+                    except Exception as e:
+                        print(f"⚠️ 加载音乐失败: {e}")
 
             if audio_tracks:
                 final_audio = CompositeAudioClip(audio_tracks)
@@ -289,7 +282,7 @@ class MultimediaWorkflow:
         except Exception as e:
             print(f"合并片段 {idx} 失败: {e}")
             return None
-
+        
     def _concatenate_segments(self, segment_paths: List[str]) -> str:
         """拼接所有已合并的片段"""
         clips = [VideoFileClip(p) for p in segment_paths]
@@ -498,8 +491,21 @@ class MultimediaWorkflow:
         full_prompt = f"{prompt}, {continuity}"
         if emotion:
             full_prompt += f", {emotion} style"
-        return self.video_handler.generate_video_from_prompt(full_prompt, duration=self.segment_duration)
-        
+
+        # 重试一次
+        for attempt in range(2):
+            try:
+                result = self.video_handler.generate_video_from_prompt(full_prompt, duration=self.segment_duration)
+                if result:
+                    return result
+                if attempt == 0:
+                    print(f"⏳ 场景 {idx+1} 生成失败，重试中...")
+                    time.sleep(5)
+            except Exception as e:
+                print(f"⚠️ 场景 {idx+1} 尝试 {attempt+1} 失败: {e}")
+                if attempt == 0:
+                    time.sleep(5)
+        return None
     
     def __repr__(self):
         return f"<MultimediaWorkflow(segment_duration={self.segment_duration})>"
