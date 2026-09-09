@@ -3,39 +3,38 @@ import json
 import os
 import re
 import time
-import tempfile
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Dict, Any, List, Optional
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
-import subprocess
+import tempfile
 
 # 导入技能
 from skills.novel_writer.skill import NovelWriterOllama
 from skills.voice_assistant.skill import VoiceAssistant
 from skills.music_generator.skill import MusicMaestro
 
-# 导入视频处理器和合成器
+# 导入视频处理器
 from handlers.video_handler import VideoHandler
 from .subtitle import generate_srt_from_script
-from .assembler import assemble_video
-from skills.music_generator.music_generator_cli import MusicGenerator
+
+# 新版 moviepy
+from moviepy import VideoFileClip, AudioFileClip, CompositeAudioClip, concatenate_videoclips, TextClip, CompositeVideoClip
+from moviepy.video.tools.subtitles import SubtitlesClip
 
 # ==================== 常量配置 ====================
-# 视频拆分
-MAX_SCENES = 16                      # 最大场景数
-MIN_PARAGRAPH_LEN = 30               # 最小段落长度（字符）
-DESC_CHARS = 100                     # 场景描述最大字数
-NARRATION_CHARS = 300                # 旁白最大字数（初步截断）
+MAX_SCENES = 16
+MIN_PARAGRAPH_LEN = 30
+DESC_CHARS = 100
+NARRATION_CHARS = 300
 
-# 语音合成
-VOICE_CHARS_PER_SECOND = 2.8         # 中文语速（字/秒）
-MAX_VOICE_CHARS = 2000               # 语音最大字符数（安全限制）
-VOICE_SPEED = 1.1                    # TTS 语速
+VOICE_CHARS_PER_SECOND = 2.8
+MAX_VOICE_CHARS = 2000
+VOICE_SPEED = 1.1
 
-# 小说生成
 DEFAULT_CHAPTER_COUNT = 1
-DEFAULT_WORDS_PER_CHAPTER = 200      # 从 200 提高到 300，配合 max_scenes=16
+DEFAULT_WORDS_PER_CHAPTER = 200
 DEFAULT_STYLE = '简洁'
 DEFAULT_TEMPERATURE = 0.85
 
@@ -46,11 +45,11 @@ class MultimediaWorkflow:
         self.output_dir = app.settings.output_dir / "multimedia"
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        # ✅ 统一从 settings 读取
+        # 统一分段时长
         self.segment_duration = app.settings.video_segment_duration
         print(f"🔍 [MultimediaWorkflow] 分段时长 = {self.segment_duration} 秒")
-        
-        # 初始化各技能（传入配置字典）
+
+        # 初始化各技能
         self.novel_writer = NovelWriterOllama({
             'default_model': app.settings.ollama_model,
             'ollama_url': app.settings.ollama_url,
@@ -67,36 +66,34 @@ class MultimediaWorkflow:
             'output_dir': str(self.output_dir / 'music'),
             'ollama_host': app.settings.ollama_url,
             'ollama_model': app.settings.ollama_model,
-            'music_mode': 'auto',  # auto / midi / musicgen
+            'music_mode': 'auto',
         })
 
         self.video_handler = VideoHandler(app)
 
+        # 临时目录用于存放合并过程中的中间文件
+        self.temp_dir = self.output_dir / "temp_merge"
+        self.temp_dir.mkdir(exist_ok=True)
+
     def execute(self, theme: str, **kwargs) -> Dict[str, Any]:
         """
-        全自动创作主流程
-        :param theme: 用户主题
-        :param kwargs: 可选覆盖参数
-        :return: 结果字典
+        全自动创作主流程（改进版：每个场景独立合成）
         """
         self.app._append_message("system", "📝 正在生成故事脚本...")
 
-        # 1. 准备小说参数（自动补全）
+        # 1. 准备小说参数
         novel_params = self._prepare_novel_params(theme, kwargs)
 
-        # 2. 调用小说生成器
+        # 2. 生成小说
         novel_result = self.novel_writer.execute(**novel_params)
         if novel_result['status'] != 'success':
             raise Exception(f"小说生成失败: {novel_result.get('error')}")
-
         novel_data = novel_result['result']
         self.app._append_message("system",
             f"✅ 小说生成完成！共 {len(novel_data['chapters'])} 章，{novel_data['total_words']} 字")
 
-        # 3. 将小说拆分为场景
+        # 3. 拆分为场景
         scenes = self._novel_to_scenes(novel_data)
-
-        # 如果无场景，用默认场景
         if not scenes:
             scenes = [{
                 'scene_description': '美丽的风景，高质量视觉画面',
@@ -106,85 +103,205 @@ class MultimediaWorkflow:
         # 4. 提取情绪
         emotion = self._extract_emotion_from_script(novel_data)
 
-        # 5. 估算视频总时长（每个场景时长由配置决定）
-        total_video_duration = len(scenes) * self.segment_duration  # 秒
+        total_scenes = len(scenes)
+        self.app._append_message("system", f"🎬 共 {total_scenes} 个场景，每个 {self.segment_duration} 秒")
 
-        # 6. 并行生成语音、音乐，但视频片段串行生成（避免 API 限流）
-        self.app._append_message("system", f"🎬 准备生成 {len(scenes)} 个视频片段（每个 {self.segment_duration} 秒），总时长约 {total_video_duration} 秒")
+        # 5. 为每个场景生成独立内容
+        merged_segments = []
+        for idx, scene in enumerate(scenes):
+            self.app._append_message("system", f"  📹 处理场景 {idx+1}/{total_scenes}...")
 
-        # 语音（完整旁白）
-        full_narration = "\n".join([s['narration'] for s in scenes])
-        self.app._append_message("system", "🎙️ 正在合成语音旁白...")
-        # ✅ 传入 max_duration=total_video_duration，使语音长度匹配视频时长
-        voice_path = self._generate_voice(
-            full_narration,
-            kwargs.get('voice', 'zh-CN-XiaoxiaoNeural'),
-            max_duration=total_video_duration
-        )
-
-        # 音乐（根据估算时长）
-        self.app._append_message("system", "🎵 正在生成背景音乐...")
-        music_path = self._generate_music(
-            theme=theme,
-            emotion=emotion,
-            duration=total_video_duration  # 传入估算的视频总时长
-        )
-
-        # 串行生成视频片段
-        self.app._append_message("system", "🎬 正在生成视频片段（串行，避免 API 限流）...")
-        video_segments = []
-        for i, scene in enumerate(scenes):
-            self.app._append_message("system", f"  📹 生成第 {i+1}/{len(scenes)} 个片段...")
             desc = scene.get('scene_description', '')
-            if desc:
-                path = self._generate_video_segment(desc, i, emotion)
-                if path:
-                    video_segments.append(path)
-                    self.app._append_message("system", f"  ✅ 第 {i+1} 个片段完成")
-                else:
-                    self.app._append_message("system", f"  ⚠️ 第 {i+1} 个片段生成失败，跳过")
+            narration = scene.get('narration', '')
+
+            if not desc:
+                desc = "风景画面"
+            if not narration:
+                narration = "这是一个美丽的场景。"
+
+            # 5.1 生成视频片段
+            video_path = self._generate_video_segment(desc, idx, emotion)
+            if not video_path:
+                self.app._append_message("system", f"  ⚠️ 场景 {idx+1} 视频生成失败，跳过")
+                continue
+
+            # 5.2 生成语音片段
+            voice_path = self._generate_voice_segment(narration, idx)
+            if not voice_path:
+                self.app._append_message("system", f"  ⚠️ 场景 {idx+1} 语音生成失败，使用无声视频")
+                subtitle_path = None
             else:
-                self.app._append_message("system", f"  ⚠️ 第 {i+1} 个场景无描述，跳过")
+                # 5.3 生成字幕片段
+                subtitle_path = self._generate_subtitle_for_segment(narration, voice_path, idx)
 
-        if not video_segments:
-            raise Exception("未能生成任何视频片段")
+            # 5.4 生成音乐片段（背景音乐）
+            music_path = self._generate_music_segment(emotion, self.segment_duration, idx)
 
-        # 7. 生成字幕
-        self.app._append_message("system", "📝 生成字幕...")
-        srt_path = self._generate_subtitle(full_narration, voice_path)
+            # 5.5 合并单个片段
+            merged_path = self._merge_single_segment(
+                video_path, voice_path, music_path, subtitle_path, idx
+            )
+            if merged_path:
+                merged_segments.append(merged_path)
+                self.app._append_message("system", f"  ✅ 场景 {idx+1} 合并完成")
+            else:
+                self.app._append_message("system", f"  ⚠️ 场景 {idx+1} 合并失败，跳过")
 
-        # 8. 合成最终视频
-        self.app._append_message("system", "🎬 合成最终视频...")
-        final_path = assemble_video(
-            video_segments=video_segments,
-            music_path=music_path,
-            voice_path=voice_path,
-            subtitle_path=srt_path,
-            output_dir=self.output_dir
-        )
+        if not merged_segments:
+            raise Exception("未能生成任何有效的视频片段")
+
+        # 6. 拼接所有片段
+        self.app._append_message("system", "🎬 正在拼接所有片段...")
+        final_path = self._concatenate_segments(merged_segments)
 
         self.app._append_message("system", f"✅ 全部完成！视频已保存至: {final_path}")
+
+        # 清理临时目录（可选）
+        # shutil.rmtree(self.temp_dir, ignore_errors=True)
 
         return {
             "status": "success",
             "final_video": final_path,
             "novel": novel_data,
             "scenes": scenes,
-            "video_segments": video_segments,
-            "music": music_path,
-            "voice": voice_path,
-            "subtitle": srt_path,
+            "video_segments": merged_segments,
         }
 
-    # ==================== 辅助方法 ====================
+    # ==================== 场景级生成方法 ====================
+
+    def _generate_voice_segment(self, text: str, idx: int) -> Optional[str]:
+        """生成单个场景的语音"""
+        if len(text) > MAX_VOICE_CHARS:
+            text = text[:MAX_VOICE_CHARS] + "..."
+        result = self.tts.execute(
+            action='tts',
+            text=text,
+            voice='zh-CN-XiaoxiaoNeural',
+            speed=VOICE_SPEED,
+            output_file=None
+        )
+        if result['status'] == 'success':
+            audio_path = result['result'].get('audio_path')
+            return audio_path
+        return None
+
+    def _generate_music_segment(self, emotion: str, duration: int, idx: int) -> Optional[str]:
+        """生成单个场景的背景音乐（短片段）"""
+        result = self.music_gen.execute(
+            topic="背景音乐",
+            emotion=emotion,
+            duration=duration,
+            language='zh',
+            use_enhanced=True,
+            force_mode=None
+        )
+        if result['status'] in ('success', 'partial_success'):
+            audio_file = result['result'].get('audio_file')
+            if audio_file and os.path.exists(audio_file):
+                # 如果是 MIDI，转换为 WAV
+                if audio_file.lower().endswith('.mid'):
+                    wav_file = audio_file.replace('.mid', '.wav')
+                    if not os.path.exists(wav_file):
+                        soundfont = './skills/music_generator/soundfonts/GeneralUser-GS.sf2'
+                        if not os.path.exists(soundfont):
+                            soundfont = './skills/music_generator/soundfonts/SGM-V2.01.sf2'
+                        if os.path.exists(soundfont):
+                            fluidsynth = './skills/music_generator/soundfonts/fluidsynth-v2.6.0-win10-x64-cpp11/bin/fluidsynth.exe'
+                            if os.path.exists(fluidsynth):
+                                cmd = [fluidsynth, '-ni', soundfont, audio_file, '-F', wav_file, '-r', '44100']
+                                try:
+                                    subprocess.run(cmd, check=True, timeout=60, capture_output=True)
+                                    audio_file = wav_file
+                                except:
+                                    pass
+                    else:
+                        audio_file = wav_file
+                # 截取准确时长
+                try:
+                    audio_clip = AudioFileClip(audio_file)
+                    if audio_clip.duration > duration:
+                        audio_clip = audio_clip.subclip(0, duration)
+                        temp_audio = self.temp_dir / f"music_seg_{idx:03d}.mp3"
+                        audio_clip.write_audiofile(str(temp_audio), fps=44100, bitrate='192k')
+                        audio_clip.close()
+                        return str(temp_audio)
+                    elif audio_clip.duration < duration:
+                        audio_clip = audio_clip.loop(duration=duration)
+                        temp_audio = self.temp_dir / f"music_seg_{idx:03d}.mp3"
+                        audio_clip.write_audiofile(str(temp_audio), fps=44100, bitrate='192k')
+                        audio_clip.close()
+                        return str(temp_audio)
+                    else:
+                        return audio_file
+                except Exception as e:
+                    print(f"音乐剪辑异常: {e}")
+                    return audio_file
+        return None
+
+    def _generate_subtitle_for_segment(self, text: str, voice_path: str, idx: int) -> Optional[str]:
+        """生成单个场景的字幕"""
+        script = {"narration": text}
+        return generate_srt_from_script(script, voice_path)
+
+    def _merge_single_segment(self, video_path: str, voice_path: str,
+                              music_path: str, subtitle_path: str, idx: int) -> Optional[str]:
+        """合并单个场景的视频、语音、音乐、字幕为一个片段"""
+        try:
+            video = VideoFileClip(video_path)
+            audio_tracks = []
+
+            if voice_path and os.path.exists(voice_path):
+                voice_audio = AudioFileClip(voice_path)
+                audio_tracks.append(voice_audio)
+
+            if music_path and os.path.exists(music_path):
+                bg_audio = AudioFileClip(music_path).with_volume_scaling(0.3)
+                if bg_audio.duration < video.duration:
+                    bg_audio = bg_audio.loop(duration=video.duration)
+                else:
+                    bg_audio = bg_audio.subclip(0, video.duration)
+                audio_tracks.append(bg_audio)
+
+            if audio_tracks:
+                final_audio = CompositeAudioClip(audio_tracks)
+                video = video.with_audio(final_audio)
+
+            if subtitle_path and os.path.exists(subtitle_path):
+                try:
+                    generator = lambda txt: TextClip(txt, font='Arial', fontsize=24,
+                                                     color='white', stroke_color='black', stroke_width=1)
+                    subtitles = SubtitlesClip(subtitle_path, generator)
+                    video = CompositeVideoClip([video, subtitles.set_position(('center', 'bottom'))])
+                except Exception as e:
+                    print(f"字幕加载失败: {e}")
+
+            output_path = self.temp_dir / f"merged_seg_{idx:03d}.mp4"
+            video.write_videofile(str(output_path), fps=24, codec='libx264', audio_codec='aac')
+            video.close()
+            return str(output_path)
+
+        except Exception as e:
+            print(f"合并片段 {idx} 失败: {e}")
+            return None
+
+    def _concatenate_segments(self, segment_paths: List[str]) -> str:
+        """拼接所有已合并的片段"""
+        clips = [VideoFileClip(p) for p in segment_paths]
+        final_video = concatenate_videoclips(clips, method="compose")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_path = self.output_dir / f"final_{timestamp}.mp4"
+        final_video.write_videofile(str(output_path), fps=24, codec='libx264', audio_codec='aac')
+        for clip in clips:
+            clip.close()
+        return str(output_path)
+
+    # ==================== 辅助方法（原有，完整保留） ====================
 
     def _prepare_novel_params(self, theme: str, user_kwargs: dict) -> dict:
-        """自动补全小说生成参数（使用 Ollama），调整为极短篇"""
         required = ['genre', 'title', 'outline', 'characters']
         if all(k in user_kwargs for k in required):
             return {k: user_kwargs[k] for k in required}
 
-        # 调用 Ollama 生成缺失参数
         prompt = f"""请根据用户给出的主题，生成一部小说的完整创作参数。
 用户主题：{theme}
 
@@ -207,12 +324,10 @@ class MultimediaWorkflow:
                 "characters": "主角：一位勇敢的探索者"
             }
 
-        # 合并用户参数
         for k in required:
             if k in user_kwargs and user_kwargs[k]:
                 params[k] = user_kwargs[k]
 
-        # ✅ 使用常量
         params.setdefault('chapter_count', DEFAULT_CHAPTER_COUNT)
         params.setdefault('words_per_chapter', DEFAULT_WORDS_PER_CHAPTER)
         params.setdefault('style', DEFAULT_STYLE)
@@ -221,7 +336,6 @@ class MultimediaWorkflow:
         return params
 
     def _call_ollama(self, prompt: str, temperature: float = 0.7) -> str:
-        """调用 Ollama API"""
         import requests
         url = self.app.settings.ollama_url + "/api/generate"
         payload = {
@@ -239,26 +353,18 @@ class MultimediaWorkflow:
         return ""
 
     def _novel_to_scenes(self, novel_data: dict) -> List[dict]:
-        """将小说拆分为场景列表，限制最多 MAX_SCENES 个场景"""
         import re
         scenes = []
-
         for chapter in novel_data.get('chapters', []):
             content = chapter.get('content', '')
-            # 首先按段落拆分
             paragraphs = [p.strip() for p in content.split('\n') if p.strip()]
-            # 如果段落太少（少于2），则按句子拆分
             if len(paragraphs) < 2:
-                # 按中文句号、问号、感叹号拆分
                 sentences = re.split(r'[。！？；\n]+', content)
                 paragraphs = [s.strip() for s in sentences if s.strip()]
-            
             for para in paragraphs:
                 if len(para) < MIN_PARAGRAPH_LEN:
                     continue
-                # 取前 DESC_CHARS 字作为视频描述
                 desc = para[:DESC_CHARS] + "，高质量视觉画面" if len(para) > DESC_CHARS else para + "，高质量视觉画面"
-                # 旁白取前 NARRATION_CHARS 字
                 narration = para[:NARRATION_CHARS]
                 scenes.append({
                     'scene_description': desc,
@@ -268,11 +374,9 @@ class MultimediaWorkflow:
                     break
             if len(scenes) >= MAX_SCENES:
                 break
-
         return scenes
 
     def _extract_emotion_from_script(self, novel_data: dict) -> str:
-        """从小说内容推断情绪"""
         full_text = "".join([c.get('content', '') for c in novel_data.get('chapters', [])])
         emotion_map = {
             'joyful': ['快乐', '喜悦', '开心', '阳光', '笑容', '幸福'],
@@ -287,133 +391,11 @@ class MultimediaWorkflow:
         return 'epic'
 
     def _generate_video_segment(self, prompt: str, idx: int, emotion: str = '') -> Optional[str]:
-        """生成单个视频片段，加入连贯性提示"""
-        # 加入场景编号和连贯性提示
         continuity = f"Scene {idx+1}, continuation of the story, consistent characters and visual style"
         full_prompt = f"{prompt}, {continuity}"
         if emotion:
             full_prompt += f", {emotion} style"
-
-        # ✅ 调用时明确传入时长（或者不传，让 VideoHandler 使用其默认值）
-        # 这里我们显式传递，保持一致性
         return self.video_handler.generate_video_from_prompt(full_prompt, duration=self.segment_duration)
-        
-    def _generate_music_midi(self, theme: str, emotion: str, duration: int) -> Optional[str]:
-        result = self.music_gen.execute(
-            topic=theme,
-            emotion=emotion,
-            duration=duration,
-            language='zh',
-            use_enhanced=True,
-            force_mode=None
-        )
-        if result['status'] not in ('success', 'partial_success'):
-            return None
 
-        audio_file = result['result'].get('audio_file')
-        if not audio_file or not os.path.exists(audio_file):
-            return None
-
-        # 如果是 MIDI，转换为 WAV
-        if audio_file.lower().endswith('.mid'):
-            wav_file = audio_file.replace('.mid', '.wav')
-            if not os.path.exists(wav_file):
-                print(f"🎵 转换 MIDI 到 WAV: {audio_file} -> {wav_file}")
-                # 使用 fluidsynth 转换（需安装 fluidsynth 并指定 SoundFont）
-                soundfont = self.music_gen.engine.config.get('soundfont', '')  # 可在配置中指定
-                if not soundfont:
-                    # 尝试常见路径
-                    soundfont = './skills/music_generator/soundfonts/GeneralUser-GS.sf2'
-                    if not os.path.exists(soundfont):
-                        soundfont = './skills/music_generator/soundfonts/SGM-V2.01.sf2'
-                if not os.path.exists(soundfont):
-                    print("⚠️ 未找到 SoundFont，无法转换 MIDI，跳过音乐")
-                    return None
-
-                cmd = ['fluidsynth', '-ni', soundfont, audio_file, '-F', wav_file, '-r', '44100']
-                try:
-                    subprocess.run(cmd, check=True, timeout=60, capture_output=True)
-                    print(f"✅ MIDI 转换成功: {wav_file}")
-                    audio_file = wav_file
-                except Exception as e:
-                    print(f"❌ MIDI 转换失败: {e}")
-                    return None
-            else:
-                audio_file = wav_file
-
-        return audio_file
-
-    def _generate_music(self, theme: str, emotion: str, duration: int) -> Optional[str]:
-        """生成背景音乐，优先使用 MP3（MusicGenerator），失败则回退到 MIDI（MusicMaestro）"""
-        # 方式1：MP3（首选）
-        try:
-            from skills.music_generator.music_generator_cli import MusicGenerator
-            gen = MusicGenerator()
-            result = gen.create_music(
-                topic=theme,
-                emotion=emotion,
-                duration=duration,
-                language='zh'
-            )
-            if result["status"] == "success":
-                audio_file = result["audio_file"]
-                if audio_file and os.path.exists(audio_file):
-                    print(f"✅ 使用 MP3 音乐: {audio_file}")
-                    return audio_file
-            else:
-                print(f"⚠️ MP3 生成失败: {result.get('message', '未知错误')}")
-        except Exception as e:
-            print(f"⚠️ MP3 生成异常: {e}")
-        
-        # 方式2：MIDI（备选）
-        print("🔄 回退到 MIDI 模式...")
-        return self._generate_music_midi(theme, emotion, duration)
-        
-    def _generate_voice(self, text: str, voice: str, max_duration: int = None) -> Optional[str]:
-        """合成语音，根据视频总时长限制文本长度"""
-        # 如果指定了最大时长，按语速估算截断
-        if max_duration and max_duration > 0:
-            max_chars = int(max_duration * VOICE_CHARS_PER_SECOND)
-            if len(text) > max_chars:
-                import re
-                sentences = re.split(r'[。！？；\n]+', text)
-                truncated = ""
-                for sent in sentences:
-                    if len(truncated) + len(sent) + 1 <= max_chars:
-                        truncated += sent + "。"
-                    else:
-                        break
-                text = truncated if truncated else text[:max_chars]
-                print(f"⚠️ 旁白从 {len(text)} 字截断至约 {max_duration} 秒语音")
-        
-        # 安全限制（防止超长文本）
-        if len(text) > MAX_VOICE_CHARS:
-            text = text[:MAX_VOICE_CHARS] + " ..."
-        
-        result = self.tts.execute(
-            action='tts',
-            text=text,
-            voice=voice,
-            speed=VOICE_SPEED,
-            output_file=None
-        )
-        
-        if result['status'] == 'success':
-            audio_path = result['result'].get('audio_path')
-            # 打印实际语音信息（用于验证语速）
-            if audio_path:
-                try:
-                    from mutagen import File
-                    audio = File(audio_path)
-                    if audio:
-                        actual_duration = audio.info.length
-                        print(f"🎤 实际语音: {actual_duration:.1f} 秒, {len(text)} 字, 语速 {len(text)/actual_duration:.1f} 字/秒")
-                except:
-                    pass
-            return audio_path
-        return None
-
-    def _generate_subtitle(self, text: str, voice_path: str) -> Optional[str]:
-        """生成字幕（复用原有函数）"""
-        script = {"narration": text}
-        return generate_srt_from_script(script, voice_path)
+    def __repr__(self):
+        return f"<MultimediaWorkflow(segment_duration={self.segment_duration})>"
