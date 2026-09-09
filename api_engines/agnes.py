@@ -615,7 +615,7 @@ class AgnesEngine:
     
     # api_engines/agnes.py
 
-    def wait_for_video_old(self, video_id: str, max_wait: int = 300) -> str:
+    def wait_for_video(self, video_id: str, max_wait: int = 300) -> str:
         """
         等待视频生成完成
         
@@ -644,39 +644,55 @@ class AgnesEngine:
         
         raise Exception(f"视频生成超时 ({max_wait}s)")
 
-    def wait_for_video(self, video_id: str, max_wait: int = 600) -> str:
-        """等待视频生成完成（改进版：更频繁轮询）"""
+    def wait_for_video_new(self, video_id: str, max_wait: int = 600) -> str:
+        """等待视频生成完成（改进版：避免限流）"""
         start_time = time.time()
         last_progress = -1
+        # 初始轮询间隔（秒）
+        poll_interval = 3
+        # 遇到 429 时的退避间隔
+        backoff_interval = 10
+        
         while time.time() - start_time < max_wait:
-            status = self.video_status(video_id)
-            state = status.get('status', '')
-            progress = status.get('progress', 0)
-            
-            # 打印进度
-            if progress != last_progress:
-                print(f"⏳ 视频生成进度: {progress}%")
-                last_progress = progress
-            
-            if state in ('completed', 'succeeded'):
-                video_url = status.get('video_url', status.get('url', ''))
-                if video_url:
-                    return video_url
+            try:
+                status = self.video_status(video_id)
+                state = status.get('status', '')
+                progress = status.get('progress', 0)
+                
+                # 打印进度
+                if progress != last_progress:
+                    print(f"⏳ 视频生成进度: {progress}%")
+                    last_progress = progress
+                
+                if state in ('completed', 'succeeded'):
+                    video_url = status.get('video_url', status.get('url', ''))
+                    if video_url:
+                        return video_url
+                    else:
+                        time.sleep(2)
+                        continue
+                
+                if state in ('failed', 'error'):
+                    error = status.get('error', '未知错误')
+                    raise Exception(f"视频生成失败: {error}")
+                
+                # 动态轮询间隔：前120秒每3秒查一次，之后每5秒
+                elapsed = time.time() - start_time
+                if elapsed < 120:
+                    time.sleep(poll_interval)
                 else:
-                    # 有时候完成但没有 URL，再等几秒
-                    time.sleep(2)
+                    time.sleep(5)
+                    
+            except Exception as e:
+                # 检查是否为限流错误
+                if "429" in str(e) or "rate limit" in str(e).lower():
+                    print(f"⚠️ 状态查询限流，等待 {backoff_interval} 秒后重试...")
+                    time.sleep(backoff_interval)
+                    # 增加退避间隔（逐步增加到 15 秒）
+                    backoff_interval = min(backoff_interval + 5, 15)
                     continue
-            
-            if state in ('failed', 'error'):
-                error = status.get('error', '未知错误')
-                raise Exception(f"视频生成失败: {error}")
-            
-            # 动态轮询间隔：前60秒每2秒查一次，之后每5秒查一次
-            elapsed = time.time() - start_time
-            if elapsed < 60:
-                time.sleep(2)
-            else:
-                time.sleep(5)
+                else:
+                    raise
         
         raise Exception(f"视频生成超时 ({max_wait}s)")
     
