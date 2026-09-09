@@ -31,7 +31,7 @@ class AgnesEngine:
         "text-to-image": "agnes-image-2.1-flash",  # ✅ 官方文档确认
         "image-to-image": "agnes-image-2.1-flash", # ✅ 官方文档确认
         "chat": "agnes-2.5-flash",                 # ✅ 官方文档：agnes-2.5-flash
-        "video": "agnes-video-2.5-flash",               # ✅ 官方文档：agnes-video-v2.0
+        "video": "agnes-video-2.5-flash",               # ✅ 官方文档：agnes-video-2.5-flash
         "vision": "agnes-2.5-flash",               # ✅ 官方文档：agnes-2.5-flash 支持视觉
     }
     
@@ -383,7 +383,8 @@ class AgnesEngine:
             "model": self.image_model,
             "prompt": prompt,
             "n": 1,
-            "size": size,
+            "size": size,            
+            "response_format": "url",   # ← 添加这一行
             "image": f"data:image/png;base64,{img_base64}",
         }
         
@@ -549,37 +550,43 @@ class AgnesEngine:
         print(f"🔍 [Agnes API] 最终使用 duration: {duration} 秒")
 
         model = model or self.video_model
-        # 如果模型不是 2.5-flash，给出建议
         if "2.5-flash" not in model:
             print(f"⚠️ 建议使用 agnes-video-2.5-flash 模型，当前为: {model}")
 
-        # 3. 构建官方格式参数
+        # 3. 根据是否有图片决定模式
+        if image:
+            mode = "reference"
+            images_data = [f"data:image/png;base64,{self._image_to_base64(image)}"]
+            print(f"🔍 [Agnes API] 使用 reference 模式，1 张参考图")
+        else:
+            mode = "text"
+            images_data = None
+
+        # 4. 根据宽高比选择 aspect_ratio
+        if width == height:
+            aspect_ratio = "1:1"
+        elif width > height:
+            aspect_ratio = "16:9"
+        else:
+            aspect_ratio = "9:16"
+
+        # 5. 构建官方格式参数
         data = {
             "model": model,
             "prompt": prompt,
-            "seconds": str(duration),          # 官方示例为字符串
-            "mode": "text",
-            "size": "720P",                    # 官方示例固定 720P
-            "aspect_ratio": "16:9",             # 根据宽高比动态调整
+            "seconds": str(duration),
+            "mode": mode,
+            "size": "720P",
+            "aspect_ratio": aspect_ratio,
         }
 
-        # 根据传入的宽高比调整 aspect_ratio
-        if width == height:
-            data["aspect_ratio"] = "1:1"
-        elif width > height:
-            data["aspect_ratio"] = "16:9"
-        else:
-            data["aspect_ratio"] = "9:16"
+        if mode == "reference" and images_data:
+            data["images"] = images_data
 
-        # 4. 图生图模式：添加 images 字段（官方示例为数组）
-        if image:
-            data["images"] = [f"data:image/png;base64,{self._image_to_base64(image)}"]
-
-        # 5. 回调（可选）
         if callback_url:
             data["callback_url"] = callback_url
 
-        print(f"🔍 [Agnes API] 发送数据: {data}")  # 调试日志
+        print(f"🔍 [Agnes API] 发送数据: {data}")
 
         # 6. 发送请求
         result = self._request("videos", data, timeout=300)
