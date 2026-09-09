@@ -58,51 +58,55 @@ class ChatApp:
     # 工具栏
     # ============================================================
     def _build_toolbar(self, parent):
-        """构建工具栏"""
-        toolbar = ttk.Frame(parent)
-        toolbar.pack(fill=tk.X, pady=5)
+        """构建工具栏 - 分两行布局"""
+        # ============================================================
+        # 第一行：模型 + 图片 + 模式
+        # ============================================================
+        toolbar_row1 = ttk.Frame(parent)
+        toolbar_row1.pack(fill=tk.X, pady=2)
         
-        # --- 第一组：模型 ---
-        self.model_status = ttk.Label(toolbar, text="🔴 未加载", foreground="red")
+        # --- 模型组 ---
+        self.model_status = ttk.Label(toolbar_row1, text="🔴 未加载", foreground="red")
         self.model_status.pack(side=tk.LEFT, padx=5)
         
         self.select_model_btn = ttk.Button(
-            toolbar,
+            toolbar_row1,
             text="📂 选择模型",
             command=self._select_model_file
         )
-        self.select_model_btn.pack(side=tk.LEFT, padx=5)
+        self.select_model_btn.pack(side=tk.LEFT, padx=2)
         
-        self.load_btn = ttk.Button(toolbar, text="📦 加载模型", command=self._load_model)
-        self.load_btn.pack(side=tk.LEFT, padx=5)
+        self.load_btn = ttk.Button(toolbar_row1, text="📦 加载模型", command=self._load_model)
+        self.load_btn.pack(side=tk.LEFT, padx=2)
         
-        # --- 第二组：图片上传 ---
+        ttk.Separator(toolbar_row1, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
+        
+        # --- 图片组 ---
         self.upload_btn = ttk.Button(
-            toolbar,
+            toolbar_row1,
             text="📎 上传图片",
             command=self._upload_image
         )
-        self.upload_btn.pack(side=tk.LEFT, padx=5)
+        self.upload_btn.pack(side=tk.LEFT, padx=2)
         
         self.clear_upload_btn = ttk.Button(
-            toolbar,
+            toolbar_row1,
             text="🗑️ 清除图片",
             command=self._clear_upload
         )
-        self.clear_upload_btn.pack(side=tk.LEFT, padx=5)
+        self.clear_upload_btn.pack(side=tk.LEFT, padx=2)
         
-        self.upload_status = ttk.Label(toolbar, text="", foreground="green")
+        self.upload_status = ttk.Label(toolbar_row1, text="", foreground="green")
         self.upload_status.pack(side=tk.LEFT, padx=5)
         
-        # --- 第三组：分隔线 ---
-        ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=10)
+        ttk.Separator(toolbar_row1, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
         
-        # --- 第四组：生成模式切换 ---
-        ttk.Label(toolbar, text="模式:").pack(side=tk.LEFT, padx=2)
+        # --- 模式组 ---
+        ttk.Label(toolbar_row1, text="模式:").pack(side=tk.LEFT, padx=2)
         
         self.mode_var = tk.StringVar(value=self.settings.generation_mode)
         self.mode_combo = ttk.Combobox(
-            toolbar,
+            toolbar_row1,
             textvariable=self.mode_var,
             values=["local", "api"],
             width=8,
@@ -111,13 +115,13 @@ class ChatApp:
         self.mode_combo.pack(side=tk.LEFT, padx=2)
         self.mode_combo.bind('<<ComboboxSelected>>', self._on_mode_changed)
         
-        ttk.Label(toolbar, text="API:").pack(side=tk.LEFT, padx=5)
+        ttk.Label(toolbar_row1, text="API:").pack(side=tk.LEFT, padx=5)
         
         self.provider_var = tk.StringVar(value=self.settings.api_provider)
         self.provider_combo = ttk.Combobox(
-            toolbar,
+            toolbar_row1,
             textvariable=self.provider_var,
-            values=["pollinations", "huggingface", "tongyi", "yige", "hunyuan", "agnes", "freeapi","replicate", "stability" ],
+            values=["pollinations", "huggingface", "tongyi", "yige", "hunyuan", "agnes", "freeapi", "replicate", "stability"],
             width=12,
             state="readonly"
         )
@@ -125,26 +129,72 @@ class ChatApp:
         self.provider_combo.bind('<<ComboboxSelected>>', self._on_provider_changed)
         
         self.mode_hint = ttk.Label(
-            toolbar,
+            toolbar_row1,
             text="🖥️ 本地模式",
             foreground="blue",
             font=("", 8)
         )
         self.mode_hint.pack(side=tk.LEFT, padx=10)
         
-        # --- 第五组：右侧按钮 ---
-        ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=10)
+        # ============================================================
+        # 第二行：工具按钮
+        # ============================================================
+        toolbar_row2 = ttk.Frame(parent)
+        toolbar_row2.pack(fill=tk.X, pady=2)
         
-        self.llm_status = ttk.Label(toolbar, text="●", foreground="gray")
-        self.llm_status.pack(side=tk.LEFT, padx=2)
+        # --- 左侧：LLM状态 ---
+        self.llm_status = ttk.Label(toolbar_row2, text="●", foreground="gray")
+        self.llm_status.pack(side=tk.LEFT, padx=5)
         
-        # 新闻简报
-        ttk.Button(toolbar, text="📰 新闻简报", command=self._fetch_news).pack(side=tk.RIGHT, padx=5)
-        ttk.Button(toolbar, text="🗑️ 清除对话", command=self._clear_chat).pack(side=tk.RIGHT, padx=5)
-        ttk.Button(toolbar, text="📁 输出目录", command=self._open_output).pack(side=tk.RIGHT, padx=5)
+        ttk.Separator(toolbar_row2, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
+        
+        # --- 功能按钮组 ---
+        # 创作工具组
+        ttk.Label(toolbar_row2, text="🎬 创作:").pack(side=tk.LEFT, padx=2)
+        
+        ttk.Button(
+            toolbar_row2,
+            text="📄 技术文章",
+            command=self._generate_tech_article
+        ).pack(side=tk.LEFT, padx=2)
+        
+        ttk.Button(
+            toolbar_row2,
+            text="📰 新闻简报",
+            command=self._fetch_news
+        ).pack(side=tk.LEFT, padx=2)
+        
+        ttk.Separator(toolbar_row2, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
+        
+        # 管理工具组
+        ttk.Label(toolbar_row2, text="📁 管理:").pack(side=tk.LEFT, padx=2)
+        
+        ttk.Button(
+            toolbar_row2,
+            text="📁 输出目录",
+            command=self._open_output
+        ).pack(side=tk.LEFT, padx=2)
+        
+        ttk.Button(
+            toolbar_row2,
+            text="🗑️ 清除对话",
+            command=self._clear_chat
+        ).pack(side=tk.LEFT, padx=2)
+        
+        # --- 右侧：状态信息 ---
+        ttk.Separator(toolbar_row2, orient=tk.VERTICAL).pack(side=tk.RIGHT, fill=tk.Y, padx=8)
+        self.status_label = ttk.Label(toolbar_row2, text="就绪", foreground="gray")
+        self.status_label.pack(side=tk.RIGHT, padx=5)
         
         self._update_mode_ui()
-    
+
+    def _update_toolbar_status(self, text, color="gray"):
+        """更新工具栏右侧状态"""
+        try:
+            self.status_label.config(text=text, foreground=color)
+        except:
+            pass
+            
     # ============================================================
     # 模式切换
     # ============================================================
@@ -629,6 +679,39 @@ class ChatApp:
                 self.root.after(0, lambda: self.status_var.set("就绪"))
         
         threading.Thread(target=fetch_thread, daemon=True).start()
+
+
+    def _generate_tech_article(self):
+        """生成技术热点文章"""
+        import threading
+        from skills.tech_hot_article import TechHotArticle
+        
+        self._append_message("system", "📰 正在获取技术热点并生成文章...")
+        self.status_var.set("📰 生成文章中...")
+        
+        def thread_func():
+            try:
+                generator = TechHotArticle({
+                    "model": self.settings.ollama_model,
+                    "ollama_url": self.settings.ollama_url,
+                })
+                result = generator.execute()
+                
+                if result["status"] == "success":
+                    data = result["result"]
+                    msg = f"✅ 文章生成完成！\n"
+                    msg += f"📄 标题: {data['title']}\n"
+                    msg += f"📁 Word文档: {data['word_file']}\n"
+                    msg += f"🖼️ 配图: {data['image_file']}"
+                    self.root.after(0, lambda: self._append_message("assistant", msg))
+                else:
+                    self.root.after(0, lambda: self._append_message("system", f"❌ 生成失败: {result.get('error')}"))
+            except Exception as e:
+                self.root.after(0, lambda: self._append_message("system", f"❌ 错误: {str(e)}"))
+            finally:
+                self.root.after(0, lambda: self.status_var.set("就绪"))
+        
+        threading.Thread(target=thread_func, daemon=True).start()
     
     # ============================================================
     # 消息添加（文本）
