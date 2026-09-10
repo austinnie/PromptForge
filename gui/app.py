@@ -222,18 +222,17 @@ class ChatApp:
             textvariable=self.count_var,
         ).pack(side=tk.LEFT)
 
-        # 后台加载预设列表
-        threading.Thread(target=self._load_presets_async, daemon=True).start()        
+        # 加载预设列表（同步，很快）
+        self._load_presets()        
 
 
-    def _load_presets_async(self):
-        """后台加载预设列表（避免阻塞 UI）"""
+    def _load_presets(self):
+        """同步加载预设列表（99 个 glob 很快，不开线程）"""
         try:
             from presets_meta import get_display_name, get_category, CATEGORY_ORDER
             from preset_bridge import preset_bridge
 
             all_presets = preset_bridge.list_presets()
-            # 按分类排序
             sorted_presets = sorted(
                 all_presets,
                 key=lambda p: (
@@ -242,10 +241,12 @@ class ChatApp:
                 )
             )
             display = [get_display_name(p) for p in sorted_presets]
-            self.root.after(0, lambda: self.preset_combo.config(values=display))
+            self.preset_combo.config(values=display)
+            print(f"✅ 预设列表已加载: {len(display)} 个")
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             print(f"⚠️ 预设列表加载失败: {e}")
-
 
     def _get_selected_preset(self) -> str:
         """从下拉框解析出预设名"""
