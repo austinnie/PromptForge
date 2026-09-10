@@ -55,12 +55,16 @@ class IntentAnalyzer:
         '类似', '相似', '参考', '参照', '一样风格', '相同风格', '像这样',
         'like this', 'similar', 'reference', 'same style'
     ]    
-    
-    # ✅ 保留原有 VIDEO_KEYWORDS（用于直接命中判断）
-    VIDEO_KEYWORDS = [
-        # === 核心词 ===
-        '视频', '生成视频', '制作视频', '视频生成', 'video', 'animate', '动图', '动画',
         
+    # ✅ 明确的视频生成指令（最高优先级，直接触发）
+    EXPLICIT_VIDEO_ACTIONS = [
+        '生成视频', '制作视频', '视频生成', '做个视频', '做个动画',
+        'create video', 'make video', 'generate video', 'animate',
+        '短视频', '微电影', '纪录片', 'vlog', '动图', '动画',
+    ]
+
+    # ✅ 视频场景/动作词库（用于组合辅助判断，不单独触发）
+    VIDEO_SCENE_KEYWORDS = [
         # === 动作类（人物） ===
         '走路', '跑步', '奔跑', '跳跃', '跳', '飞', '飞翔', '游泳', '游', '潜水',
         '跳舞', '舞蹈', '旋转', '转身', '挥手', '招手', '点头', '摇头', '弯腰',
@@ -70,12 +74,12 @@ class IntentAnalyzer:
         '做饭', '烹饪', '吃饭', '喝水', '喝咖啡', '饮茶',
         '工作', '学习', '阅读', '写作', '绘画', '设计',
         '打扫', '洗衣', '购物', '散步',
-        
+
         # === 动作类（自然/物体） ===
         '日出', '日落', '升起', '落下', '流动', '流淌', '瀑布', '喷发',
         '飘动', '摇曳', '摆动', '旋转', '转动', '爆炸', '燃烧',
         '下雨', '下雪', '风暴', '闪电', '波浪', '潮汐', '涨潮', '退潮',
-        
+
         # === 场景/主题 ===
         '海滩', '海边', '沙滩', '海洋', '大海', '湖泊', '河流', '溪流',
         '森林', '树林', '花园', '草原', '沙漠', '雪山', '火山', '洞穴',
@@ -84,26 +88,20 @@ class IntentAnalyzer:
         '体育比赛', '足球', '篮球', '网球', '跑步比赛',
         '动物', '宠物', '猫', '狗', '鸟', '马', '狮子', '老虎', '大象',
         '花朵', '植物', '树木',
-        
-        # === 视频类型 ===
-        '短视频', '长视频', '微电影', '纪录片', '动画片', '宣传片',
-        '广告', 'MV', '音乐视频', '教程', 'vlog', '直播',
-        
+
         # === 风格/效果 ===
         '慢动作', '快进', '延时摄影', '慢镜头', '特效', 'CGI', '3D',
         '卡通风格', '写实风格', '水彩风格', '油画风格', '动漫风格',
         '复古', '黑白', '彩色', '高清', '4K', '8K',
-        
+
         # === 英文补充 ===
         'walk', 'run', 'jump', 'fly', 'swim', 'dance', 'sing', 'drive',
         'ride', 'cook', 'eat', 'drink', 'work', 'study', 'read',
         'sunrise', 'sunset', 'flow', 'wave', 'rain', 'snow', 'storm',
         'beach', 'ocean', 'forest', 'city', 'night', 'stars',
         'animal', 'bird', 'cat', 'dog', 'horse', 'flower',
-        'short video', 'long video', 'movie', 'documentary', 'animation',
         'slow motion', 'time-lapse', 'timelapse', 'special effect',
         'cartoon', 'realistic', 'watercolor', 'oil painting', 'anime',
-        'HD', '4K', '8K',
     ]
     
     def __init__(self):
@@ -180,34 +178,34 @@ class IntentAnalyzer:
 
     def _is_video_intent(self, text: str) -> bool:
         """
-        判断是否为视频生成意图（严格模式）
-        - 直接命中 VIDEO_KEYWORDS（明确视频相关词）
-        - 或组合条件：动作词 + 场景词 同时出现
+        判断是否为视频生成意图（分阶段严格判断）
+        1. 先检查明确的视频指令 → 直接触发
+        2. 再检查：动作词 + 场景词 同时出现，且无图像词 → 触发
         """
         text_lower = text.lower()
         
-        # 1. 直接命中关键词（包括"视频"、动作词等）
-        # 但为了提高准确性，增加一个过滤：如果命中的是日常动作词但没有场景词，不触发
-        for kw in self.VIDEO_KEYWORDS:
-            if kw in text_lower:
-                # 如果是常见的日常词，需要检查是否有场景词辅助
-                daily_words = ['走路', '跑步', '吃饭', '喝水', '工作', '学习', '阅读', '散步', '睡觉', '醒来']
-                if kw in daily_words:
-                    # 必须有场景词才触发
-                    scene_words = ['海滩', '森林', '城市', '星空', '草原', '沙漠', '雪山', '花园', '公园', '街道', '夜景', '大海', '湖泊']
-                    if any(s in text_lower for s in scene_words):
-                        return True
-                    # 没有场景词，不触发
-                    continue
-                return True
+        # === 阶段 1：明确视频指令（最高优先级） ===
+        if any(k in text_lower for k in self.EXPLICIT_VIDEO_ACTIONS):
+            print(f"🎬 [意图] 明确视频指令命中")
+            return True
         
-        # 2. 组合匹配：动作 + 场景（更严格的补充）
-        action_words = ['走路', '跑步', '跳', '飞', '游泳', '跳舞', '开车', '做饭', '唱歌', '演奏', '奔跑', '飞翔', '骑行']
-        scene_words = ['海滩', '森林', '城市', '星空', '草原', '沙漠', '雪山', '花园', '公园', '街道', '夜景']
+        # === 阶段 2：动作 + 场景 组合判断 ===
+        # 排除图像词（避免"生成风景照片"被误判）
+        image_words = ['照片', '图片', '壁纸', '图像', 'photo', 'image', 'wallpaper']
+        if any(k in text_lower for k in image_words):
+            return False
+        
+        # 分别统计动作词和场景词的命中情况
+        action_words = ['走路', '跑步', '跳', '飞', '游泳', '跳舞', '开车', '做饭', '唱歌', 
+                        '演奏', '奔跑', '飞翔', '骑行', '散步', '冲浪', '滑雪']
+        scene_words = ['海滩', '森林', '城市', '星空', '草原', '沙漠', '雪山', '花园', 
+                       '公园', '街道', '夜景', '大海', '湖泊', '森林']
+        
         has_action = any(k in text_lower for k in action_words)
         has_scene = any(k in text_lower for k in scene_words)
         
         if has_action and has_scene:
+            print(f"🎬 [意图] 动作+场景组合命中")
             return True
         
         return False
