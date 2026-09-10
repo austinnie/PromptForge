@@ -682,7 +682,7 @@ class ChatApp:
 
 
     def _generate_tech_article(self):
-        """生成技术热点文章"""
+        """生成技术热点文章（支持多图配图）"""
         import threading
         from skills.tech_hot_article import TechHotArticle
         
@@ -701,12 +701,30 @@ class ChatApp:
                     data = result["result"]
                     msg = f"✅ 文章生成完成！\n"
                     msg += f"📄 标题: {data['title']}\n"
+                    msg += f"📡 热点: {data['hot_topic']}\n"
+                    msg += f"🎨 风格: {data['style']}\n"
                     msg += f"📁 Word文档: {data['word_file']}\n"
-                    msg += f"🖼️ 配图: {data['image_file']}"
+                    
+                    # ✅ 显示所有配图
+                    image_files = data.get('image_files', [])
+                    if image_files:
+                        msg += f"🖼️ 配图 ({len(image_files)} 张):\n"
+                        for i, img in enumerate(image_files, 1):
+                            msg += f"     {i}. {os.path.basename(img)}\n"
+                    else:
+                        msg += f"🖼️ 配图: 无\n"
+                    
                     self.root.after(0, lambda: self._append_message("assistant", msg))
+                    
+                    # ✅ 在聊天区展示第一张配图缩略图
+                    if image_files:
+                        self.root.after(0, lambda: self._append_image(image_files[0], "文章配图"))
+                        
                 else:
                     self.root.after(0, lambda: self._append_message("system", f"❌ 生成失败: {result.get('error')}"))
             except Exception as e:
+                import traceback
+                traceback.print_exc()
                 self.root.after(0, lambda: self._append_message("system", f"❌ 错误: {str(e)}"))
             finally:
                 self.root.after(0, lambda: self.status_var.set("就绪"))
