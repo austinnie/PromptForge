@@ -10,7 +10,7 @@ from config.settings import settings
 from core.intent_analyzer import IntentAnalyzer
 from core.context_manager import ContextManager
 from services.llm_service import LLMService
-from handlers import TextToImageHandler, ImageToImageHandler, CoupleHandler,ChatHandler, VideoHandler
+from handlers import TextToImageHandler, ImageToImageHandler, CoupleHandler,ChatHandler, VideoHandler,PresetHandler
 
 
 class ChatApp:

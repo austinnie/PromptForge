@@ -23,7 +23,7 @@ class IntentAnalyzer:
     """意图分析器"""
 
     # ✅ 新增：预设触发词
-    self.PRESET_KEYWORDS = [
+    PRESET_KEYWORDS = [
         "预设", "风格", "画风", "用...风格",
         "mecha", "机甲", "水墨", "国风", "素描", "线稿",
         "动漫", "人像", "风景", "珠宝",
