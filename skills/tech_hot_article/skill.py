@@ -22,6 +22,13 @@ import hashlib
 
 logger = logging.getLogger(__name__)
 
+# ==================== 常量配置 ====================
+DEFAULT_ARTICLE_WORDS = 1500      # 默认文章字数
+CHARS_PER_IMAGE = 500             # 每多少字插入一张配图
+MAX_IMAGES_PER_ARTICLE = 5        # 单篇文章最多配图数量
+DEFAULT_IMAGE_WIDTH = 800
+DEFAULT_IMAGE_HEIGHT = 600
+
 # 依赖检查
 try:
     import feedparser
@@ -94,7 +101,7 @@ class TechHotArticle:
     def __init__(self, config: Dict[str, Any] = None):
         self.config = config or {}
         self.name = "tech_hot_article"
-        self.version = "1.0.0"
+        self.version = "1.1.0"  # 升级版本号
         self._setup_logging()
         self._setup_config()
 
@@ -105,8 +112,37 @@ class TechHotArticle:
         if not PIL_AVAILABLE:
             logger.warning("Pillow 未安装，图片生成功能不可用")
 
+        # ✅ 初始化图像引擎
+        self._image_engine = None
+        self._init_image_engine()
+
         logger.info("TechHotArticle 初始化完成")
 
+    def _init_image_engine(self):
+        """初始化图像生成引擎（优先使用 Agnes）"""
+        try:
+            import sys
+            project_root = Path(__file__).parents[2]
+            if str(project_root) not in sys.path:
+                sys.path.insert(0, str(project_root))
+            
+            from api_engines.agnes import AgnesEngine
+            from config.settings import settings
+            
+            api_key = settings.agnes_api_key
+            if api_key:
+                self._image_engine = AgnesEngine(
+                    api_key=api_key,
+                    base_url=settings.agnes_base_url,
+                    image_model=settings.agnes_image_model,
+                )
+                logger.info(f"✅ 图像引擎已加载: Agnes ({settings.agnes_image_model})")
+            else:
+                logger.warning("⚠️ 未配置 AGNES_API_KEY，将使用 Pillow 回退方案")
+        except Exception as e:
+            logger.warning(f"⚠️ 图像引擎初始化失败: {e}，将使用 Pillow 回退方案")
+            self._image_engine = None
+        
     def _setup_logging(self):
         log_level = self.config.get("log_level", "INFO")
         logging.basicConfig(
@@ -118,12 +154,20 @@ class TechHotArticle:
         defaults = {
             "output_dir": "./skills/tech_hot_article/output",
             "max_hot_items": 10,
-            "article_words": 1500,
+            "article_words": DEFAULT_ARTICLE_WORDS,
             "temperature": 0.85,
             "ollama_url": "http://localhost:11434",
             "model": "qwen2.5:7b",
-            "image_width": 800,
-            "image_height": 600,
+            "image_width": DEFAULT_IMAGE_WIDTH,
+            "image_height": DEFAULT_IMAGE_HEIGHT,
+            # ✅ 图像生成配置
+            "image_engine": "agnes",
+            "image_style": "digital art, tech illustration, clean, modern, professional",
+            "image_fallback": True,
+            # ✅ 多图插入配置（统一命名）
+            "chars_per_image": CHARS_PER_IMAGE,               # 每多少字一张图
+            "max_images_per_article": MAX_IMAGES_PER_ARTICLE, # 单篇最多图片数
+            "min_images_per_article": 1,                      # 单篇最少图片数
         }
         for key, value in defaults.items():
             if key not in self.config:
@@ -345,6 +389,9 @@ class TechHotArticle:
         summary = hot_item.get("summary", "")
         source = hot_item.get("source", "")
 
+        article_words = self.config.get("article_words", DEFAULT_ARTICLE_WORDS)
+
+        
         # 构建提示词
         prompt = f"""你是一位资深科技编辑，请根据以下热点信息，撰写一篇技术文章。
 
@@ -353,7 +400,7 @@ class TechHotArticle:
 来源：{source}
 
 写作风格：{style}
-文章字数：约 1500 字
+文章字数：约 {article_words} 字
 
 要求：
 1. 文章标题要吸引人
@@ -498,10 +545,101 @@ class TechHotArticle:
         except:
             return ""
 
+    def _split_article_into_blocks(self, body: str) -> List[str]:
+        """将文章正文按段落拆分为块（用于分段插入配图）"""
+        # 按空行拆分
+        paragraphs = [p.strip() for p in body.split("\n\n") if p.strip()]
+        
+        # 如果段落太少，按单换行拆分
+        if len(paragraphs) < 3:
+            paragraphs = [p.strip() for p in body.split("\n") if p.strip() and len(p.strip()) > 20]
+        
+        # 过滤掉太短的段落（如标题行）
+        paragraphs = [p for p in paragraphs if len(p) > 30]
+        
+        return paragraphs
+        
+    def _determine_image_positions(self, paragraphs: List[str]) -> List[int]:
+        total_paragraphs = len(paragraphs)
+        total_chars = sum(len(p) for p in paragraphs)
+        
+        chars_per_image = self.config.get("chars_per_image", CHARS_PER_IMAGE)  # ← 统一
+        max_images = self.config.get("max_images_per_article", MAX_IMAGES_PER_ARTICLE)
+        min_images = self.config.get("min_images_per_article", 1)
+        
+        calculated = max(1, total_chars // chars_per_image)
+        image_count = max(min_images, min(calculated, max_images))
+        image_count = min(image_count, max(0, total_paragraphs - 1))
+        
+        if image_count <= 0:
+            return []
+        
+        step = total_paragraphs / (image_count + 1)
+        positions = []
+        for i in range(1, image_count + 1):
+            pos = int(step * i)
+            if pos < total_paragraphs:
+                positions.append(pos)
+        
+        logger.info(f"📊 文章共 {total_paragraphs} 段，{total_chars} 字 → 规划 {len(positions)} 张配图")
+        return positions
+    
+
+    def _generate_image_for_block(self, block_text: str, article_title: str) -> Optional[str]:
+        """为某个段落块生成配图（使用段落摘要作为提示词）"""
+        if not self._image_engine:
+            return None
+        
+        try:
+            # 取段落的前 80 字作为提示词基础
+            snippet = block_text[:80].replace("\n", " ").strip()
+            
+            style = self.config.get("image_style", "digital art, tech illustration")
+            prompt = (
+                f"Tech article illustration about: {snippet}. "
+                f"Context: {article_title[:50]}. "
+                f"Style: {style}, vibrant colors, professional, high quality, "
+                f"no text, no watermark, no signature"
+            )
+            
+            logger.info(f"🎨 生成配图: {snippet[:40]}...")
+            
+            image = self._image_engine.generate_single(
+                prompt=prompt,
+                negative="text, watermark, signature, low quality, blurry, ugly, deformed",
+                width=self.config.get("image_width", 800),
+                height=self.config.get("image_height", 600),
+                steps=25,
+                cfg=7.5,
+                seed=random.randint(1, 999),
+            )
+            
+            # 保存
+            output_dir = Path(self.config["output_dir"]) / "images"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:19]
+            filepath = output_dir / f"article_image_{timestamp}.png"
+            
+            # 调整尺寸
+            target_size = (self.config["image_width"], self.config["image_height"])
+            if image.size != target_size:
+                image = image.resize(target_size, Image.Resampling.LANCZOS)
+            
+            image.save(filepath, "PNG")
+            logger.info(f"✅ 配图已保存: {filepath}")
+            return str(filepath)
+            
+        except Exception as e:
+            logger.error(f"❌ 段落配图生成失败: {e}")
+            return None
+        
     # ==================== Word 文档生成 ====================
 
-    def create_word_document(self, article: Dict, image_path: str = None) -> str:
-        """生成 Word 文档"""
+    def create_word_document(self, article: Dict, image_positions: Dict[int, str] = None) -> str:
+        """
+        生成 Word 文档
+        image_positions: {段落索引: 图片路径} 的映射，表示在哪个段落之后插入图片
+        """
         output_dir = Path(self.config["output_dir"]) / "word"
         output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -512,7 +650,7 @@ class TechHotArticle:
 
         if not DOCX_AVAILABLE:
             logger.warning("python-docx 未安装，生成 TXT 替代")
-            return self._generate_txt_alternative(article, image_path, filepath)
+            return self._generate_txt_alternative(article, image_positions, filepath)
 
         try:
             doc = Document()
@@ -522,30 +660,37 @@ class TechHotArticle:
             title.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
             # 元信息
-            meta_paragraph = doc.add_paragraph()
-            meta_paragraph.add_run(f"生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            meta_paragraph.add_run(f"写作风格：{article.get('style', '未指定')}\n")
-            meta_paragraph.add_run(f"热点来源：{article.get('hot_source', '未指定')}")
+            meta = doc.add_paragraph()
+            meta.add_run(f"生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            meta.add_run(f"写作风格：{article.get('style', '未指定')}\n")
+            meta.add_run(f"热点来源：{article.get('hot_source', '未指定')}")
 
             doc.add_paragraph()
 
-            # 配图
-            if image_path and Path(image_path).exists() and image_path.endswith('.png'):
-                try:
-                    doc.add_picture(image_path, width=Inches(6))
-                    doc.add_paragraph("图：文章配图", style="Caption")
-                except Exception as e:
-                    logger.warning(f"插入图片失败: {e}")
+            # ✅ 按段落插入正文 + 配图
+            paragraphs = self._split_article_into_blocks(article.get("body", ""))
+            image_positions = image_positions or {}
 
-            doc.add_paragraph()
-
-            # 文章正文
-            body = article.get("body", "")
-            if body:
-                for paragraph in body.split("\n\n"):
-                    if paragraph.strip():
-                        p = doc.add_paragraph(paragraph.strip())
-                        p.paragraph_format.first_line_indent = Inches(0.3)
+            for idx, para in enumerate(paragraphs):
+                # 插入段落
+                p = doc.add_paragraph(para)
+                p.paragraph_format.first_line_indent = Inches(0.3)
+                
+                # ✅ 判断是否在该段后插入图片
+                if idx in image_positions:
+                    img_path = image_positions[idx]
+                    if img_path and Path(img_path).exists():
+                        try:
+                            doc.add_picture(img_path, width=Inches(5.5))
+                            # 居中
+                            last_paragraph = doc.paragraphs[-1]
+                            last_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                            # 添加图注
+                            caption = doc.add_paragraph(f"图 {list(image_positions.keys()).index(idx) + 1}：文章配图")
+                            caption.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                            doc.add_paragraph()
+                        except Exception as e:
+                            logger.warning(f"插入图片失败: {e}")
 
             # 页脚
             doc.add_page_break()
@@ -554,15 +699,15 @@ class TechHotArticle:
             footer.add_run(f"文章由 AI 自动生成 | {datetime.now().strftime('%Y-%m-%d')}")
 
             doc.save(str(filepath))
-            logger.info(f"Word 文档已生成: {filepath}")
+            logger.info(f"✅ Word 文档已生成: {filepath}")
             return str(filepath)
 
         except Exception as e:
-            logger.error(f"Word 文档生成失败: {e}")
-            return self._generate_txt_alternative(article, image_path, filepath)
-
-    def _generate_txt_alternative(self, article: Dict, image_path: str, filepath: Path) -> str:
-        """生成 TXT 替代"""
+            logger.error(f"❌ Word 文档生成失败: {e}")
+            return self._generate_txt_alternative(article, image_positions, filepath)
+                
+    def _generate_txt_alternative(self, article: Dict, image_positions: Dict[int, str], filepath: Path) -> str:
+        """生成 TXT 替代（图片以路径形式标注）"""
         try:
             txt_path = filepath.with_suffix(".txt")
             with open(txt_path, 'w', encoding='utf-8') as f:
@@ -572,14 +717,19 @@ class TechHotArticle:
                 f.write(f"生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
                 f.write(f"写作风格：{article.get('style', '未指定')}\n")
                 f.write(f"热点来源：{article.get('hot_source', '未指定')}\n\n")
-                if image_path:
-                    f.write(f"配图：{image_path}\n\n")
                 f.write("=" * 60 + "\n\n")
-                f.write(article.get("body", ""))
+                
+                paragraphs = self._split_article_into_blocks(article.get("body", ""))
+                for idx, para in enumerate(paragraphs):
+                    f.write(para + "\n\n")
+                    if idx in image_positions and image_positions[idx]:
+                        f.write(f"[配图：{image_positions[idx]}]\n\n")
+            
             return str(txt_path)
         except Exception as e:
             logger.error(f"TXT 替代生成失败: {e}")
             return ""
+        
 
     # ==================== 执行入口 ====================
 
@@ -616,11 +766,23 @@ class TechHotArticle:
             if article is None:
                 return {"status": "error", "error": "文章生成失败"}
 
-            # 生成配图
-            image_path = self.generate_image(article["title"], hot_item.get("source"))
+            # ✅ 分段并确定图片位置
+            paragraphs = self._split_article_into_blocks(article.get("body", ""))
+            image_positions_idx = self._determine_image_positions(paragraphs)
 
-            # 生成 Word 文档
-            word_path = self.create_word_document(article, image_path)
+            # ✅ 为每个位置生成配图
+            image_positions = {}
+            image_paths = []
+            for idx in image_positions_idx:
+                img_path = self._generate_image_for_block(paragraphs[idx], article["title"])
+                if img_path:
+                    image_positions[idx] = img_path
+                    image_paths.append(img_path)
+
+            logger.info(f"✅ 共生成 {len(image_paths)} 张配图")
+
+            # 生成 Word 文档（带多图）
+            word_path = self.create_word_document(article, image_positions)
 
             # 保存文章信息
             output_dir = Path(self.config["output_dir"]) / "articles"
@@ -631,7 +793,8 @@ class TechHotArticle:
                 json.dump({
                     "article": article,
                     "hot_item": hot_item,
-                    "image_path": image_path,
+                    "image_paths": image_paths,
+                    "image_positions": {str(k): v for k, v in image_positions.items()},
                     "word_path": word_path,
                     "timestamp": datetime.now().isoformat(),
                 }, f, ensure_ascii=False, indent=2)
@@ -644,7 +807,8 @@ class TechHotArticle:
                     "hot_source": hot_item.get("source", ""),
                     "style": style,
                     "word_file": word_path,
-                    "image_file": image_path,
+                    "image_files": image_paths,
+                    "image_file": image_paths[0] if image_paths else None,
                     "article_file": str(info_file),
                     "generated_at": datetime.now().isoformat(),
                 },
@@ -663,6 +827,6 @@ class TechHotArticle:
                 "error": str(e),
                 "skill": self.name,
             }
-
+        
     def __repr__(self):
         return f"<TechHotArticle(name={self.name}, version={self.version})>"
