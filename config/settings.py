@@ -100,6 +100,9 @@ class Settings:
     safe_mode: bool = os.getenv("SAFE_MODE", "true").lower() == "true"
     # ✅ 新增：是否启用安全检测（独立开关，默认跟随 safe_mode）
     enable_safety_check: bool = os.getenv("ENABLE_SAFETY_CHECK", "true").lower() == "true"    
+
+
+    article_image_engine: str = os.getenv("ARTICLE_IMAGE_ENGINE", "agnes")
     
     def __post_init__(self):
         self.output_dir.mkdir(exist_ok=True)

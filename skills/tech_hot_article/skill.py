@@ -22,12 +22,15 @@ import hashlib
 
 logger = logging.getLogger(__name__)
 
+from config.settings import settings
+
 # ==================== 常量配置 ====================
 DEFAULT_ARTICLE_WORDS = 1500      # 默认文章字数
 CHARS_PER_IMAGE = 500             # 每多少字插入一张配图
 MAX_IMAGES_PER_ARTICLE = 5        # 单篇文章最多配图数量
 DEFAULT_IMAGE_WIDTH = 800
 DEFAULT_IMAGE_HEIGHT = 600
+DEFAULT_IMAGE_ENGINE = "agnes"
 
 # 依赖检查
 try:
@@ -119,29 +122,67 @@ class TechHotArticle:
         logger.info("TechHotArticle 初始化完成")
 
     def _init_image_engine(self):
-        """初始化图像生成引擎（优先使用 Agnes）"""
+        """初始化图像生成引擎（支持多个 API 提供商，可配置切换）"""
         try:
             import sys
             project_root = Path(__file__).parents[2]
             if str(project_root) not in sys.path:
                 sys.path.insert(0, str(project_root))
             
-            from api_engines.agnes import AgnesEngine
-            from config.settings import settings
+            from api_engines import create_engine
+            #from config.settings import settings
             
-            api_key = settings.agnes_api_key
-            if api_key:
-                self._image_engine = AgnesEngine(
-                    api_key=api_key,
-                    base_url=settings.agnes_base_url,
-                    image_model=settings.agnes_image_model,
-                )
-                logger.info(f"✅ 图像引擎已加载: Agnes ({settings.agnes_image_model})")
+            # ✅ 从配置读取提供商（默认 agnes）
+            provider = self.config.get("image_engine", DEFAULT_IMAGE_ENGINE)
+            
+            # ✅ 允许通过环境变量/配置覆盖
+            # 可选值: agnes, pollinations, huggingface, stability, replicate, freeapi
+            if provider == "agnes":
+                config = {
+                    "AGNES_API_KEY": settings.agnes_api_key,
+                    "AGNES_BASE_URL": settings.agnes_base_url,
+                    "AGNES_IMAGE_MODEL": settings.agnes_image_model,
+                }
+            elif provider == "pollinations":
+                config = {
+                    "POLLINATIONS_MODEL": settings.pollinations_model,
+                }
+            elif provider == "huggingface":
+                config = {
+                    "HF_API_TOKEN": settings.hf_api_token,
+                    "HF_MODEL": settings.hf_model,
+                }
+            elif provider == "stability":
+                config = {
+                    "STABILITY_API_KEY": settings.stability_api_key,
+                    "STABILITY_MODEL": settings.stability_model,
+                }
+            elif provider == "replicate":
+                config = {
+                    "REPLICATE_API_TOKEN": settings.replicate_api_token,
+                    "REPLICATE_MODEL": settings.replicate_model,
+                }
+            elif provider == "freeapi":
+                config = {
+                    "FREEAPI_MODEL": settings.freeapi_model,
+                }
             else:
-                logger.warning("⚠️ 未配置 AGNES_API_KEY，将使用 Pillow 回退方案")
+                logger.warning(f"⚠️ 未知图像引擎: {provider}，回退到 Agnes")
+                provider = "agnes"
+                config = {
+                    "AGNES_API_KEY": settings.agnes_api_key,
+                    "AGNES_BASE_URL": settings.agnes_base_url,
+                    "AGNES_IMAGE_MODEL": settings.agnes_image_model,
+                }
+            
+            self._image_engine = create_engine(provider, config)
+            self._image_engine_provider = provider
+            logger.info(f"✅ 图像引擎已加载: {provider} ({self._image_engine.get_name()})")
+            
         except Exception as e:
             logger.warning(f"⚠️ 图像引擎初始化失败: {e}，将使用 Pillow 回退方案")
             self._image_engine = None
+            self._image_engine_provider = None
         
     def _setup_logging(self):
         log_level = self.config.get("log_level", "INFO")
@@ -161,7 +202,7 @@ class TechHotArticle:
             "image_width": DEFAULT_IMAGE_WIDTH,
             "image_height": DEFAULT_IMAGE_HEIGHT,
             # ✅ 图像生成配置
-            "image_engine": "agnes",
+            "image_engine": getattr(settings, 'article_image_engine', DEFAULT_IMAGE_ENGINE),
             "image_style": "digital art, tech illustration, clean, modern, professional",
             "image_fallback": True,
             # ✅ 多图插入配置（统一命名）
@@ -441,30 +482,26 @@ class TechHotArticle:
 
     # ==================== 图片生成 ====================
 
-    def generate_image(self, title: str, topic: str = None) -> str:
-        """生成配图"""
+    def _generate_pillow_image(self, title: str) -> Optional[str]:
+        """使用 Pillow 生成简单配图（回退方案）"""
         output_dir = Path(self.config["output_dir"]) / "images"
         output_dir.mkdir(parents=True, exist_ok=True)
-
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"article_image_{timestamp}.png"
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:19]
+        filename = f"article_image_pil_{timestamp}.png"
         filepath = output_dir / filename
-
+        
         if not PIL_AVAILABLE:
-            # 如果没有 PIL，生成一个简单的文本图像（使用 HTML 替代）
-            logger.warning("Pillow 未安装，生成简单占位图")
-            return self._generate_placeholder_image(filepath, title)
-
+            logger.warning("Pillow 未安装，无法生成配图")
+            return None
+        
         try:
-            # 创建画布
             width = self.config.get("image_width", 800)
             height = self.config.get("image_height", 600)
             img = Image.new("RGB", (width, height), color=(20, 30, 50))
-
-            # 绘制背景渐变（模拟）
             draw = ImageDraw.Draw(img)
-
-            # 绘制一些装饰图形
+            
+            # 绘制装饰图形
             colors = [
                 (50, 100, 200), (200, 50, 100), (50, 200, 100),
                 (200, 150, 50), (150, 50, 200)
@@ -476,18 +513,16 @@ class TechHotArticle:
                 y2 = y1 + random.randint(100, 300)
                 color = random.choice(colors)
                 draw.rectangle([x1, y1, x2, y2], outline=color, width=3)
-
-            # 绘制一些圆
+            
             for i in range(random.randint(5, 10)):
                 cx = random.randint(0, width)
                 cy = random.randint(0, height)
                 r = random.randint(20, 80)
                 color = random.choice(colors)
                 draw.ellipse([cx - r, cy - r, cx + r, cy + r], outline=color, width=2)
-
+            
             # 添加文字
             try:
-                # 尝试加载中文字体
                 font_paths = [
                     "C:/Windows/Fonts/simsun.ttc",
                     "C:/Windows/Fonts/msyh.ttc",
@@ -500,40 +535,29 @@ class TechHotArticle:
                         break
                 if font is None:
                     font = ImageFont.load_default()
-
-                # 绘制标题文字
+                
                 text = title[:50]
                 bbox = draw.textbbox((0, 0), text, font=font)
                 tw = bbox[2] - bbox[0]
                 th = bbox[3] - bbox[1]
                 draw.text(
                     (width // 2 - tw // 2, height // 2 - th // 2),
-                    text,
-                    fill=(255, 255, 255),
-                    font=font
+                    text, fill=(255, 255, 255), font=font
                 )
-
-                # 绘制日期
+                
                 date_text = datetime.now().strftime("%Y-%m-%d")
-                draw.text(
-                    (width - 200, height - 40),
-                    date_text,
-                    fill=(150, 180, 200),
-                    font=font
-                )
-
+                draw.text((width - 200, height - 40), date_text, fill=(150, 180, 200), font=font)
             except Exception as e:
                 logger.warning(f"文字渲染失败: {e}")
-
-            # 保存图片
+            
             img.save(filepath, "PNG")
-            logger.info(f"图片已生成: {filepath}")
+            logger.info(f"✅ Pillow 配图已保存: {filepath}")
             return str(filepath)
-
+            
         except Exception as e:
-            logger.error(f"图片生成失败: {e}")
-            return self._generate_placeholder_image(filepath, title)
-
+            logger.error(f"❌ Pillow 配图生成失败: {e}")
+            return None
+        
     def _generate_placeholder_image(self, filepath: Path, title: str) -> str:
         """生成占位图"""
         try:
@@ -583,17 +607,18 @@ class TechHotArticle:
         
         logger.info(f"📊 文章共 {total_paragraphs} 段，{total_chars} 字 → 规划 {len(positions)} 张配图")
         return positions
-    
+        
 
     def _generate_image_for_block(self, block_text: str, article_title: str) -> Optional[str]:
-        """为某个段落块生成配图（使用段落摘要作为提示词）"""
+        """为某个段落块生成配图"""
+        
+        # ✅ 如果 API 引擎不可用，直接回退到 Pillow
         if not self._image_engine:
-            return None
+            logger.info("🔄 图像引擎不可用，使用 Pillow 回退方案")
+            return self._generate_pillow_image(article_title)
         
         try:
-            # 取段落的前 80 字作为提示词基础
             snippet = block_text[:80].replace("\n", " ").strip()
-            
             style = self.config.get("image_style", "digital art, tech illustration")
             prompt = (
                 f"Tech article illustration about: {snippet}. "
@@ -602,7 +627,7 @@ class TechHotArticle:
                 f"no text, no watermark, no signature"
             )
             
-            logger.info(f"🎨 生成配图: {snippet[:40]}...")
+            logger.info(f"🎨 [API] 生成配图: {snippet[:40]}...")
             
             image = self._image_engine.generate_single(
                 prompt=prompt,
@@ -618,7 +643,7 @@ class TechHotArticle:
             output_dir = Path(self.config["output_dir"]) / "images"
             output_dir.mkdir(parents=True, exist_ok=True)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:19]
-            filepath = output_dir / f"article_image_{timestamp}.png"
+            filepath = output_dir / f"article_image_api_{timestamp}.png"
             
             # 调整尺寸
             target_size = (self.config["image_width"], self.config["image_height"])
@@ -626,13 +651,14 @@ class TechHotArticle:
                 image = image.resize(target_size, Image.Resampling.LANCZOS)
             
             image.save(filepath, "PNG")
-            logger.info(f"✅ 配图已保存: {filepath}")
+            logger.info(f"✅ API 配图已保存: {filepath}")
             return str(filepath)
             
         except Exception as e:
-            logger.error(f"❌ 段落配图生成失败: {e}")
-            return None
-        
+            logger.error(f"❌ API 配图生成失败: {e}")
+            logger.info("🔄 回退到 Pillow 生成")
+            return self._generate_pillow_image(article_title)
+            
     # ==================== Word 文档生成 ====================
 
     def create_word_document(self, article: Dict, image_positions: Dict[int, str] = None) -> str:
