@@ -31,7 +31,7 @@ class AgnesEngine:
         "text-to-image": "agnes-image-2.1-flash",  # ✅ 官方文档确认
         "image-to-image": "agnes-image-2.1-flash", # ✅ 官方文档确认
         "chat": "agnes-2.5-flash",                 # ✅ 官方文档：agnes-2.5-flash
-        "video": "agnes-video-v2.0",               # ✅ 官方文档：agnes-video-v2.0
+        "video": "agnes-video-2.5-flash",               # ✅ 官方文档：agnes-video-2.5-flash
         "vision": "agnes-2.5-flash",               # ✅ 官方文档：agnes-2.5-flash 支持视觉
     }
     
@@ -383,7 +383,7 @@ class AgnesEngine:
             "model": self.image_model,
             "prompt": prompt,
             "n": 1,
-            "size": size,
+            "size": size, 
             "image": f"data:image/png;base64,{img_base64}",
         }
         
@@ -549,37 +549,43 @@ class AgnesEngine:
         print(f"🔍 [Agnes API] 最终使用 duration: {duration} 秒")
 
         model = model or self.video_model
-        # 如果模型不是 2.5-flash，给出建议
         if "2.5-flash" not in model:
             print(f"⚠️ 建议使用 agnes-video-2.5-flash 模型，当前为: {model}")
 
-        # 3. 构建官方格式参数
+        # 3. 根据是否有图片决定模式
+        if image:
+            mode = "reference"
+            images_data = [f"data:image/png;base64,{self._image_to_base64(image)}"]
+            print(f"🔍 [Agnes API] 使用 reference 模式，1 张参考图")
+        else:
+            mode = "text"
+            images_data = None
+
+        # 4. 根据宽高比选择 aspect_ratio
+        if width == height:
+            aspect_ratio = "1:1"
+        elif width > height:
+            aspect_ratio = "16:9"
+        else:
+            aspect_ratio = "9:16"
+
+        # 5. 构建官方格式参数
         data = {
             "model": model,
             "prompt": prompt,
-            "seconds": str(duration),          # 官方示例为字符串
-            "mode": "text",
-            "size": "720P",                    # 官方示例固定 720P
-            "aspect_ratio": "16:9",             # 根据宽高比动态调整
+            "seconds": str(duration),
+            "mode": mode,
+            "size": "720P",
+            "aspect_ratio": aspect_ratio,
         }
 
-        # 根据传入的宽高比调整 aspect_ratio
-        if width == height:
-            data["aspect_ratio"] = "1:1"
-        elif width > height:
-            data["aspect_ratio"] = "16:9"
-        else:
-            data["aspect_ratio"] = "9:16"
+        if mode == "reference" and images_data:
+            data["images"] = images_data
 
-        # 4. 图生图模式：添加 images 字段（官方示例为数组）
-        if image:
-            data["images"] = [f"data:image/png;base64,{self._image_to_base64(image)}"]
-
-        # 5. 回调（可选）
         if callback_url:
             data["callback_url"] = callback_url
 
-        print(f"🔍 [Agnes API] 发送数据: {data}")  # 调试日志
+        print(f"🔍 [Agnes API] 发送数据: {data}")
 
         # 6. 发送请求
         result = self._request("videos", data, timeout=300)
@@ -599,7 +605,7 @@ class AgnesEngine:
         }
         
         # ✅ 修正轮询端点
-        url = f"{self.base_url}/agnesapi?video_id={video_id}"
+        url = f"{self.base_url}/agnesapi?video_id={video_id}&model_name={self.video_model}"
         
         response = requests.get(url, headers=headers, timeout=30)
         if response.status_code != 200:
@@ -625,7 +631,7 @@ class AgnesEngine:
             status = self.video_status(video_id)
             print(f"📊 完整状态: {json.dumps(status, indent=2)}")  # ✅ 添加日志
             # 根据实际返回格式调整字段名
-            state = status.get('state', status.get('status', ''))
+            state = status.get('status', '')
             
             if state == 'completed':
                 return status.get('video_url', status.get('url', ''))
@@ -635,6 +641,58 @@ class AgnesEngine:
             
             print(f"⏳ 视频生成中... ({state})")
             time.sleep(5)
+        
+        raise Exception(f"视频生成超时 ({max_wait}s)")
+
+    def wait_for_video_new(self, video_id: str, max_wait: int = 600) -> str:
+        """等待视频生成完成（改进版：避免限流）"""
+        start_time = time.time()
+        last_progress = -1
+        # 初始轮询间隔（秒）
+        poll_interval = 3
+        # 遇到 429 时的退避间隔
+        backoff_interval = 10
+        
+        while time.time() - start_time < max_wait:
+            try:
+                status = self.video_status(video_id)
+                state = status.get('status', '')
+                progress = status.get('progress', 0)
+                
+                # 打印进度
+                if progress != last_progress:
+                    print(f"⏳ 视频生成进度: {progress}%")
+                    last_progress = progress
+                
+                if state in ('completed', 'succeeded'):
+                    video_url = status.get('video_url', status.get('url', ''))
+                    if video_url:
+                        return video_url
+                    else:
+                        time.sleep(2)
+                        continue
+                
+                if state in ('failed', 'error'):
+                    error = status.get('error', '未知错误')
+                    raise Exception(f"视频生成失败: {error}")
+                
+                # 动态轮询间隔：前120秒每3秒查一次，之后每5秒
+                elapsed = time.time() - start_time
+                if elapsed < 120:
+                    time.sleep(poll_interval)
+                else:
+                    time.sleep(5)
+                    
+            except Exception as e:
+                # 检查是否为限流错误
+                if "429" in str(e) or "rate limit" in str(e).lower():
+                    print(f"⚠️ 状态查询限流，等待 {backoff_interval} 秒后重试...")
+                    time.sleep(backoff_interval)
+                    # 增加退避间隔（逐步增加到 15 秒）
+                    backoff_interval = min(backoff_interval + 5, 15)
+                    continue
+                else:
+                    raise
         
         raise Exception(f"视频生成超时 ({max_wait}s)")
     
