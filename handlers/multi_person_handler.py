@@ -25,7 +25,10 @@ class MultiPersonHandler(BaseHandler):
             self._reply("❌ 多人合成至少需要上传 3 张图片")
             return
         
-        if not self._ensure_model_loaded():
+        # ✅ 检查模式
+        if self.app.settings.generation_mode == "api":
+            self._reply("❌ 多人合成仅支持本地模式")
+            self._reply("💡 请切换到 local 模式并加载模型")
             return
         
         if self.is_generating:

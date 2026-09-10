@@ -522,7 +522,8 @@ class ChatApp:
             intent = self.intent_analyzer.analyze(
                 text,
                 has_image=bool(self.uploaded_images),
-                has_multiple=len(self.uploaded_images) >= 2
+                has_multiple=len(self.uploaded_images) >= 2,
+                image_count=len(self.uploaded_images),  # ✅ 关键修复
             )
             
             self._append_log(f"🔍 意图: {intent.type}")
