@@ -1,38 +1,45 @@
-# 💬 智能生图 (PromptForge: a AI Chat Image Generator)
+# 💬 PromptForge：智能对话式 AI 图像 / 视频 / 多媒体生成器
 
-一个基于 Stable Diffusion 和多种 AI API 的智能对话式图像生成工具。用户通过自然语言描述即可生成高质量图片，支持本地模型和云端 API 双模式。
+一个基于 Stable Diffusion 和多种 AI API 的智能对话式创作工具。用户通过自然语言描述即可生成高质量图片、视频，甚至完成从小说脚本到成片的全自动多媒体创作。支持本地模型与云端 API 双模式。
 
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## ✨ 主要特性
 
-- **双模式生成**: 支持本地 Stable Diffusion 模型和多种云端 API (免费/付费)
-- **自然语言交互**: 通过对话即可生成、修改图片，支持上下文理解
-- **丰富的 API 支持**: 集成 Pollinations (免费)、Agnes AI (免费)、通义万相、文心一格、腾讯混元、HuggingFace 等
-- **智能意图分析**: 自动识别用户意图（文生图、图生图、双人合成、普通对话）
-- **LLM 增强**: 可选 Ollama 本地大模型优化提示词
-- **图生图 & 双人合成**: 支持上传参考图进行修改，或将两张图合成为双人场景
-- **安全过滤**: 内置内容安全检查器，防止生成不当内容
-- **轻量级 GUI**: 基于 Tkinter 的简洁图形界面，开箱即用
+- **双模式生成**：支持本地 Stable Diffusion 模型和多种云端 API（免费 / 付费）
+- **图像生成**：文生图、图生图、双人合成、多人合成（3+ 张图）
+- **视频生成**：集成 Agnes 视频模型，按 10 秒分段并自动循环拼接至目标时长
+- **多媒体全自动创作**：小说脚本 → 场景拆分 → 视频片段 → 语音旁白 → 背景音乐 → 字幕 → 最终成片
+- **自然语言交互**：通过对话即可生成、修改图片，支持上下文理解与偏好记忆
+- **丰富的 API 支持**：Pollinations（免费）、Agnes AI（免费）、Free API、通义万相、文心一格、腾讯混元、HuggingFace、Replicate、Stability AI
+- **智能意图分析**：自动识别文生图、图生图、双人/多人合成、视频生成、多媒体创作、普通对话
+- **LLM 增强**：可选 Ollama 本地大模型优化提示词、生成小说、生成技术文章
+- **技能系统**：内置 `image_generator`、`video_generator`、`music_generator`、`news_aggregator`、`novel_writer`、`tech_hot_article`、`voice_assistant`
+- **安全过滤**：内置内容安全检查器，支持安全开关与敏感词清理
+- **轻量级 GUI**：基于 Tkinter 的简洁图形界面，支持图片缩略图预览、双击查看大图
 
 ## 🚀 快速开始
 
 ### 环境要求
 
 - Python 3.8 或更高版本
-- 至少 8GB RAM (本地模式建议 16GB+)
-- 可选: Ollama (用于 LLM 增强)
+- 至少 8GB RAM（本地模式建议 16GB+）
+- 可选：Ollama（用于 LLM 增强、小说生成、新闻摘要）
+- 可选：FFmpeg（用于视频 / 音频合并）
+- 可选：FluidSynth + SoundFont（用于 MIDI 音乐合成）
+- 视频生成需要可访问 Agnes API，并配置 `AGNES_API_KEY`
 
 ### 安装
 
 1. **克隆项目**
+
 ```bash
-git clone https://github.com/yourusername/PromptForge.git
-cd chat_image_generator
+git clone https://github.com/austinnie/PromptForge.git
+cd PromptForge
 ```
 
-2. 创建虚拟环境 (推荐)
+2. **创建虚拟环境（推荐）**
 
 ```bash
 python -m venv venv
@@ -41,20 +48,24 @@ source venv/bin/activate  # Linux/Mac
 venv\Scripts\activate  # Windows
 ```
 
-3. 安装依赖
+3. **安装依赖**
 
 ```bash
 pip install -r requirements.txt
 ```
 
-4. 配置环境变量 (可选)
+> PyTorch 建议按官方说明安装 CPU 或 CUDA 版本：
+> `pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu`
+
+4. **配置环境变量（可选）**
 
 ```bash
-cp .env.example .env
+cp .env.sample .env
 # 编辑 .env 文件，填入你的 API 密钥
 ```
 
-5. 启动应用
+5. **启动应用**
+
 ```bash
 python main.py
 ```
@@ -63,127 +74,258 @@ python main.py
 
 ### 基本操作
 
-1. **选择模式**: 在工具栏切换 `local` (本地) 或 `api` (云端) 模式
-2. **选择模型/API**: 
-   - 本地模式: 点击 "📂 选择模型" 加载 `.safetensors` 或 `.ckpt` 文件
-   - API 模式: 从下拉列表选择提供商 (Pollinations, Agnes, 通义万相等)
-3. **输入描述**: 在输入框用自然语言描述你想要的图片
-4. **发送**: 按 `Ctrl+Enter` 或点击 "🚀 发送" 按钮
+1. **选择模式**：在工具栏切换 `local`（本地）或 `api`（云端）模式
+2. **选择模型 / API**：
+   - 本地模式：点击“📂 选择模型”加载 `.safetensors` 或 `.ckpt` 文件
+   - API 模式：从下拉列表选择提供商（Pollinations、Agnes、通义万相等）
+3. **输入描述**：在输入框用自然语言描述你想要的图片或视频
+4. **发送**：按 `Ctrl+Enter` 或点击“🚀 发送”按钮
 
 ### 支持的操作
 
 | 操作类型 | 示例输入 | 说明 |
 |---------|---------|------|
-| 文生图 | "生成一张美丽的日落风景" | 从文字生成图片 |
-| 图生图 | "把这张图改成油画风格" | 需先上传图片 |
-| 双人合成 | "让他们拥抱在一起" | 需上传两张人物图片 |
-| 普通对话 | "你好，能帮我生成图片吗？" | 自然语言问答 |
+| 文生图 | “生成一张美丽的日落风景” | 从文字生成图片 |
+| 图生图 | “把这张图改成油画风格” | 需先上传 1 张图片 |
+| 双人合成 | “让他们拥抱在一起” | 需上传 2 张人物图片 |
+| 多人合成 | “把这三个人放在同一个场景里” | 需上传 3 张以上人物图片 |
+| 视频生成 | “生成一段 60 秒的日落海浪视频” | 需 API 模式，且选择支持视频的提供商（Agnes） |
+| 多媒体创作 | “创作一个关于月光森林的视频” | 全自动：小说 → 视频 → 语音 → 音乐 → 字幕 → 成片 |
+| 普通对话 | “你好，能帮我生成图片吗？” | 自然语言问答 |
+
+### 视频生成
+
+1. 在 `.env` 中配置视频相关参数：
+
+```ini
+VIDEO_SEGMENT_DURATION=10
+VIDEO_AUTO_MERGE=true
+VIDEO_DURATION=60
+```
+
+2. 切换到 API 模式，选择支持视频生成的提供商（如 Agnes）
+3. 输入视频描述，例如：
+
+```text
+生成一段 60 秒的日落海浪视频
+```
+
+4. 当 `VIDEO_AUTO_MERGE=true` 时，应用会根据 `VIDEO_SEGMENT_DURATION` 自动拆分并合并多个视频片段
+
+> 注意：Agnes API 单次视频生成时长通常为 4-12 秒，长视频通过分段拼接实现，需要安装 FFmpeg。
+
+### 多媒体全自动创作
+
+输入“创作视频 ...”“全自动 ...”“生成故事 ...”等指令，会触发 `MultimediaWorkflow`：
+
+1. 用 Ollama 生成小说脚本并拆分为场景
+2. 为每个场景生成视频片段、语音旁白、背景音乐、字幕
+3. 逐段合并，最终拼接为完整视频
 
 ### 上下文记忆
 
-应用会记住你的偏好（风格、场景等），并在后续生成中自动应用。你可以说 "显示偏好" 或 "清除上下文" 来管理。
+应用会记住你的偏好（风格、场景等），并在后续生成中自动应用。你可以说“显示偏好”“上下文”或“清除上下文”来管理。
 
 ## 🖥️ API 提供商配置
 
 ### 免费无需注册
-- **Pollinations AI**: 无需配置，开箱即用
-- **Free API**: 社区免费代理，无需注册
 
-### 需要注册 (免费/付费)
-- **Agnes AI**: [注册获取 API Key](https://apihub.agnes-ai.com)，无限期免费
-- **HuggingFace**: [获取 Access Token](https://huggingface.co/settings/tokens)，免费有限速
+- **Pollinations AI**：无需配置，开箱即用
+- **Free API**：社区免费代理，无需注册（稳定性较差）
 
-### 付费 API (需在 .env 配置)
-- 通义万相 (阿里云百炼)
-- 文心一格 (百度智能云)
+### 需要注册（免费 / 付费）
+
+- **Agnes AI**：[注册获取 API Key](https://apihub.agnes-ai.com)，支持图像、文本、视频、视觉模型，无限期免费
+- **HuggingFace**：[获取 Access Token](https://huggingface.co/settings/tokens)，免费有限速
+- **Replicate**：[获取 API Token](https://replicate.com/account/api-tokens)，按量付费，支持真正的图生图
+- **Stability AI**：[获取 API Key](https://platform.stability.ai/account/keys)，按量付费，支持真正的图生图
+
+### 付费 API（需在 .env 配置）
+
+- 通义万相（阿里云百炼）
+- 文心一格（百度智能云）
 - 腾讯混元
 
 ## ⚙️ 配置说明
-### 环境变量 (.env)
-```ini
-# 生成模式: local / api
-GENERATION_MODE=api
-API_PROVIDER=pollinations
 
-# 本地模型路径
+### 环境变量（.env）
+
+```ini
+# ============================================================
+# 生成模式
+# ============================================================
+GENERATION_MODE=api          # local / api
+API_PROVIDER=pollinations    # pollinations / agnes / huggingface / tongyi / yige / hunyuan / freeapi / replicate / stability
+
+# ============================================================
+# 本地模型
+# ============================================================
 SD_MODEL_PATH=/path/to/model.safetensors
 
-# Pollinations (免费)
+# ============================================================
+# Pollinations（免费，无需 Key）
+# ============================================================
 POLLINATIONS_MODEL=flux
 
-# Agnes AI (免费)
+# ============================================================
+# Agnes AI（免费，需注册）
+# ============================================================
 AGNES_API_KEY=your_api_key_here
 # 备用路由（主路由不可用时自动切换）
 # AGNES_BASE_URL=https://apihub.agnes-ai.cn/v1
 # AGNES_BASE_URL=https://api.agnes-ai.cn/v1
 AGNES_IMAGE_MODEL=agnes-image-2.1-flash
 AGNES_TEXT_MODEL=agnes-2.5-flash
-AGNES_VIDEO_MODEL=agnes-video-v2.0
+AGNES_VIDEO_MODEL=agnes-video-2.5-flash
 AGNES_VISION_MODEL=agnes-2.5-flash
+
 # ============================================================
 # 视频生成配置
 # ============================================================
+VIDEO_SEGMENT_DURATION=10    # 单个视频分段长度（秒）
+VIDEO_AUTO_MERGE=true        # 是否启用自动循环拼接
+VIDEO_DURATION=60            # 目标视频时长（秒）
+                             # 注意：Agnes API 单次 4-12 秒
 
-# 单个视频分段长度
-VIDEO_SEGMENT_DURATION=10
-
-# ✅ 是否启用自动循环拼接
-# true  = 自动拆分并合并多个 10 秒片段
-# false = 只生成 10 秒
-VIDEO_AUTO_MERGE=true
-
-# 目标视频时长（秒）
-# 注意：Agnes API 单次4-12 秒
-VIDEO_DURATION=60
-
-# 通义万相 (阿里云)
+# ============================================================
+# 通义万相（阿里云）
+# ============================================================
 TONGYI_API_KEY=your_api_key
 TONGYI_MODEL=wanx-v1
 
-# 其他 API 配置...
+# ============================================================
+# 文心一格（百度）
+# ============================================================
+YIGE_API_KEY=your_api_key
+YIGE_SECRET_KEY=your_secret_key
+
+# ============================================================
+# 腾讯混元
+# ============================================================
+HUNYUAN_SECRET_ID=your_secret_id
+HUNYUAN_SECRET_KEY=your_secret_key
+
+# ============================================================
+# HuggingFace
+# ============================================================
+HF_API_TOKEN=your_token
+HF_MODEL=sdxl
+
+# ============================================================
+# Replicate / Stability（付费，支持图生图）
+# ============================================================
+REPLICATE_API_TOKEN=your_token
+REPLICATE_MODEL=stability-ai/stable-diffusion
+
+STABILITY_API_KEY=your_key
+STABILITY_MODEL=stable-diffusion-xl-1024-v1-0
+
+# ============================================================
+# Free API（社区免费代理）
+# ============================================================
+FREEAPI_MODEL=flux
+
+# ============================================================
+# 生成参数
+# ============================================================
+DEFAULT_STEPS=20             # 推理步数
+DEFAULT_CFG=7.5              # 提示词引导强度
+DEFAULT_STRENGTH=0.35        # 图生图默认强度
+DEFAULT_WIDTH=512            # 默认宽度
+DEFAULT_HEIGHT=768           # 默认高度
+
+# ============================================================
+# 安全
+# ============================================================
+SAFE_MODE=true
+ENABLE_SAFETY_CHECK=true     # 是否启用安全检测
+
+# ============================================================
+# LLM（Ollama）
+# ============================================================
+LLM_ENABLED=true
+OLLAMA_URL=http://localhost:11434
+OLLAMA_MODEL=qwen2.5:1.5b
+
+# ============================================================
+# 技术文章配图引擎
+# ============================================================
+ARTICLE_IMAGE_ENGINE=agnes
 ```
 
 ### 生成参数
-在 .env 中可调整默认参数：
 
-DEFAULT_STEPS=20 - 推理步数
+在 `.env` 中可调整默认参数：
 
-DEFAULT_CFG=7.5 - 提示词引导强度
+```ini
+DEFAULT_STEPS=20             # 推理步数
+DEFAULT_CFG=7.5              # 提示词引导强度
+DEFAULT_STRENGTH=0.35        # 图生图默认强度
+DEFAULT_WIDTH=512            # 默认宽度
+DEFAULT_HEIGHT=768           # 默认高度
+```
 
-DEFAULT_WIDTH=512 - 默认宽度
+### 安全配置
 
-DEFAULT_HEIGHT=768 - 默认高度
+安全开关可在 `.env` 中配置，用于控制内容安全检查器的行为。
 
-### 📁 项目结构
+```ini
+SAFE_MODE=true
+ENABLE_SAFETY_CHECK=true     # 是否启用安全检测
+```
+
+## 📁 项目结构
+
 ```text
-chat_image_generator/
-├── main.py                 # 应用入口
+PromptForge/
+├── main.py                       # 应用入口
 ├── gui/
-│   └── app.py             # 主界面 (Tkinter)
-├── core/                  # 核心逻辑
-│   ├── intent_analyzer.py # 意图分析
-│   ├── prompt_builder.py  # 提示词构建
-│   ├── context_manager.py # 上下文管理
-│   └── safety.py          # 安全检查
-├── api_engines/           # API 引擎
-│   ├── base.py           # 基类
-│   ├── pollinations.py   # Pollinations
-│   ├── agnes.py          # Agnes AI
-│   ├── freeapi.py        # Free API
-│   ├── tongyi.py         # 通义万相
-│   ├── yige.py           # 文心一格
-│   └── hunyuan.py        # 腾讯混元
-├── handlers/              # 意图处理器
+│   └── app.py                    # 主界面 (Tkinter)
+├── core/                         # 核心逻辑
+│   ├── intent_analyzer.py        # 意图分析
+│   ├── prompt_builder.py         # 提示词构建
+│   ├── context_manager.py        # 上下文管理
+│   └── safety.py                 # 安全检查
+├── api_engines/                  # API 引擎
+│   ├── base.py                   # 基类
+│   ├── pollinations.py           # Pollinations
+│   ├── agnes.py                  # Agnes AI（图像/文本/视频/视觉）
+│   ├── freeapi.py                # Free API
+│   ├── tongyi.py                 # 通义万相
+│   ├── yige.py                   # 文心一格
+│   ├── hunyuan.py                # 腾讯混元
+│   ├── huggingface.py            # HuggingFace
+│   ├── replicate.py              # Replicate（支持图生图）
+│   └── stability.py              # Stability AI（支持图生图）
+├── handlers/                     # 意图处理器
+│   ├── base.py
 │   ├── text_to_image.py
 │   ├── image_to_image.py
 │   ├── couple_handler.py
-│   └── chat_handler.py
-├── services/              # 服务
-│   ├── llm_service.py    # Ollama 集成
-│   └── pipeline_pool.py  # 模型池管理
+│   ├── multi_person_handler.py
+│   ├── chat_handler.py
+│   ├── video_handler.py
+│   └── multimedia_handler.py
+├── services/                     # 服务
+│   ├── llm_service.py            # Ollama 集成
+│   ├── pipeline_pool.py          # 模型池管理
+│   └── image_processor.py        # 图片后处理
+├── skills/                       # 技能模块
+│   ├── image_generator/          # 图像生成
+│   ├── video_generator/          # 视频生成
+│   ├── music_generator/          # 音乐生成（MIDI + MusicGen）
+│   ├── news_aggregator/          # 新闻聚合 + AI 摘要
+│   ├── novel_writer/             # 小说生成（多语言）
+│   ├── tech_hot_article/         # 技术热点文章 + 配图 + Word
+│   └── voice_assistant/          # 语音合成 / 识别
+├── multimedia/                   # 多媒体工作流
+│   ├── workflow.py               # 全自动创作主流程
+│   ├── assembler.py              # 视频合成
+│   └── subtitle.py               # 字幕生成
 ├── config/
-│   └── settings.py       # 全局配置
-└── requirements.txt      # 依赖列表
+│   └── settings.py               # 全局配置
+├── .env.sample                   # 环境变量模板
+└── requirements.txt              # 依赖列表
 ```
 
 ## 🔧 开发与扩展
@@ -194,24 +336,57 @@ chat_image_generator/
 2. 实现 `generate_single()` 方法
 3. 在 `api_engines/__init__.py` 的 `create_engine()` 中注册
 4. 在 `config/settings.py` 添加配置项
+5. 如果该提供商支持视频生成，请按现有 Agnes 视频流程扩展分段与拼接逻辑
 
 ### 自定义意图
 
 在 `core/intent_analyzer.py` 的 `IntentAnalyzer` 类中添加新的触发词和处理逻辑。
+
+### 技能系统
+
+技能模块位于 `skills/` 目录，每个技能包含：
+
+- `skill.py`：核心实现
+- `meta.json`：元信息
+- `*_cli.py`：命令行入口
+- `README.md`：使用说明
+
+可按需添加新技能模块，并在 `skills/__init__.py` 中注册。
+
+当前包含：
+
+- `image_generator`：图像生成技能，支持文生图、图生图，多引擎切换与自动回退
+- `video_generator`：视频生成技能，支持文生视频与长视频分段拼接
+- `music_generator`：AI 音乐大师，自动写词、谱曲，支持 MIDI 与 MusicGen 两种模式
+- `news_aggregator`：新闻聚合器，RSS 新闻抓取 + AI 智能摘要，支持多分类
+- `novel_writer`：小说生成技能，使用本地 Ollama 大模型自动写小说，支持多语言与断点续写
+- `tech_hot_article`：技术热点文章生成器，基于实时热点生成文章，自动配图并输出 Word 文档
+- `voice_assistant`：语音合成（TTS）与语音识别（STT）助手，支持多语言与长文本分段
+
+### 外部工具依赖
+
+部分功能需要额外的外部工具：
+
+| 工具 | 用途 | 安装方式 |
+|------|------|---------|
+| FFmpeg | 视频 / 音频合并 | [ffmpeg.org](https://ffmpeg.org/download.html) |
+| FluidSynth | MIDI → WAV 合成 | 放入 `skills/music_generator/soundfonts/` |
+| SoundFont (.sf2) | MIDI 音色库 | 放入 `skills/music_generator/soundfonts/` |
+| Ollama | LLM 增强、小说、新闻摘要 | [ollama.com](https://ollama.com/) |
 
 ## 🤝 贡献
 
 欢迎提交 Issue 和 Pull Request！
 
 1. Fork 本仓库
-2. 创建你的特性分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
+2. 创建你的特性分支（`git checkout -b feature/AmazingFeature`）
+3. 提交更改（`git commit -m 'Add some AmazingFeature'`）
+4. 推送到分支（`git push origin feature/AmazingFeature`）
 5. 开启 Pull Request
 
 ## 📝 许可证
 
-本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件
+本项目采用 MIT 许可证 - 详见 [LICENSE](https://github.com/austinnie/PromptForge/blob/main/LICENSE) 文件。
 
 ## 🙏 致谢
 
@@ -219,7 +394,10 @@ chat_image_generator/
 - [Diffusers](https://github.com/huggingface/diffusers) - 优秀的扩散模型库
 - [Pollinations AI](https://pollinations.ai/) - 免费图像生成 API
 - [Agnes AI](https://apihub.agnes-ai.com) - 免费多模态 AI API
+- [MoviePy](https://zulko.github.io/moviepy/) - 视频编辑库
+- [edge-tts](https://github.com/rany2/edge-tts) - 免费 TTS
+- [Ollama](https://ollama.com/) - 本地大模型运行环境
 
 ## ⚠️ 免责声明
 
-本项目仅供学习和研究使用。生成的图片内容由用户输入的提示词决定，使用者需遵守相关法律法规和服务条款。对于本地模式，请确保使用的模型符合其各自的许可协议。
+本项目仅供学习和研究使用。生成的图片、视频、音乐、文章等内容由用户输入的提示词决定，使用者需遵守相关法律法规和服务条款。对于本地模式，请确保使用的模型符合其各自的许可协议。
