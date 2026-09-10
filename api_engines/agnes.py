@@ -257,6 +257,29 @@ class AgnesEngine:
         buffered = io.BytesIO()
         image.save(buffered, format="PNG")
         return base64.b64encode(buffered.getvalue()).decode('utf-8')
+
+    def _resize_for_api(self, image: Image.Image, max_size: int = 1024) -> Image.Image:
+        """
+        缩放图片到 API 支持的最大尺寸
+        
+        Args:
+            image: PIL Image
+            max_size: 最大边长（默认 1024）
+        
+        Returns:
+            缩放后的 PIL Image
+        """
+        w, h = image.size
+        if max(w, h) > max_size:
+            scale = max_size / max(w, h)
+            new_w = int(w * scale)
+            new_h = int(h * scale)
+            # 确保尺寸是 8 的倍数（SD 模型要求）
+            new_w = ((new_w + 7) // 8) * 8
+            new_h = ((new_h + 7) // 8) * 8
+            image = image.resize((new_w, new_h), Image.Resampling.LANCZOS)
+            print(f"🔍 图片已缩放: {w}x{h} → {new_w}x{new_h}")
+        return image
     
     # ==================== 文生图 ====================
     
@@ -338,11 +361,10 @@ class AgnesEngine:
     # ==================== 图生图 ====================
     
     # api_engines/agnes.py - 完整的 image_to_image 方法
-
     def image_to_image(
         self,
         prompt: str,
-        image: Image.Image,
+        image,  # ✅ 支持 Image.Image 或 List[Image.Image]
         strength: float = 0.7,
         width: int = None,
         height: int = None,
@@ -351,11 +373,28 @@ class AgnesEngine:
         seed: int = None,
     ) -> Image.Image:
         """
-        图生图 - 使用 OpenAI 兼容格式
+        图生图 - 支持单张或多张图片（Agnes 多图合成）
+        
+        Args:
+            image: 单张图片 (Image.Image) 或多张图片 (List[Image.Image])
+        
+        说明:
+            - 单张图: 传 image 字符串
+            - 多张图: 传 image 数组（Agnes 支持多图合成）
         """
-        # 获取尺寸
+        # ✅ 统一处理为列表
+        if isinstance(image, list):
+            images = image
+        else:
+            images = [image]
+
+        # ✅ 缩放每张图片（关键！）
+        images = [self._resize_for_api(img, max_size=1024) for img in images]
+    
+        # 用第一张图确定尺寸（如果没有指定）
+        first_image = images[0]
         if width is None or height is None:
-            width, height = image.size
+            width, height = first_image.size
         
         # 限制最大尺寸
         max_size = 1024
@@ -375,38 +414,47 @@ class AgnesEngine:
             elif seed < -1:
                 seed = -1
         
-        # 将图片转为 Base64
-        img_base64 = self._image_to_base64(image)
-        
-        # ✅ 构建请求数据（不包含 response_format）
+        # ✅ 构建请求数据
         data = {
             "model": self.image_model,
             "prompt": prompt,
             "n": 1,
-            "size": size, 
-            "image": f"data:image/png;base64,{img_base64}",
+            "size": size,
         }
+        
+        # ✅ 关键：根据图片数量决定用 image (单张) 还是 image 数组（多张）
+        if len(images) == 1:
+            # 单张图：传统方式
+            img_base64 = self._image_to_base64(images[0])
+            data["image"] = f"data:image/png;base64,{img_base64}"
+        else:
+            # 多张图：Agnes 的多图合成格式
+            # 官方文档示例可能使用 "image" 数组，也可能使用 "images"
+            # 我们先尝试 "image" 数组（按你之前查到的文档）
+            image_list = [
+                f"data:image/png;base64,{self._image_to_base64(img)}"
+                for img in images
+            ]
+            # ✅ 优先使用 "image" 数组（Agnes 官方文档格式）
+            data["image"] = image_list
+            # 备选：如果 API 不认识 "image" 数组，可以尝试 "images"
+            # data["images"] = image_list
         
         if seed is not None:
             data["seed"] = seed
-        
-        #if steps and steps > 0:
-        #    data["steps"] = steps
-        
-        #if cfg and cfg > 0:
-        #    data["guidance_scale"] = cfg
         
         if strength and 0 < strength < 1:
             data["strength"] = strength
         
         print(f"🔍 Agnes AI 图生图")
         print(f"🔍 模型: {self.image_model}, 尺寸: {size}, 强度: {strength}")
+        print(f"🔍 图片数量: {len(images)}")
         print(f"🔍 请求参数: {list(data.keys())}")
         
         # 发送请求
         result = self._request("images/generations", data)
         
-        # 解析图片 URL
+        # 解析图片 URL（保持原有逻辑）
         image_url = None
         if 'data' in result and result['data']:
             image_url = result['data'][0].get('url')
