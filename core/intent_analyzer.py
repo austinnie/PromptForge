@@ -21,6 +21,13 @@ class IntentResult:
 
 class IntentAnalyzer:
     """意图分析器"""
+
+    # ✅ 新增：多人合成关键词
+    MULTI_PERSON_KEYWORDS = [
+        '三人', '三人行', '四个人', '四人', '五人', '多人', '群像',
+        '一群人', '几个人', '三人合影', '多个人', '群照',
+        'three', 'four', 'five', 'group', 'crowd',
+    ]
     
     # 双人合成关键词
     COUPLE_KEYWORDS = ['和', '与', '一起', '两人', '双人', '情侣', 'couple', 'together', 'two']
@@ -109,8 +116,17 @@ class IntentAnalyzer:
         self._safety = None
     
     def analyze(self, text: str, has_image: bool = False, 
-                has_multiple: bool = False) -> IntentResult:
-        """分析用户输入意图"""
+                has_multiple: bool = False, image_count: int = 0) -> IntentResult:
+        """
+        分析用户输入意图
+        
+        Args:
+            text: 用户输入
+            has_image: 是否有图片
+            has_multiple: 是否有 2+ 张图片
+            image_count: 上传的图片数量（用于判断双人还是多人）
+        """
+
         text_lower = text.lower()       
 
         # 1. 安全检查（最优先）
@@ -145,8 +161,15 @@ class IntentAnalyzer:
             if len(text) > 3 and self._is_gen_intent(text):
                 return self._analyze_img2img_reference(text)
         
-        # 3. 双人合成
+        # 3. 双人/多人合成
         if has_multiple and any(k in text_lower for k in self.COUPLE_KEYWORDS):
+            # 判断是双人还是多人
+            is_multi = (
+                any(k in text_lower for k in self.MULTI_PERSON_KEYWORDS) or 
+                image_count >= 3
+            )
+            if is_multi:
+                return self._analyze_multi_person(text, count=image_count)
             return self._analyze_couple(text)
         
         # 4. 对话意图（放在视频之前，减少误触）
@@ -294,6 +317,39 @@ class IntentAnalyzer:
             type="couple",
             prompt=f"1girl and 1boy, {action}, couple, romantic, masterpiece",
             params={"action": action},
+            original_text=text,
+            confidence=0.9
+        )
+
+    def _analyze_multi_person(self, text: str, count: int = 3) -> IntentResult:
+        """多人合成"""
+        action = "standing together"
+        action_map = {
+            '拥抱': 'hugging',
+            '牵手': 'holding hands',
+            '围坐': 'sitting together in a circle',
+            '站在一起': 'standing together',
+            '合影': 'group photo',
+            '庆祝': 'celebrating',
+            '聊天': 'chatting together',
+            '笑': 'smiling together',
+        }
+        for cn, en in action_map.items():
+            if cn in text:
+                action = en
+                break
+
+        # 构造 N 人提示词
+        subjects = ", ".join([
+            "1girl" if i % 2 == 0 else "1boy"
+            for i in range(count)
+        ])
+        prompt = f"{subjects}, group of {count} people, {action}, masterpiece, best quality"
+
+        return IntentResult(
+            type="multi_person",  # ✅ 新类型
+            prompt=prompt,
+            params={"action": action, "count": count},
             original_text=text,
             confidence=0.9
         )

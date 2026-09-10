@@ -531,12 +531,20 @@ class ChatApp:
                 if intent.type in ["text_to_image"]:
                     self._enhance_with_llm(intent)
             
-            from handlers import TextToImageHandler, ImageToImageHandler, CoupleHandler, ChatHandler
+            from handlers import (
+                TextToImageHandler, 
+                ImageToImageHandler,
+                CoupleHandler, 
+                MultiPersonHandler,  # ✅ 新增
+                ChatHandler, 
+                VideoHandler,
+            )
             
             handlers = {
                 "text_to_image": TextToImageHandler(self),
                 "image_to_image": ImageToImageHandler(self),
                 "couple": CoupleHandler(self),
+                "multi_person": MultiPersonHandler(self),   # ✅ 新增
                 "chat": ChatHandler(self),
                 "video": VideoHandler(self),  # ✅ 新增
             }
