@@ -46,16 +46,22 @@ class SafetyChecker:
         'erotica', 'bdsm', 'bondage', 'fetish',
     ]
     
-    # ----- 性暗示/擦边球 -----
+    # ----- 性暗示/擦边球（只保留真正具有性暗示意图的词）-----
     SEXUAL_SUGGESTIVE = [
         '性感', '妩媚', '妖娆', '尤物', '欲火',
-        '丰满', '圆润', '曼妙', '曲线', 'S身材',
-        '情趣', '情趣内衣', '蕾丝', '丝袜', '吊带',
-        '比基尼', '泳装', '内衣', '内裤', 'bra',
-        '诱惑照', '福利照', '写真', '私房照',
-        'sexy', 'hot', 'seductive', 'provocative',
-        'bikini', 'lingerie', 'underwear', 'panties',
+        'S身材', '情趣内衣', '情趣',
+        '诱惑照', '福利照', '私房照',
+        'sexy', 'seductive', 'provocative',
+        'lingerie', 'panties',
         'bondage', 'dominatrix',
+    ]
+
+    # ----- 以下为正常词汇，不拦截（仅记录）-----
+    NORMAL_FASHION = [
+        '蕾丝', '丝袜', '吊带', '比基尼', '泳装',
+        '内衣', '内裤', 'bra', '写真',
+        '丰满', '圆润', '曼妙', '曲线',
+        'bikini', 'underwear', 'hot',
     ]
     
     # ----- 暴力/血腥 -----

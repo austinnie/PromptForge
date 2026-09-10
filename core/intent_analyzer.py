@@ -34,7 +34,8 @@ class IntentAnalyzer:
     # 文生图关键词
     GEN_KEYWORDS = ['生成', '画', '创建', 'create', 'generate', '画一张', '帮我画', 
                     'make', 'render', 'produce', 'draw', 'paint',
-                    '加上', '添加', '增加', '加入', '放入']  # 也包含一些动作词
+                    '加上', '添加', '增加', '加入', '放入',  # 也包含一些动作词
+                    'create picture', 'make picture', 'create image']  # ✅ 新增
     
     # 场景词
     SCENE_KEYWORDS = ['风景', '美女', '帅哥', '人像', '动漫', 
@@ -114,7 +115,17 @@ class IntentAnalyzer:
 
         # 1. 安全检查（最优先）
         if self._is_unsafe(text):
-            return self._safe_fallback(text)
+            # ✅ 尝试清理敏感词
+            cleaned = SafetyChecker.sanitize(text)
+            if cleaned and len(cleaned) > 3:
+                # 清理成功，用清理后的文本继续分析
+                print(f"⚠️ 已自动清理敏感词，继续生成: {cleaned[:50]}...")
+                text = cleaned
+                text_lower = text.lower()
+                # 继续往下走（不再 return）
+            else:
+                # 清理后为空，返回 chat
+                return self._safe_fallback(text)
             
         # 2. ✅ 图生图优先（有图片时优先判断）
         if has_image:
@@ -326,9 +337,22 @@ class IntentAnalyzer:
         return is_unsafe
     
     def _safe_fallback(self, text: str) -> IntentResult:
-        return IntentResult(
-            type="chat",
-            prompt="请使用安全词汇描述您的需求",
-            original_text=text,
-            confidence=0.1
-        )
+        """安全回退：尝试清理后继续生成"""
+        cleaned = SafetyChecker.sanitize(text)
+        
+        if cleaned and len(cleaned) > 3:
+            # 清理成功，返回文生图意图
+            return IntentResult(
+                type="text_to_image",
+                prompt=cleaned,
+                original_text=text,
+                confidence=0.5,
+                system_hint="⚠️ 已自动过滤敏感词"
+            )
+        else:        
+            return IntentResult(
+                type="chat",
+                prompt="请使用安全词汇描述您的需求",
+                original_text=text,
+                confidence=0.1
+            )
