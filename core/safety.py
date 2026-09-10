@@ -61,6 +61,7 @@ class SafetyChecker:
         '蕾丝', '丝袜', '吊带', '比基尼', '泳装',
         '内衣', '内裤', 'bra', '写真',
         '丰满', '圆润', '曼妙', '曲线',
+        '性感', 
         'bikini', 'underwear', 'hot',
     ]
     
@@ -109,18 +110,18 @@ class SafetyChecker:
         '裸露': '穿着得体的时尚摄影',
         '裸体': '穿着时尚衣物的肖像摄影',
         '全裸': '穿着优雅服装的人像',
-        '性感': '优雅的时尚摄影',
-        '色情': '浪漫的艺术摄影',
-        '性爱': '浪漫的情侣摄影',
-        '诱惑': '优雅的时尚肖像',
+        '性感': '优雅迷人',
+        '色情': '浪漫',
+        '性爱': '浪漫的情侣',
+        '诱惑': '迷人',
         '裸照': '唯美的人像摄影',
         '裸图': '优雅的肖像摄影',
         '一丝不挂': '穿着时尚衣物的人像',
-        'sex': 'romantic couple photography',
-        'nude': 'elegant portrait photography',
-        'naked': 'fashion portrait photography',
-        'porn': 'romantic art photography',
-        'sexy': 'elegant fashion photography',
+        'sex': 'elegant',
+        'nude': 'elegant portrait',
+        'naked': 'fashion portrait',
+        'porn': 'romantic art',
+        'sexy': 'elegant',
     }
     
     # ============================================================

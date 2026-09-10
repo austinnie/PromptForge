@@ -9,6 +9,7 @@ from typing import Dict, Any
 from PIL import Image
 
 from .base import BaseHandler
+from core.safety import SafetyChecker  # ✅ 新增
 
 
 class CoupleHandler(BaseHandler):
@@ -35,7 +36,29 @@ class CoupleHandler(BaseHandler):
             return
         
         prompt = intent.get("prompt", "")
+        original_text = intent.get("original_text", "")
         action = intent.get("params", {}).get("action", "standing together")
+        
+        # ✅ 新增：安全检查
+        if self.app.settings.safe_mode and self.app.settings.enable_safety_check:
+            is_unsafe, matched = SafetyChecker.check(original_text)
+            if is_unsafe:
+                # 记录触发词
+                self._append_log(f"⚠️ 安全拦截: {matched[:5]}")
+                
+                # 尝试清理敏感词
+                cleaned = SafetyChecker.sanitize(original_text)
+                
+                # 如果清理后为空，或者评分过高，强制拦截
+                if not cleaned or SafetyChecker.get_score(original_text) > 30:
+                    self._reply("🛡️ 检测到不安全内容，已阻止合成")
+                    self._reply("💡 请修改描述，避免使用敏感词汇")
+                    self._update_status("⛔ 安全拦截")
+                    return
+                
+                # 使用清理后的文本，并告知用户
+                self._reply("⚠️ 已自动过滤敏感词")
+                original_text = cleaned
         
         self._update_status("👫 合成双人图片...")
         self.is_generating = True
@@ -114,6 +137,13 @@ class CoupleHandler(BaseHandler):
             traceback.print_exc()
         finally:
             self.is_generating = False
+    
+    def _append_log(self, msg: str):
+        """记录日志（兼容不同 app 实现）"""
+        if hasattr(self.app, '_append_log'):
+            self.app._append_log(msg)
+        else:
+            print(f"[LOG] {msg}")
     
     def cancel(self):
         """取消生成"""
