@@ -143,7 +143,9 @@ class PresetBridge:
             else:  # random
                 chosen = _random.choice(pool)
             detail[key] = chosen
-            parts.append(chosen)
+            # ✅ 过滤空字符串，避免开头多逗号
+            if chosen and chosen.strip():
+                parts.append(chosen)
 
         full = ", ".join(parts)
 

@@ -124,7 +124,7 @@ class PresetHandler(BaseHandler):
                     return
                 original = cleaned
 
-        subject_cn = self._extract_subject(original)
+        subject_cn = self._extract_subject(original) or None
         subject_en = self._translate_subject(subject_cn) if subject_cn else None
 
         if subject_cn and subject_en and subject_cn != subject_en:

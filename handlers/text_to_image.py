@@ -193,15 +193,18 @@ class TextToImageHandler(BaseHandler):
         self.cancel_flag = False
         
         try:
+
             # 构建提示词
             if self.app.settings.api_provider == "pollinations":
-                simple_prompt = intent.get("original_text", prompt)
+                # Pollinations 对长提示词不友好，用简化版
+                simple_prompt = prompt   # ✅ 用传入的 prompt（已经是 6 层拼好的）
                 for word in ["生成", "画", "帮我画", "create", "generate"]:
                     simple_prompt = simple_prompt.replace(word, "")
                 full_prompt = simple_prompt.strip().strip('，').strip(',')
                 print(f"🔍 Pollinations 使用简化 Prompt: {full_prompt}")
             else:
-                full_prompt = self._build_quality_prompt(original_text, intent.get("keywords", {}))
+                # ✅ 其他 API 直接用传入的 prompt（不要再重新构建）
+                full_prompt = prompt
             
             negative = self._build_negative(original_text)
             

@@ -270,39 +270,23 @@ class ChatApp:
 
 
     def _process_with_preset(self, text: str, preset: str):
-        """用指定预设处理输入"""
-        self._last_preset_input = text   # ✅ 记住，供"换一张"用
-        
+        """用指定预设处理输入（下拉框选择时触发）"""
         if hasattr(self, '_is_processing') and self._is_processing:
             return
-
+        
+        self._last_preset_input = text
         self.input_text.delete("1.0", tk.END)
         self._append_message("user", text)
+        
         self._is_processing = True
         self.send_btn.config(state=tk.DISABLED)
         self.cancel_btn.config(state=tk.NORMAL)
-
-        count = self.count_var.get() if hasattr(self, 'count_var') else 1
-
-        def thread():
-            try:
-                from handlers.preset_handler import PresetHandler
-                handler = PresetHandler(self)
-                handler.handle({
-                    "type": "preset_image",
-                    "original_text": text,
-                    "params": {"preset": preset, "count": count, "mode": "random"},
-                })
-            except Exception as e:
-                self._append_message("assistant", f"❌ 处理失败: {e}")
-                import traceback
-                traceback.print_exc()
-            finally:
-                self._is_processing = False
-                self.root.after(0, self._reset_ui)
-
-        threading.Thread(target=thread, daemon=True).start()
-
+        
+        threading.Thread(
+            target=self._preset_thread,
+            args=(text, preset),
+            daemon=True,
+        ).start()
 
     def _preset_reroll(self):
         """🎲 换一张：同一预设 + 同一主体，6 层全重抽"""
@@ -639,18 +623,49 @@ class ChatApp:
             return
         
         user_input = self.input_text.get("1.0", tk.END).strip()
-        if not user_input:
+        preset = self._get_selected_preset()
+        
+        # ✅ 有预设或输入框有内容，才允许发送
+        if not user_input and not preset:
             return
         
         self.input_text.delete("1.0", tk.END)
-        self._append_message("user", user_input)
+        display_text = user_input if user_input else f"（用 {preset} 的默认主体）"
+        self._append_message("user", display_text)
         
         self._is_processing = True
         self.send_btn.config(state=tk.DISABLED)
         self.cancel_btn.config(state=tk.NORMAL)
         
-        threading.Thread(target=self._process, args=(user_input,), daemon=True).start()
-    
+        if preset:
+            threading.Thread(
+                target=self._preset_thread,
+                args=(user_input, preset),
+                daemon=True,
+            ).start()
+        else:
+            threading.Thread(target=self._process, args=(user_input,), daemon=True).start()
+
+    def _preset_thread(self, text: str, preset: str):
+        """预设流程的线程体"""
+        self._last_preset_input = text
+        try:
+            from handlers.preset_handler import PresetHandler
+            handler = PresetHandler(self)
+            count = self.count_var.get() if hasattr(self, 'count_var') else 1
+            handler.handle({
+                "type": "preset_image",
+                "original_text": text,
+                "params": {"preset": preset, "count": count, "mode": "random"},
+            })
+        except Exception as e:
+            self._append_message("assistant", f"❌ 处理失败: {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            self._is_processing = False
+            self.root.after(0, self._reset_ui)
+            
     def _process(self, text: str):
         try:
             intent = self.intent_analyzer.analyze(
