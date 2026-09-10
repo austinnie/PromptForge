@@ -1,15 +1,15 @@
 # presets/jp_lingerie_boudoir.py
-"""风格预设: jp_lingerie_boudoir — 蕾丝内衣，柔和卧室写真"""
+"""风格预设: jp_lingerie_boudoir — 蕾丝内衣，丰满全身"""
 
 PRESET = {
     "name": "jp_lingerie_boudoir",
-    "description": "日系蕾丝内衣 - 柔和卧室写真",
+    "description": "蕾丝内衣 - 丰满全身",
     "layers": {
         "subject": [
-            "beautiful japanese woman, slim hourglass figure, long dark hair, flawless fair skin, wearing delicate white lace lingerie set, elegant graceful pose, one hand resting on her waist",
-            "stunning japanese model, elegant figure, wavy dark hair, soft natural makeup, wearing cream lace bra and panties, relaxed confident stance, hands lightly touching her hair",
-            "gorgeous japanese lady, slender figure, long black hair softly falling, wearing black lace lingerie, graceful sitting pose on the edge of the bed, gentle expression",
-            "charming japanese woman, slim figure, dark hair loosely tied, wearing blush pink lace lingerie, elegant standing pose, soft smile",
+            "masterpiece portrait, beautiful japanese woman, gorgeous detailed face, delicate facial features, flawless fair skin, large expressive eyes, glossy lips, subtle natural makeup, busty voluptuous figure, large bust, deep cleavage, slim waist, long dark hair, wearing delicate white lace lingerie set, full body elegant graceful pose",
+            "masterpiece portrait, stunning japanese model, gorgeous detailed face, delicate facial features, flawless fair skin, large expressive eyes, soft natural makeup, busty hourglass figure, large bust, wavy dark hair, wearing cream lace bra and panties, full body relaxed confident stance",
+            "masterpiece portrait, gorgeous japanese lady, gorgeous detailed face, delicate facial features, flawless fair skin, large expressive eyes, glossy lips, voluptuous busty body, large bust, slim waist, round hips, long black hair softly falling, wearing black lace lingerie, full body graceful standing pose",
+            "masterpiece portrait, charming japanese woman, gorgeous detailed face, delicate facial features, flawless fair skin, large expressive eyes, subtle natural makeup, busty curvy figure, large bust, dark hair loosely tied, wearing blush pink lace lingerie, full body elegant standing pose, soft smile",
         ],
         "scene": [
             "in an elegant hotel bedroom with soft warm lamp light and velvet curtains",
@@ -18,8 +18,8 @@ PRESET = {
             "in a classic bedroom with wallpaper and a wooden dressing table, warm ambient light",
         ],
         "style": [
-            "photorealistic boudoir photography, soft focus, dreamy bokeh, elegant editorial style, 85mm lens",
-            "professional lingerie photography, soft skin texture, tasteful composition, warm color grading",
+            "photorealistic full body boudoir photography, soft focus, dreamy bokeh, elegant editorial style, 85mm lens",
+            "professional lingerie photography, full body composition, soft skin texture, warm color grading",
             "intimate portrait photography, hazy atmosphere, subtle film grain, gentle cinematic mood",
         ],
         "lighting": [
@@ -28,14 +28,14 @@ PRESET = {
             "soft backlight with subtle rim light, delicate skin texture",
         ],
         "view": [
-            "medium shot, waist up, elegant framing",
-            "three-quarter view, graceful relaxed pose",
-            "close-up portrait, face and shoulders, soft warm light",
+            "full body shot, standing pose, elegant framing",
+            "full body shot, three-quarter view, graceful relaxed pose",
+            "full body shot from a low angle, emphasizing the graceful silhouette",
         ],
         "quality": [
-            "8k, highly detailed, sharp focus, realistic skin and lace texture",
-            "masterpiece, best quality, professional photography",
-            "ultra HD, flawless rendering, subtle film grain",
+            "masterpiece, best quality, 8k, highly detailed, sharp focus, realistic skin and lace texture, perfect face, detailed face, beautiful eyes, flawless skin",
+            "masterpiece, best quality, professional photography, ultra HD, perfect face, flawless rendering",
+            "8k, ultra HD, detailed face, beautiful eyes, flawless skin, subtle film grain",
         ],
     },
 }

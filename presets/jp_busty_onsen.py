@@ -1,15 +1,15 @@
 # presets/jp_busty_onsen.py
-"""风格预设: jp_busty_onsen — 日系温泉写真"""
+"""风格预设: jp_busty_onsen — 日系温泉（丰满全身）"""
 
 PRESET = {
     "name": "jp_busty_onsen",
-    "description": "日系温泉写真 - 静谧优雅",
+    "description": "日系温泉 - 丰满全身",
     "layers": {
         "subject": [
-            "beautiful japanese woman, curvy figure, long black hair tied in a loose bun with strands loose, wrapped in a white cotton bath towel, serene expression",
-            "stunning japanese model, voluptuous figure, wet dark hair, wrapped in a luxurious white bathrobe, elegant relaxing pose",
-            "gorgeous japanese lady, full figure, hair gathered up, wearing a traditional white yukata loosely tied, gentle relaxed posture",
-            "charming japanese woman, curvy body, hair pinned up, wearing a soft white wrap, sitting gracefully by the water",
+            "masterpiece portrait, beautiful japanese woman, gorgeous detailed face, delicate facial features, flawless fair skin, glowing translucent skin, large expressive eyes, glossy lips, subtle natural makeup, busty voluptuous figure, large bust, deep cleavage, slim waist, round hips, toned legs, perfect hourglass body, long black hair tied in a loose bun with strands loose, wrapped in a white cotton bath towel, full body standing with a serene expression",
+            "masterpiece portrait, stunning japanese model, gorgeous detailed face, delicate facial features, flawless fair skin, glowing translucent skin, large expressive eyes, glossy lips, busty hourglass figure, large bust, deep cleavage, slim waist, round hips, toned legs, wet dark hair, wrapped in a luxurious white bathrobe, full body elegant relaxing pose",
+            "masterpiece portrait, gorgeous japanese lady, gorgeous detailed face, delicate facial features, flawless fair skin, glowing translucent skin, large expressive eyes, glossy lips, subtle natural makeup, busty voluptuous figure, large bust, deep cleavage, slim waist, round hips, hair gathered up, wearing a traditional white yukata loosely tied, full body gentle relaxed posture",
+            "masterpiece portrait, charming japanese woman, gorgeous detailed face, delicate facial features, flawless fair skin, glowing translucent skin, large expressive eyes, glossy lips, busty hourglass figure, large bust, deep cleavage, slim waist, round hips, toned legs, hair pinned up, wearing a soft white wrap, full body standing gracefully by the water",
         ],
         "scene": [
             "in a traditional outdoor onsen hot spring, steam rising, stone lanterns, autumn maple leaves",
@@ -18,9 +18,9 @@ PRESET = {
             "in a serene indoor onsen with large wooden tub and warm ambient light",
         ],
         "style": [
-            "photorealistic onsen photography, soft warm lighting, steam atmosphere, elegant editorial style",
-            "traditional japanese ryokan photography, natural steam, warm color grading",
-            "cinematic onsen photography, soft shadows, tasteful composition",
+            "photorealistic full body onsen photography, soft warm lighting, steam atmosphere, elegant editorial style",
+            "traditional japanese ryokan photography, full figure framing, natural steam, warm color grading",
+            "cinematic onsen photography, full body composition, soft shadows, tasteful mood",
         ],
         "lighting": [
             "warm lantern light, soft steam glow",
@@ -28,14 +28,14 @@ PRESET = {
             "cool snowy light with warm lamp accents",
         ],
         "view": [
-            "medium shot, upper body, elegant framing",
-            "three-quarter view, serene seated pose",
-            "close-up portrait, face and shoulders, soft steam",
+            "full body shot, standing pose, elegant framing",
+            "full body shot from a low angle, emphasizing the graceful silhouette",
+            "full body shot, three-quarter view, serene posture",
         ],
         "quality": [
-            "8k, highly detailed, sharp focus, realistic skin and steam textures",
-            "masterpiece, best quality, professional photography",
-            "ultra HD, flawless rendering, serene atmosphere",
+            "masterpiece, best quality, 8k, highly detailed, sharp focus, realistic skin and steam texture, perfect face, detailed face, beautiful eyes, flawless skin",
+            "masterpiece, best quality, professional photography, ultra HD, perfect face, flawless rendering",
+            "8k, ultra HD, detailed face, beautiful eyes, flawless skin, serene atmosphere",
         ],
     },
 }

@@ -1,15 +1,15 @@
 # presets/daily_elevator.py
-"""风格预设: daily_elevator — 电梯里的邂逅"""
+"""风格预设: daily_elevator — 电梯里的邂逅（丰满全身）"""
 
 PRESET = {
     "name": "daily_elevator",
-    "description": "电梯里的邂逅 - 紧凑空间下的身材剪影",
+    "description": "电梯邂逅 - 丰满全身剪影",
     "layers": {
         "subject": [
-            "beautiful japanese woman, slim hourglass figure, long dark hair, wearing a fitted office blouse and pencil skirt, standing in a modern elevator, one hand lightly touching the handrail",
-            "stunning japanese model, elegant figure, dark hair in a low ponytail, wearing a fitted knit dress, leaning gently against an elevator wall, looking to the side",
-            "gorgeous japanese lady, curvy figure, long dark hair, wearing a tailored coat, standing in an elevator, one hand holding a small handbag",
-            "charming japanese woman, hourglass figure, wearing a fitted sleeveless dress, standing in a mirror-lined elevator, soft reflective light on her face",
+            "masterpiece portrait, beautiful japanese woman, gorgeous detailed face, delicate facial features, flawless fair skin, glowing translucent skin, large expressive eyes, glossy lips, subtle natural makeup, busty voluptuous figure, large bust, deep cleavage, slim waist, round hips, toned legs, perfect hourglass body, long dark hair, wearing a fitted office blouse and pencil skirt, full body standing in a modern elevator, one hand lightly touching the handrail",
+            "masterpiece portrait, stunning japanese model, gorgeous detailed face, delicate facial features, flawless fair skin, glowing translucent skin, large expressive eyes, glossy lips, busty hourglass figure, large bust, deep cleavage, slim waist, round hips, toned legs, dark hair in a low ponytail, wearing a form-fitting knit dress, full body leaning gently against an elevator wall, looking to the side",
+            "masterpiece portrait, gorgeous japanese lady, gorgeous detailed face, delicate facial features, flawless fair skin, glowing translucent skin, large expressive eyes, glossy lips, subtle natural makeup, busty voluptuous figure, large bust, deep cleavage, slim waist, round hips, long dark hair, wearing a tailored coat, full body standing in an elevator, one hand holding a small handbag",
+            "masterpiece portrait, charming japanese woman, gorgeous detailed face, delicate facial features, flawless fair skin, glowing translucent skin, large expressive eyes, glossy lips, busty hourglass figure, large bust, deep cleavage, slim waist, round hips, toned legs, wearing a fitted sleeveless dress, full body standing in a mirror-lined elevator, soft reflective light on her face",
         ],
         "scene": [
             "inside a modern mirror-lined elevator with soft warm overhead lighting",
@@ -18,9 +18,9 @@ PRESET = {
             "inside a small wooden elevator with vintage details and warm soft light",
         ],
         "style": [
-            "photorealistic vertical portrait, elegant composition, shallow depth of field, warm color grading",
-            "editorial elevator photography, soft skin texture, subtle reflections, cinematic mood",
-            "intimate portrait photography, elegant framing, gentle film grain",
+            "photorealistic full body vertical portrait, elegant composition, shallow depth of field, warm color grading",
+            "editorial elevator photography, full figure framing, soft skin texture, subtle reflections, cinematic mood",
+            "intimate portrait photography, full body framing, gentle film grain",
         ],
         "lighting": [
             "warm overhead elevator light, soft shadows",
@@ -29,13 +29,13 @@ PRESET = {
         ],
         "view": [
             "full body shot, standing pose, elegant vertical framing",
-            "three-quarter view, gentle S-curve posture",
-            "medium shot, waist up, natural candid expression",
+            "full body shot from a low angle, emphasizing the graceful silhouette",
+            "full body shot, three-quarter view, gentle S-curve posture",
         ],
         "quality": [
-            "8k, highly detailed, sharp focus, realistic skin and fabric texture",
-            "masterpiece, best quality, professional photography",
-            "ultra HD, flawless rendering, cinematic tone",
+            "masterpiece, best quality, 8k, highly detailed, sharp focus, realistic skin and fabric texture, perfect face, detailed face, beautiful eyes, flawless skin",
+            "masterpiece, best quality, professional photography, ultra HD, perfect face, flawless rendering",
+            "8k, ultra HD, detailed face, beautiful eyes, flawless skin, cinematic tone",
         ],
     },
 }

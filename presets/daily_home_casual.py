@@ -1,15 +1,15 @@
 # presets/daily_home_casual.py
-"""风格预设: daily_home_casual — 居家日常"""
+"""风格预设: daily_home_casual — 居家日常（丰满全身）"""
 
 PRESET = {
     "name": "daily_home_casual",
-    "description": "居家日常 - 自然身材剪影",
+    "description": "居家日常 - 丰满全身剪影",
     "layers": {
         "subject": [
-            "beautiful japanese woman, slim hourglass figure, long dark hair loosely tied, wearing a fitted tank top and soft shorts, leaning gently against a kitchen counter",
-            "stunning japanese model, elegant figure, messy dark hair, wearing an oversized knit sweater and thin leggings, sitting relaxed on a sofa with a cup of tea",
-            "gorgeous japanese lady, curvy figure, long hair falling over one shoulder, wearing a slim-fit long cardigan, standing by a floor-to-ceiling window with soft sunlight",
-            "charming japanese woman, hourglass figure, hair in a loose bun, wearing a fitted knit dress, standing in a cozy living room, warm afternoon light",
+            "masterpiece portrait, beautiful japanese woman, gorgeous detailed face, delicate facial features, flawless fair skin, glowing translucent skin, large expressive eyes, glossy lips, subtle natural makeup, busty voluptuous figure, large bust, deep cleavage, slim waist, round hips, toned legs, perfect hourglass body, long dark hair loosely tied, wearing a fitted tank top and soft shorts, full body leaning gently against a kitchen counter",
+            "masterpiece portrait, stunning japanese model, gorgeous detailed face, delicate facial features, flawless fair skin, glowing translucent skin, large expressive eyes, glossy lips, busty hourglass figure, large bust, deep cleavage, slim waist, round hips, toned legs, messy dark hair, wearing an oversized knit sweater and thin leggings, full body sitting relaxed on a sofa with a cup of tea",
+            "masterpiece portrait, gorgeous japanese lady, gorgeous detailed face, delicate facial features, flawless fair skin, glowing translucent skin, large expressive eyes, glossy lips, subtle natural makeup, busty voluptuous figure, large bust, deep cleavage, slim waist, round hips, long hair falling over one shoulder, wearing a slim-fit long cardigan, full body standing by a floor-to-ceiling window with soft sunlight",
+            "masterpiece portrait, charming japanese woman, gorgeous detailed face, delicate facial features, flawless fair skin, glowing translucent skin, large expressive eyes, glossy lips, busty hourglass figure, large bust, deep cleavage, slim waist, round hips, toned legs, hair in a loose bun, wearing a fitted knit dress, full body standing in a cozy living room, warm afternoon light",
         ],
         "scene": [
             "in a modern bright apartment with floor-to-ceiling windows and soft curtains",
@@ -18,8 +18,8 @@ PRESET = {
             "in a warm bedroom corner with soft cushions, a small vase of flowers, and warm light",
         ],
         "style": [
-            "photorealistic home lifestyle photography, soft natural light, elegant composition, warm color grading",
-            "cozy daily portrait, natural soft skin, gentle bokeh, subtle film grain",
+            "photorealistic full body home lifestyle photography, soft natural light, elegant composition, warm color grading",
+            "cozy daily portrait, full figure framing, natural soft skin, gentle bokeh, subtle film grain",
             "cinematic home photography, soft shadows, warm intimate mood",
         ],
         "lighting": [
@@ -29,13 +29,13 @@ PRESET = {
         ],
         "view": [
             "full body shot, relaxed standing pose, elegant framing",
-            "three-quarter view, natural cozy posture",
-            "medium shot, waist up, candid gentle expression",
+            "full body shot from a low angle, emphasizing the graceful silhouette",
+            "full body shot, three-quarter view, natural cozy posture",
         ],
         "quality": [
-            "8k, highly detailed, sharp focus, realistic skin and fabric texture",
-            "masterpiece, best quality, professional photography",
-            "ultra HD, flawless rendering, natural warm tone",
+            "masterpiece, best quality, 8k, highly detailed, sharp focus, realistic skin and fabric texture, perfect face, detailed face, beautiful eyes, flawless skin",
+            "masterpiece, best quality, professional photography, ultra HD, perfect face, flawless rendering",
+            "8k, ultra HD, detailed face, beautiful eyes, flawless skin, natural warm tone",
         ],
     },
 }

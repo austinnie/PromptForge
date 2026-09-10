@@ -1,15 +1,15 @@
 # presets/daily_supermarket.py
-"""风格预设: daily_supermarket — 超市日常"""
+"""风格预设: daily_supermarket — 超市日常（丰满全身）"""
 
 PRESET = {
     "name": "daily_supermarket",
-    "description": "超市日常 - 购物时身材剪影",
+    "description": "超市日常 - 丰满全身剪影",
     "layers": {
         "subject": [
-            "beautiful japanese woman, slim hourglass figure, long dark hair in a ponytail, wearing a fitted knit top and a pencil skirt, walking gracefully through a supermarket aisle while pushing a shopping cart",
-            "stunning japanese model, elegant figure, hair loosely tied, wearing a body-hugging sweater and slim trousers, reaching up to a top shelf with a subtle stretch",
-            "gorgeous japanese lady, curvy figure, long hair, wearing a fitted blouse and high-waisted jeans, bending slightly to pick up a basket of fruit",
-            "charming japanese woman, hourglass figure, wearing a simple wrap dress, standing in the fresh produce section, hands gently holding a basket",
+            "masterpiece portrait, beautiful japanese woman, gorgeous detailed face, delicate facial features, flawless fair skin, large expressive eyes, subtle natural makeup, busty hourglass figure, large bust, slim waist, round hips, long dark hair in a ponytail, wearing a form-fitting knit top and a pencil skirt, full body walking gracefully through a supermarket aisle while pushing a shopping cart",
+            "masterpiece portrait, stunning japanese model, gorgeous detailed face, delicate facial features, flawless fair skin, large expressive eyes, busty voluptuous figure, large bust, deep cleavage, hair loosely tied, wearing a body-hugging sweater and slim trousers, full body reaching up to a top shelf with a subtle stretch",
+            "masterpiece portrait, gorgeous japanese lady, gorgeous detailed face, delicate facial features, flawless fair skin, large expressive eyes, glossy lips, busty curvy figure, large bust, long hair, wearing a fitted blouse and high-waisted jeans, full body bending slightly to pick up a basket of fruit",
+            "masterpiece portrait, charming japanese woman, gorgeous detailed face, delicate facial features, flawless fair skin, large expressive eyes, subtle natural makeup, busty hourglass figure, large bust, slim waist, wearing a simple wrap dress, full body standing in the fresh produce section, hands gently holding a basket",
         ],
         "scene": [
             "in a bright modern supermarket with clean aisles and warm ceiling lights",
@@ -18,9 +18,9 @@ PRESET = {
             "in a bakery aisle with soft morning light through the front windows",
         ],
         "style": [
-            "photorealistic lifestyle photography, candid moments, shallow depth of field, natural color grading",
-            "everyday street photography, elegant composition, soft skin texture, gentle bokeh",
-            "documentary style photography, natural lighting, subtle film grain",
+            "photorealistic full body lifestyle photography, candid moments, shallow depth of field, natural color grading",
+            "everyday street photography, full body elegant composition, soft skin texture, gentle bokeh",
+            "documentary style photography, full figure framing, natural lighting, subtle film grain",
         ],
         "lighting": [
             "warm indoor lighting, soft overhead glow",
@@ -29,13 +29,13 @@ PRESET = {
         ],
         "view": [
             "full body shot, walking pose, elegant framing",
-            "three-quarter view, gentle S-curve posture",
-            "medium shot, waist up, natural candid moment",
+            "full body shot from a low angle, emphasizing the graceful silhouette",
+            "full body shot, three-quarter view, gentle S-curve posture",
         ],
         "quality": [
-            "8k, highly detailed, sharp focus, realistic skin and fabric texture",
-            "masterpiece, best quality, professional photography",
-            "ultra HD, flawless rendering, natural film grain",
+            "masterpiece, best quality, 8k, highly detailed, sharp focus, realistic skin and fabric texture, perfect face, detailed face, beautiful eyes, flawless skin",
+            "masterpiece, best quality, professional photography, ultra HD, perfect face, flawless rendering",
+            "8k, ultra HD, detailed face, beautiful eyes, flawless skin, natural film grain",
         ],
     },
 }

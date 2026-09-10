@@ -1,15 +1,15 @@
 # presets/jp_busty_bedroom.py
-"""风格预设: jp_busty_bedroom — 日系卧室写真"""
+"""风格预设: jp_busty_bedroom — 日系卧室（丰满全身）"""
 
 PRESET = {
     "name": "jp_busty_bedroom",
-    "description": "日系卧室写真 - 温柔氛围",
+    "description": "日系卧室 - 丰满全身",
     "layers": {
         "subject": [
-            "beautiful japanese woman, curvy figure, long black hair spread on pillows, wearing a silk camisole, relaxed elegant pose",
-            "stunning japanese model, voluptuous figure, soft messy hair, wearing an oversized white shirt, gentle natural expression",
-            "gorgeous japanese lady, full figure, long dark hair, wearing a delicate lace top, sitting on the edge of the bed",
-            "charming japanese woman, curvy body, hair loosely tied, wearing a soft knit cardigan, cozy sitting pose",
+            "masterpiece portrait, beautiful japanese woman, gorgeous detailed face, delicate facial features, flawless fair skin, glowing translucent skin, large expressive eyes, glossy lips, subtle natural makeup, busty voluptuous figure, large bust, deep cleavage, slim waist, round hips, toned legs, perfect hourglass body, long black hair spread on pillows, wearing a silk camisole, full body relaxed elegant pose",
+            "masterpiece portrait, stunning japanese model, gorgeous detailed face, delicate facial features, flawless fair skin, glowing translucent skin, large expressive eyes, glossy lips, busty hourglass figure, large bust, deep cleavage, slim waist, round hips, toned legs, soft messy hair, wearing an oversized white shirt, full body standing with a gentle natural expression",
+            "masterpiece portrait, gorgeous japanese lady, gorgeous detailed face, delicate facial features, flawless fair skin, glowing translucent skin, large expressive eyes, glossy lips, subtle natural makeup, busty voluptuous figure, large bust, deep cleavage, slim waist, round hips, long dark hair, wearing a delicate lace top, full body sitting gracefully on the edge of the bed",
+            "masterpiece portrait, charming japanese woman, gorgeous detailed face, delicate facial features, flawless fair skin, glowing translucent skin, large expressive eyes, glossy lips, busty hourglass figure, large bust, deep cleavage, slim waist, round hips, toned legs, hair loosely tied, wearing a soft knit cardigan, full body cozy standing pose",
         ],
         "scene": [
             "in an elegant bedroom with white satin sheets and warm lamp light",
@@ -18,9 +18,9 @@ PRESET = {
             "in a bright airy bedroom with linen bedding and a vase of flowers",
         ],
         "style": [
-            "photorealistic boudoir photography, soft warm lighting, tasteful elegant composition, editorial style",
-            "lifestyle bedroom photography, natural poses, beautiful skin texture, soft focus",
-            "intimate portrait photography, warm color grading, elegant mood",
+            "photorealistic full body boudoir photography, soft warm lighting, tasteful elegant composition, editorial style",
+            "lifestyle bedroom photography, full figure framing, natural poses, beautiful skin texture, soft focus",
+            "intimate portrait photography, full body composition, warm color grading, elegant mood",
         ],
         "lighting": [
             "soft warm lamp light, cozy gentle glow",
@@ -28,14 +28,14 @@ PRESET = {
             "warm window light with subtle shadows, intimate atmosphere",
         ],
         "view": [
-            "medium shot, upper body, elegant framing",
-            "three-quarter view, relaxed sitting pose",
-            "close-up portrait, face and shoulders, soft warm light",
+            "full body shot, standing pose, elegant framing",
+            "full body shot from a low angle, emphasizing the graceful silhouette",
+            "full body shot, three-quarter view, relaxed pose",
         ],
         "quality": [
-            "8k, highly detailed, sharp focus, realistic skin and fabric texture",
-            "masterpiece, best quality, professional photography",
-            "ultra HD, flawless rendering, subtle film grain",
+            "masterpiece, best quality, 8k, highly detailed, sharp focus, realistic skin and fabric texture, perfect face, detailed face, beautiful eyes, flawless skin",
+            "masterpiece, best quality, professional photography, ultra HD, perfect face, flawless rendering",
+            "8k, ultra HD, detailed face, beautiful eyes, flawless skin, subtle film grain",
         ],
     },
 }
