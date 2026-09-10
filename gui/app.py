@@ -548,6 +548,7 @@ class ChatApp:
                 "multi_person": MultiPersonHandler(self),   # ✅ 新增
                 "chat": ChatHandler(self),
                 "video": VideoHandler(self),  # ✅ 新增
+                "preset_image": PresetHandler(self), 
             }
             
             handler = handlers.get(intent.type)

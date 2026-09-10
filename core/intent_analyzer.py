@@ -22,6 +22,13 @@ class IntentResult:
 class IntentAnalyzer:
     """意图分析器"""
 
+    # ✅ 新增：预设触发词
+    self.PRESET_KEYWORDS = [
+        "预设", "风格", "画风", "用...风格",
+        "mecha", "机甲", "水墨", "国风", "素描", "线稿",
+        "动漫", "人像", "风景", "珠宝",
+    ]
+    
     # ✅ 新增：多人合成关键词
     MULTI_PERSON_KEYWORDS = [
         '三人', '三人行', '四个人', '四人', '五人', '多人', '群像',
@@ -199,6 +206,17 @@ class IntentAnalyzer:
                 confidence=0.9
             )
             
+        # ✅ 预设意图（优先于普通文生图）
+        if self._is_preset_intent(text):
+            preset = self._extract_preset_name(text)
+            return IntentResult(
+                type="preset_image",
+                prompt=text,
+                original_text=text,
+                params={"preset": preset},
+                confidence=0.9,
+            )
+    
         # 7. 文生图
         if self._is_gen_intent(text):
             return self._analyze_txt2img(text)
@@ -210,6 +228,20 @@ class IntentAnalyzer:
             confidence=0.3
         )
 
+    def _is_preset_intent(self, text: str) -> bool:
+        text_lower = text.lower()
+        # 有"预设"字样，或同时提到预设名 + 生成意图
+        if "预设" in text_lower or "preset" in text_lower:
+            return True
+        if any(k in text_lower for k in ["机甲", "水墨", "国风", "素描", "线稿", "动漫"]):
+            if any(k in text_lower for k in self.GEN_KEYWORDS):
+                return True
+        return False
+
+    def _extract_preset_name(self, text: str) -> str:
+        from preset_bridge import preset_bridge
+        return preset_bridge.find_preset_by_keyword(text)
+    
     def _is_video_intent(self, text: str) -> bool:
         """
         判断是否为视频生成意图（分阶段严格判断）

@@ -8,6 +8,7 @@ from .couple_handler import CoupleHandler
 from .multi_person_handler import MultiPersonHandler
 from .chat_handler import ChatHandler
 from .video_handler import VideoHandler  # ✅ 新增
+from .preset_handler import PresetHandler
 
 __all__ = [
     'BaseHandler',
@@ -17,5 +18,6 @@ __all__ = [
     'MultiPersonHandler',
     'ChatHandler',
     'VideoHandler',  # ✅ 新增
+    'PresetHandler',
 
 ]
