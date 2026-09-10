@@ -59,6 +59,22 @@ PRESET_META = {
     "human_portrait_sketch": ("人像素描", "人像"),
     "sketch_portrait": ("肖像素描", "人像"),
     "human_sketch_frame": ("人像画框", "人像"),
+    
+    # ✅ 新增 6 个日系写真
+    "jp_busty_glamour": ("日系写真·优雅性感", "人像"),
+    "jp_busty_swimwear": ("日系泳装写真", "人像"),
+    "jp_busty_bedroom": ("日系卧室写真", "人像"),
+    "jp_busty_office": ("日系职场 OL", "人像"),
+    "jp_busty_onsen": ("日系温泉写真", "人像"),
+    "jp_busty_glamour_dress": ("日系晚礼服写真", "人像"),  
+    "jp_lingerie_boudoir": ("蕾丝内衣写真", "人像"),
+    "jp_lingerie_morning": ("蕾丝内衣晨光写真", "人像"),   
+    "daily_supermarket": ("超市日常", "人像"),
+    "daily_train": ("电车通勤", "人像"),
+    "daily_restaurant": ("餐厅约会", "人像"),
+    "daily_street_walk": ("街头漫步", "人像"),
+    "daily_home_casual": ("居家日常", "人像"),
+    "daily_elevator": ("电梯邂逅", "人像"),    
 
     # ============ 动漫 / 二次元 ============
     "anime_portrait": ("动漫人像", "动漫"),
