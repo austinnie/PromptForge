@@ -91,19 +91,27 @@ class PresetHandler(BaseHandler):
 
     def handle(self, intent: Dict[str, Any]) -> None:
         from preset_bridge import preset_bridge
+        from presets_meta import get_display_name
 
         if not preset_bridge.is_ready():
-            self._reply("❌ 预设系统未就绪，请检查 layers/ 和 presets/")
+            self._reply("❌ 预设系统未就绪")
             return
 
         original = intent.get("original_text", "")
         preset_name = intent.get("params", {}).get("preset")
+        mode = intent.get("params", {}).get("mode", "random")  # random / first
+        count = intent.get("params", {}).get("count", 1)
 
         if not preset_name:
-            presets = preset_bridge.list_presets()[:20]
-            self._reply("🎨 请指定预设名，例如：")
-            for p in presets:
-                self._reply(f"   - {p}")
+            # 没指定预设 → 显示分类列表
+            from presets_meta import get_presets_by_category
+            self._reply("🎨 请选择一个预设（按分类）：")
+            for cat, plist in get_presets_by_category().items():
+                self._reply(f"\n【{cat}】")
+                for p in plist[:8]:
+                    self._reply(f"   {get_display_name(p)}")
+                if len(plist) > 8:
+                    self._reply(f"   ... 共 {len(plist)} 个")
             return
 
         # 安全检测
@@ -117,34 +125,52 @@ class PresetHandler(BaseHandler):
                 original = cleaned
 
         subject_cn = self._extract_subject(original)
-
-        # ✅ 三级降级翻译
         subject_en = self._translate_subject(subject_cn) if subject_cn else None
 
         if subject_cn and subject_en and subject_cn != subject_en:
             self._reply(f"🌐 主体: {subject_cn} → {subject_en}")
-        elif subject_cn:
-            self._reply(f"🌐 主体: {subject_cn}")
 
-        # 生成提示词
-        prompt = preset_bridge.build_prompt(
-            preset=preset_name,
-            subject_override=subject_en,
-            max_tokens=77,
-        )
+        # ✅ 生成 count 张
+        for i in range(count):
+            prompt, detail = preset_bridge.build_prompt(
+                preset=preset_name,
+                mode=mode,
+                subject_override=subject_en,
+                max_tokens=77,
+                return_detail=True,
+            )
 
-        self._reply(f"🎨 预设: {preset_name}")
-        self._reply(f"📝 提示词: {prompt[:120]}...")
+            if count > 1:
+                self._reply(f"\n--- 第 {i+1}/{count} 张 ---")
 
-        # 复用文生图逻辑
-        from handlers.text_to_image import TextToImageHandler
-        t2i = TextToImageHandler(self.app)
-        t2i.handle({
-            "type": "text_to_image",
-            "prompt": prompt,
-            "original_text": original,
-        })
+            self._reply(f"🎨 预设: {get_display_name(preset_name)}")
+            self._reply(f"📝 提示词: {prompt[:100]}...")
 
+            # ✅ 显示 6 层详情
+            self._reply("📋 6 层组合:")
+            labels = {
+                "subject": "主体", "scene": "场景", "style": "风格",
+                "lighting": "光影", "view": "视角", "quality": "画质",
+            }
+            for key, val in detail.items():
+                self._reply(f"   {labels.get(key, key)}: {val[:60]}")
+
+            # 出图
+            from handlers.text_to_image import TextToImageHandler
+            t2i = TextToImageHandler(self.app)
+            t2i.handle({
+                "type": "text_to_image",
+                "prompt": prompt,
+                "original_text": original,
+            })
+
+
+            # ✅ 加在这里：记住本次预设 + 6 层组合，供后续"换成猫"用
+            if self.context:
+                self.context.last_preset_name = preset_name
+                self.context.last_preset_detail = detail
+                self.context.last_preset_subject = subject_en
+                
     # ==================== 主体抽取 ====================
 
     def _extract_subject(self, text: str) -> str:

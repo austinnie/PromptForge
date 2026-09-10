@@ -80,6 +80,9 @@ class PresetBridge:
     def build_prompt(
         self,
         preset: str = None,
+        mode: str = "random",        # random / first / indexed
+        index: int = 0,              # mode="indexed" 时用
+        seed: int = None,            # 指定随机种子（可复现）
         subject_override: str = None,
         scene_override: str = None,
         style_override: str = None,
@@ -87,9 +90,21 @@ class PresetBridge:
         view_override: str = None,
         quality_override: str = None,
         max_tokens: int = 77,
-    ) -> str:
+        return_detail: bool = False,
+    ):
+        """
+        生成提示词
+        mode:
+          - "random": 6 层各自随机（默认）
+          - "first": 每层取第一条（固定，可复现）
+          - "indexed": 按 index 轮询每层
+        return_detail: 是否同时返回 6 层详情 dict
+        """
+        import random as _random
+
         if not self._composer:
-            return subject_override or "beautiful scene, masterpiece"
+            prompt = subject_override or "beautiful scene, masterpiece"
+            return (prompt, {}) if return_detail else prompt
 
         composer = copy.deepcopy(self._composer)
 
@@ -110,8 +125,34 @@ class PresetBridge:
             if val:
                 composer.layers[key] = [val]
 
-        return composer.compose_random(max_tokens=max_tokens)
+        # 固定 seed
+        if seed is not None:
+            _random.seed(seed)
 
+        # 组合
+        detail = {}
+        parts = []
+        for key in composer.LAYER_ORDER:
+            pool = composer.layers.get(key, [])
+            if not pool:
+                continue
+            if mode == "first":
+                chosen = pool[0]
+            elif mode == "indexed":
+                chosen = pool[index % len(pool)]
+            else:  # random
+                chosen = _random.choice(pool)
+            detail[key] = chosen
+            parts.append(chosen)
+
+        full = ", ".join(parts)
+
+        # 截断
+        if max_tokens and max_tokens > 0:
+            full = composer._truncate_to_limit(full, max_tokens)
+
+        return (full, detail) if return_detail else full
+        
     def get_layer_info(self) -> dict:
         if not self._composer:
             return {}

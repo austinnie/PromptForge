@@ -187,7 +187,140 @@ class ChatApp:
         self.status_label.pack(side=tk.RIGHT, padx=5)
         
         self._update_mode_ui()
+        
+        # ============================================================
+        # 第三行：预设控制
+        # ============================================================
+        toolbar_row3 = ttk.Frame(parent)
+        toolbar_row3.pack(fill=tk.X, pady=2)
 
+        ttk.Label(toolbar_row3, text="🎨 预设:").pack(side=tk.LEFT, padx=2)
+
+        # 下拉框（延迟加载，避免启动变慢）
+        self.preset_var = tk.StringVar()
+        self.preset_combo = ttk.Combobox(
+            toolbar_row3,
+            textvariable=self.preset_var,
+            values=[],
+            width=30,
+            state="readonly",
+        )
+        self.preset_combo.pack(side=tk.LEFT, padx=2)
+        self.preset_combo.bind('<<ComboboxSelected>>', self._on_preset_selected)
+
+        # 🎲 换一张
+        ttk.Button(
+            toolbar_row3, text="🎲 换一张",
+            command=self._preset_reroll,
+        ).pack(side=tk.LEFT, padx=2)
+
+        # N 张
+        ttk.Label(toolbar_row3, text="张数:").pack(side=tk.LEFT, padx=5)
+        self.count_var = tk.IntVar(value=1)
+        ttk.Spinbox(
+            toolbar_row3, from_=1, to=10, width=3,
+            textvariable=self.count_var,
+        ).pack(side=tk.LEFT)
+
+        # 后台加载预设列表
+        threading.Thread(target=self._load_presets_async, daemon=True).start()        
+
+
+    def _load_presets_async(self):
+        """后台加载预设列表（避免阻塞 UI）"""
+        try:
+            from presets_meta import get_display_name, get_category, CATEGORY_ORDER
+            from preset_bridge import preset_bridge
+
+            all_presets = preset_bridge.list_presets()
+            # 按分类排序
+            sorted_presets = sorted(
+                all_presets,
+                key=lambda p: (
+                    CATEGORY_ORDER.index(get_category(p)) if get_category(p) in CATEGORY_ORDER else 999,
+                    p,
+                )
+            )
+            display = [get_display_name(p) for p in sorted_presets]
+            self.root.after(0, lambda: self.preset_combo.config(values=display))
+        except Exception as e:
+            print(f"⚠️ 预设列表加载失败: {e}")
+
+
+    def _get_selected_preset(self) -> str:
+        """从下拉框解析出预设名"""
+        val = self.preset_var.get()
+        if not val:
+            return None
+        # "mecha_glow — 机甲发光" → "mecha_glow"
+        return val.split(" — ")[0].strip() if " — " in val else val.strip()
+
+
+    def _on_preset_selected(self, event=None):
+        """选中预设后，如果输入框有内容，直接生成"""
+        preset = self._get_selected_preset()
+        if not preset:
+            return
+        self._append_message("system", f"🎨 已选择预设: {preset}")
+        # 把用户输入交给 _process 处理，并附带预设参数
+        user_input = self.input_text.get("1.0", tk.END).strip()
+        if user_input:
+            self._process_with_preset(user_input, preset)
+
+
+    def _process_with_preset(self, text: str, preset: str):
+        """用指定预设处理输入"""
+        self._last_preset_input = text   # ✅ 记住，供"换一张"用
+        
+        if hasattr(self, '_is_processing') and self._is_processing:
+            return
+
+        self.input_text.delete("1.0", tk.END)
+        self._append_message("user", text)
+        self._is_processing = True
+        self.send_btn.config(state=tk.DISABLED)
+        self.cancel_btn.config(state=tk.NORMAL)
+
+        count = self.count_var.get() if hasattr(self, 'count_var') else 1
+
+        def thread():
+            try:
+                from handlers.preset_handler import PresetHandler
+                handler = PresetHandler(self)
+                handler.handle({
+                    "type": "preset_image",
+                    "original_text": text,
+                    "params": {"preset": preset, "count": count, "mode": "random"},
+                })
+            except Exception as e:
+                self._append_message("assistant", f"❌ 处理失败: {e}")
+                import traceback
+                traceback.print_exc()
+            finally:
+                self._is_processing = False
+                self.root.after(0, self._reset_ui)
+
+        threading.Thread(target=thread, daemon=True).start()
+
+
+    def _preset_reroll(self):
+        """🎲 换一张：同一预设 + 同一主体，6 层全重抽"""
+        preset = self._get_selected_preset()
+        if not preset:
+            self._append_message("system", "⚠️ 请先选一个预设")
+            return
+
+        # 从上一次用户输入里取
+        last_input = getattr(self, '_last_preset_input', None)
+        if not last_input:
+            last_input = self.input_text.get("1.0", tk.END).strip()
+        if not last_input:
+            self._append_message("system", "⚠️ 请先在输入框写下主体描述，例如：画一个机甲少女")
+            return
+
+        self._process_with_preset(last_input, preset)
+    
+    
     def _update_toolbar_status(self, text, color="gray"):
         """更新工具栏右侧状态"""
         try:

@@ -17,6 +17,10 @@ class ContextManager:
         self.last_prompt: Optional[str] = None
         self.last_intent: Optional[str] = None
         self.last_image: Optional[str] = None
+
+        self.last_preset_name = None
+        self.last_preset_detail = None   # 上次的 6 层组合   
+        self.last_preset_subject: Optional[str] = None           
     
     def update(self, intent: Dict, result: Dict = None):
         """更新上下文"""
@@ -75,3 +79,8 @@ class ContextManager:
         self.last_prompt = None
         self.last_intent = None
         self.last_image = None
+
+        # ✅ 新增
+        self.last_preset_name = None
+        self.last_preset_detail = None
+        self.last_preset_subject = None        
