@@ -1,0 +1,62 @@
+{
+  "name": "image_generator",
+  "version": "1.0.0",
+  "description": "图像生成 Skill，支持文生图和图生图",
+  "tags": ["image", "generation", "text-to-image", "image-to-image"],
+  "dependencies": ["Pillow", "requests"],
+  "inputs": [
+    {
+      "name": "prompt",
+      "type": "string",
+      "description": "提示词",
+      "required": true
+    },
+    {
+      "name": "width",
+      "type": "integer",
+      "description": "宽度",
+      "required": false,
+      "default": 1024
+    },
+    {
+      "name": "height",
+      "type": "integer",
+      "description": "高度",
+      "required": false,
+      "default": 1024
+    },
+    {
+      "name": "steps",
+      "type": "integer",
+      "description": "推理步数",
+      "required": false,
+      "default": 25
+    },
+    {
+      "name": "cfg",
+      "type": "float",
+      "description": "引导强度",
+      "required": false,
+      "default": 7.5
+    },
+    {
+      "name": "seed",
+      "type": "integer",
+      "description": "随机种子",
+      "required": false
+    },
+    {
+      "name": "engine",
+      "type": "string",
+      "description": "引擎名称 (agnes/pollinations/huggingface)",
+      "required": false,
+      "default": "agnes"
+    }
+  ],
+  "outputs": [
+    {"name": "image_path", "description": "生成的图片路径"},
+    {"name": "engine", "description": "使用的引擎"},
+    {"name": "seed", "description": "使用的种子"}
+  ],
+  "class_name": "ImageGenerator"
+}

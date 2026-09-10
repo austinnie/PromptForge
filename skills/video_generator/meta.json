@@ -1,0 +1,56 @@
+{
+  "name": "video_generator",
+  "version": "1.0.0",
+  "description": "视频生成 Skill，支持文生视频和长视频拼接",
+  "tags": ["video", "generation", "text-to-video"],
+  "dependencies": ["Pillow", "requests"],
+  "inputs": [
+    {
+      "name": "prompt",
+      "type": "string",
+      "description": "提示词",
+      "required": true
+    },
+    {
+      "name": "duration",
+      "type": "integer",
+      "description": "目标视频时长（秒）",
+      "required": false,
+      "default": 60
+    },
+    {
+      "name": "segment_duration",
+      "type": "integer",
+      "description": "单段时长（秒）",
+      "required": false,
+      "default": 10
+    },
+    {
+      "name": "width",
+      "type": "integer",
+      "description": "宽度",
+      "required": false,
+      "default": 768
+    },
+    {
+      "name": "height",
+      "type": "integer",
+      "description": "高度",
+      "required": false,
+      "default": 768
+    },
+    {
+      "name": "engine",
+      "type": "string",
+      "description": "引擎名称",
+      "required": false,
+      "default": "agnes"
+    }
+  ],
+  "outputs": [
+    {"name": "video_path", "description": "生成的视频路径"},
+    {"name": "duration", "description": "视频时长"},
+    {"name": "segments", "description": "片段数量"}
+  ],
+  "class_name": "VideoGenerator"
+}

@@ -6,11 +6,14 @@ from .novel_writer.skill import NovelWriterOllama
 from .voice_assistant.skill import VoiceAssistant
 from .music_generator.skill import MusicMaestro
 from .tech_hot_article.skill import TechHotArticle  # ✅ 新增
-
+from .image_generator import ImageGenerator    # ✅ 新增
+from .video_generator import VideoGenerator
 __all__ = [
     'NewsAggregator',
     'NovelWriterOllama',
     'VoiceAssistant',
     'MusicMaestro',
     'TechHotArticle',  # ✅ 新增
+    'ImageGenerator',    # ✅ 新增
+    'VideoGenerator',
 ]
