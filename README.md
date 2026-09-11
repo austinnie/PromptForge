@@ -363,6 +363,272 @@ PromptForge/
 - `tech_hot_article`：技术热点文章生成器，基于实时热点生成文章，自动配图并输出 Word 文档
 - `voice_assistant`：语音合成（TTS）与语音识别（STT）助手，支持多语言与长文本分段
 
+### image_generator 单独使用举例
+```text
+# 文生图
+python skills/image_generator/image_generator_cli.py "a beautiful sunset over the ocean" --open
+
+# 指定引擎
+python skills/image_generator/image_generator_cli.py "sunset" --engine pollinations --open
+
+# 指定尺寸
+python skills/image_generator/image_generator_cli.py "cyberpunk city" --width 1024 --height 768 --open
+
+# 指定推理步数与引导强度
+python skills/image_generator/image_generator_cli.py "portrait of a girl" --steps 30 --cfg 7.5 --open
+
+# 指定随机种子（可复现）
+python skills/image_generator/image_generator_cli.py "sunset" --seed 12345 --open
+
+# 图生图
+python skills/image_generator/image_generator_cli.py "make it oil painting style" --input ./test.png --strength 0.6 --open
+
+# 列出可用引擎
+python skills/image_generator/image_generator_cli.py --engines
+```
+
+### video_generator 单独使用举例
+
+```text
+# 默认 60 秒视频
+python skills/video_generator/video_generator_cli.py "月光下的森林，镜头缓缓推进" --open
+
+# 生成 30 秒视频
+python skills/video_generator/video_generator_cli.py "日落海边" --duration 30 --open
+
+# 生成 120 秒长视频
+python skills/video_generator/video_generator_cli.py "星空" --duration 120 --segment-duration 10 --open
+
+# 指定分辨率
+python skills/video_generator/video_generator_cli.py "雪山日出" --width 1280 --height 720 --open
+
+# 指定单段时长
+python skills/video_generator/video_generator_cli.py "城市夜景" --duration 60 --segment-duration 5 --open
+
+# 生成后自动打开视频
+python skills/video_generator/video_generator_cli.py "森林" --open
+```
+
+### music_generator 单独使用举例
+
+```text
+# 交互式模式（推荐，会提示选择主题、情绪、时长）
+python skills/music_generator/music_generator_cli.py
+
+# 快速生成（主题 + 情绪 + 时长）
+python skills/music_generator/music_generator_cli.py --quick "星辰大海" "peaceful" 30
+
+# 快速生成（自定义主题 + 壮丽情绪 + 60 秒）
+python skills/music_generator/music_generator_cli.py --quick "月光下的森林" "epic" 60
+
+# 查看帮助
+python skills/music_generator/music_generator_cli.py --help
+
+# 多乐器交响乐（高级功能）
+python skills/music_generator/generate_symphony.py
+```
+
+可用情绪：peaceful, melancholic, joyful, epic, mysterious
+
+## news_aggregator 单独使用举例
+```python
+# Python 调用（推荐）
+from skills import NewsAggregator
+
+# 抓取国际新闻，生成简报
+aggregator = NewsAggregator({
+    "output_dir": "./output/news",
+    "ai_model": "qwen2.5:1.5b",
+    "validate_feeds": True,
+    "top_n": 15,
+})
+result = aggregator.execute(category="world", top_n=15)
+print(result["result"]["report_file"])
+
+# 抓取科技新闻
+result = aggregator.execute(category="tech", top_n=20)
+
+# 抓取财经新闻
+result = aggregator.execute(category="business", top_n=10)
+
+# 抓取中国新闻
+result = aggregator.execute(category="china", top_n=15)
+```
+可用分类：world, tech, business, china, usa, japan, korea
+
+## novel_writer 单独使用举例
+```python
+# Python 调用（推荐）
+from skills.novel_writer.skill import NovelWriterOllama
+
+# 创建实例
+writer = NovelWriterOllama({
+    "default_model": "qwen2.5:1.5b",
+    "ollama_url": "http://localhost:11434",
+    "output_dir": "./skills/novel_writer/output/novels",
+})
+
+# 生成科幻小说（1 章，600 字）
+result = writer.execute(
+    genre="科幻",
+    title="星际行者",
+    outline="探索未知宇宙，发现外星文明",
+    characters="主角：李晨，一位勇敢的探险家",
+    chapter_count=1,
+    words_per_chapter=600,
+)
+print(result["result"]["saved_to"])
+
+# 多语言支持（日语）
+result = writer.execute(
+    genre="SF",
+    title="星の旅人",
+    outline="宇宙を探検する少年の冒険",
+    characters="主人公：アキラ",
+    chapter_count=1,
+    words_per_chapter=800,
+    language="ja",
+)
+
+# 断点续写（从已有文件继续）
+result = writer.execute(
+    genre="科幻",
+    title="星际行者",
+    outline="继续探索",
+    characters="李晨",
+    chapter_count=3,
+    continue_from="./skills/novel_writer/output/novels/zh_星际行者_xxx.txt",
+)
+```
+支持语言：中文、English、日本語、Español、Français、Deutsch 等 17 种
+
+## tech_hot_article 单独使用举例
+```text
+# 随机生成一篇技术文章（默认 1500 字，自动配图 3 张）
+python skills/tech_hot_article/tech_hot_article_cli.py
+
+# 指定写作风格
+python skills/tech_hot_article/tech_hot_article_cli.py --style "深度技术型"
+
+# 指定使用第 1 个热点
+python skills/tech_hot_article/tech_hot_article_cli.py --index 0
+
+# 指定字数
+python skills/tech_hot_article/tech_hot_article_cli.py --words 2000
+
+# 指定模型
+python skills/tech_hot_article/tech_hot_article_cli.py --model qwen2.5:7b
+
+# 列出当前热点（不生成文章）
+python skills/tech_hot_article/tech_hot_article_cli.py --list
+
+# 生成后自动打开 Word 文档
+python skills/tech_hot_article/tech_hot_article_cli.py --open
+
+# 组合使用
+python skills/tech_hot_article/tech_hot_article_cli.py --style "深度技术型" --words 2000 --open
+```
+写作风格：专业分析型, 通俗科普型, 深度技术型, 行业观察型, 趋势预测型
+
+## voice_assistant 单独使用举例
+```text
+# 文本转语音（TTS）
+python skills/voice_assistant/skill.py --action tts --text "你好，欢迎使用 PromptForge"
+
+# 指定语音和语速
+python skills/voice_assistant/skill.py --action tts --text "Hello World" --voice en-US-JennyNeural --speed 1.2
+
+# 长文本朗读（会自动分段）
+python skills/voice_assistant/skill.py --action tts --text "很长的一段文字..." --voice zh-CN-XiaoxiaoNeural
+
+# 语音识别（STT）
+python skills/voice_assistant/skill.py --action stt --audio ./test.mp3 --language zh-CN
+
+# 列出可用语音
+python skills/voice_assistant/skill.py --action list_voices
+
+# 指定输出路径
+python skills/voice_assistant/skill.py --action tts --text "测试" --output ./output/test.mp3
+```
+可用语音：zh-CN-XiaoxiaoNeural, zh-CN-YunxiNeural, en-US-JennyNeural, ja-JP-NanamiNeural, ko-KR-SunHiNeural 等
+
+## 通用调用方式（Python 统一入口）
+```python
+# 所有 skills 都可以通过统一方式调用
+from skills import (
+    ImageGenerator,
+    VideoGenerator,
+    MusicMaestro,
+    NewsAggregator,
+    NovelWriterOllama,
+    TechHotArticle,
+    VoiceAssistant,
+)
+
+# 图像生成
+img_gen = ImageGenerator({"engine": "agnes"})
+result = img_gen.generate("a beautiful sunset")
+print(result["result"]["image_path"])
+
+# 视频生成
+vid_gen = VideoGenerator({"engine": "agnes"})
+result = vid_gen.generate("月光下的森林", duration=30)
+print(result["result"]["video_path"])
+
+# 音乐生成
+music = MusicMaestro({"music_mode": "auto"})
+result = music.execute(topic="星辰大海", emotion="peaceful", duration=30)
+print(result["result"]["audio_file"])
+
+# 新闻聚合
+news = NewsAggregator({"output_dir": "./output/news"})
+result = news.execute(category="world", top_n=15)
+print(result["result"]["report_file"])
+
+# 小说生成
+writer = NovelWriterOllama()
+result = writer.execute(
+    genre="科幻", title="星际行者",
+    outline="探索宇宙", characters="李晨",
+    chapter_count=1, words_per_chapter=600,
+)
+print(result["result"]["saved_to"])
+
+# 技术文章
+article = TechHotArticle()
+result = article.execute(style="深度技术型")
+print(result["result"]["word_file"])
+
+# 语音合成
+voice = VoiceAssistant()
+result = voice.execute(action="tts", text="你好")
+print(result["result"]["audio_path"])
+```
+
+## Skills 调用汇总表
+
+| Skill | 命令行工具 | 主要用途 |
+|-------|-----------|----------|
+| `image_generator` | `image_generator_cli.py` | 文生图、图生图 |
+| `video_generator` | `video_generator_cli.py` | 文生视频、长视频拼接 |
+| `music_generator` | `music_generator_cli.py` | 音乐生成（MIDI/MusicGen） |
+| `news_aggregator` | 仅 Python 调用 | 新闻抓取 + AI 摘要 |
+| `novel_writer` | 仅 Python 调用 | 小说生成（多语言） |
+| `tech_hot_article` | `tech_hot_article_cli.py` | 技术文章生成 + 配图 |
+| `voice_assistant` | `skill.py --action` | TTS / STT |
+
+## 完整调用路径对照
+
+| Skill | 完整命令行路径 |
+|-------|--------------|
+| `image_generator` | `python skills/image_generator/image_generator_cli.py` |
+| `video_generator` | `python skills/video_generator/video_generator_cli.py` |
+| `music_generator` | `python skills/music_generator/music_generator_cli.py` |
+| `news_aggregator` | Python 调用 `from skills import NewsAggregator` |
+| `novel_writer` | Python 调用 `from skills.novel_writer.skill import NovelWriterOllama` |
+| `tech_hot_article` | `python skills/tech_hot_article/tech_hot_article_cli.py` |
+| `voice_assistant` | `python skills/voice_assistant/skill.py --action tts` |
+
 ### 外部工具依赖
 
 部分功能需要额外的外部工具：
