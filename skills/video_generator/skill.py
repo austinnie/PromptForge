@@ -33,6 +33,10 @@ DEFAULT_VIDEO_HEIGHT = 768
 DEFAULT_ENGINE = "agnes"
 VIDEO_DOWNLOAD_TIMEOUT = 600
 
+# ✅ 段间冷却范围（秒），避免触发 Agnes 创建任务接口限流
+SEGMENT_COOLDOWN_MIN = 10
+SEGMENT_COOLDOWN_MAX = 15
+
 
 class VideoGenerator:
     """视频生成 Skill"""
@@ -111,29 +115,7 @@ class VideoGenerator:
     # ==================== 视频生成 ====================
 
     def generate(self, prompt: str, **kwargs) -> Dict[str, Any]:
-        """
-        文生视频
-
-        Args:
-            prompt: 提示词
-            duration: 视频时长（秒）
-            width: 宽度
-            height: 高度
-            auto_merge: 是否自动拆分并拼接长视频
-            segment_duration: 单段时长
-            reference_image: 参考图（可选）
-
-        Returns:
-            {
-                "status": "success",
-                "result": {
-                    "video_path": "...",
-                    "duration": 60,
-                    "segments": 6,
-                    ...
-                }
-            }
-        """
+        """文生视频"""
         start_time = time.time()
         logger.info(f"执行技能: {self.name} (v{self.version})")
 
@@ -226,6 +208,7 @@ class VideoGenerator:
         temp_dir.mkdir(parents=True, exist_ok=True)
 
         video_files = []
+        success = False   # ✅ 只有完全成功才清理临时目录
 
         try:
             for i in range(segment_count):
@@ -258,6 +241,14 @@ class VideoGenerator:
                 else:
                     logger.warning(f"⚠️ 第 {i+1} 段下载失败")
 
+                # ✅ 段间冷却：降低创建任务的 RPM，避免 Agnes 限流
+                if i < segment_count - 1:
+                    cooldown = SEGMENT_COOLDOWN_MIN + random.randint(
+                        0, SEGMENT_COOLDOWN_MAX - SEGMENT_COOLDOWN_MIN
+                    )
+                    logger.info(f"😴 段间冷却 {cooldown}s...")
+                    time.sleep(cooldown)
+
             if not video_files:
                 return {"status": "error", "error": "未能生成任何视频片段"}
 
@@ -282,6 +273,7 @@ class VideoGenerator:
                 shutil.move(video_files[0], str(final_path))
                 video_path = str(final_path)
 
+            success = True
             return {
                 "status": "success",
                 "result": {
@@ -296,10 +288,15 @@ class VideoGenerator:
                 "metadata": {"skill": self.name, "version": self.version},
             }
         finally:
-            try:
-                shutil.rmtree(temp_dir, ignore_errors=True)
-            except:
-                pass
+            if success:
+                # ✅ 成功后清理临时目录
+                try:
+                    shutil.rmtree(temp_dir, ignore_errors=True)
+                except Exception:
+                    pass
+            else:
+                # ✅ 失败时保留已生成的片段，便于人工/续传使用
+                logger.warning(f"⚠️ 任务未完成，临时文件保留在: {temp_dir}")
 
     # ==================== 工具方法 ====================
 

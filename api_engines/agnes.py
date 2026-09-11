@@ -646,52 +646,93 @@ class AgnesEngine:
         """
         查询视频生成状态
         使用 GET /agnesapi?video_id=<VIDEO_ID>
+        ✅ 内置 429 重试（因为不走 _request，需要自己处理）
         """
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
         }
-        
-        # ✅ 修正轮询端点
         url = f"{self.base_url}/agnesapi?video_id={video_id}&model_name={self.video_model}"
+
+        max_retries = 6
+        wait = 15  # 起始等待 15s
+        for attempt in range(max_retries):
+            response = requests.get(url, headers=headers, timeout=30)
+
+            if response.status_code == 200:
+                return response.json()
+
+            # ✅ 429 限流：指数退避
+            if response.status_code == 429:
+                print(f"⚠️ 状态查询被限流 (429)，{wait}s 后重试 ({attempt+1}/{max_retries})...")
+                time.sleep(wait)
+                wait = min(wait * 2, 90)  # 15 → 30 → 60 → 90 封顶
+                continue
+
+            # 其他错误直接抛
+            raise Exception(f"查询视频状态失败 (HTTP {response.status_code}): {response.text[:200]}")
+
+        raise Exception(f"状态查询连续 {max_retries} 次被限流，放弃")
         
-        response = requests.get(url, headers=headers, timeout=30)
-        if response.status_code != 200:
-            raise Exception(f"查询视频状态失败: {response.text}")
-        
-        return response.json()
     
     # api_engines/agnes.py
 
-    def wait_for_video(self, video_id: str, max_wait: int = 300) -> str:
+    def wait_for_video(self, video_id: str, max_wait: int = 900, poll_interval: int = 10) -> str:
         """
-        等待视频生成完成
-        
-        Args:
-            video_id: 任务ID
-            max_wait: 最大等待时间（秒）
-        
-        Returns:
-            视频URL
+        等待视频生成完成（抗限流版）
+
+        参数：
+            video_id:      任务ID
+            max_wait:      最大等待时间（默认 900s，5s视频约50s，12s视频可能120s+，留足余量）
+            poll_interval: 基础轮询间隔（默认 10s，不要低于 8s，否则会触发 status queries 限流）
+
+        策略：
+            - 基础轮询 10s
+            - 单次状态查询失败由 video_status 内部重试
+            - 若 video_status 最终仍失败，这里再做一层 15→30→60 退避
         """
         start_time = time.time()
+        consecutive_fail = 0
+        backoff = 15
+
         while time.time() - start_time < max_wait:
-            status = self.video_status(video_id)
-            print(f"📊 完整状态: {json.dumps(status, indent=2)}")  # ✅ 添加日志
-            # 根据实际返回格式调整字段名
+            try:
+                status = self.video_status(video_id)
+                consecutive_fail = 0
+                backoff = 15
+            except Exception as e:
+                consecutive_fail += 1
+                print(f"⚠️ 状态查询失败 ({consecutive_fail}): {str(e)[:120]}")
+                if consecutive_fail >= 5:
+                    raise Exception(f"状态查询连续失败 {consecutive_fail} 次，放弃")
+                time.sleep(backoff)
+                backoff = min(backoff * 2, 60)
+                continue
+
             state = status.get('status', '')
-            
+            progress = status.get('progress', 0)
+            print(f"📊 状态: {state}, 进度: {progress}%")
+
             if state == 'completed':
-                return status.get('video_url', status.get('url', ''))
-            elif state == 'failed':
+                url = status.get('video_url', status.get('url', ''))
+                if url:
+                    return url
+                # 偶发：completed 但 url 还没写好，等一轮
+                time.sleep(poll_interval)
+                continue
+
+            if state in ('failed', 'error'):
                 error = status.get('error', '未知错误')
                 raise Exception(f"视频生成失败: {error}")
-            
-            print(f"⏳ 视频生成中... ({state})")
-            time.sleep(5)
-        
-        raise Exception(f"视频生成超时 ({max_wait}s)")
 
+            # 进度快了可以适当缩短间隔（但不要低于 8s）
+            sleep_time = poll_interval
+            if progress and progress >= 90:
+                sleep_time = 8
+            time.sleep(sleep_time)
+
+        raise Exception(f"视频生成超时 ({max_wait}s)")
+    
     def wait_for_video_new(self, video_id: str, max_wait: int = 600) -> str:
         """等待视频生成完成（改进版：避免限流）"""
         start_time = time.time()
