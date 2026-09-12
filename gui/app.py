@@ -258,15 +258,14 @@ class ChatApp:
 
 
     def _on_preset_selected(self, event=None):
-        """选中预设后，如果输入框有内容，直接生成"""
         preset = self._get_selected_preset()
         if not preset:
             return
-        self._append_message("system", f"🎨 已选择预设: {preset}")
-        # 把用户输入交给 _process 处理，并附带预设参数
-        user_input = self.input_text.get("1.0", tk.END).strip()
-        if user_input:
-            self._process_with_preset(user_input, preset)
+        # 只在切换预设时才提示
+        if getattr(self, '_last_shown_preset', None) == preset:
+            return
+        self._last_shown_preset = preset
+        self._append_message("system", f"🎨 已选择预设: {preset}（输入框留空点「发送」可直接生成，或用「🎨 用预设」按钮）")
 
 
     def _process_with_preset(self, text: str, preset: str):
@@ -487,6 +486,13 @@ class ChatApp:
         )
         self.cancel_btn.pack(side=tk.TOP, pady=2)
         
+        self.preset_btn = ttk.Button(
+            btn_frame,
+            text="🎨 用预设",
+            command=self._on_send_with_preset
+        )
+        self.preset_btn.pack(side=tk.TOP, pady=2)        
+        
         self.input_text.bind("<Control-Return>", lambda e: self._on_send())
     
     # ============================================================
@@ -618,33 +624,97 @@ class ChatApp:
     # ============================================================
     # 发送消息
     # ============================================================
-    def _on_send(self):
+
+    def _on_send_with_preset(self):
+        """显式用预设生成（不受输入框内容影响）"""
         if hasattr(self, '_is_processing') and self._is_processing:
             return
-        
-        user_input = self.input_text.get("1.0", tk.END).strip()
+
         preset = self._get_selected_preset()
-        
-        # ✅ 有预设或输入框有内容，才允许发送
-        if not user_input and not preset:
+        if not preset:
+            self._append_message("system", "⚠️ 请先在下拉框选择一个预设")
             return
-        
+
+        user_input = self.input_text.get("1.0", tk.END).strip()
         self.input_text.delete("1.0", tk.END)
-        display_text = user_input if user_input else f"（用 {preset} 的默认主体）"
+
+        display_text = f"【用预设：{preset}】{user_input or '(默认主体)'}"
         self._append_message("user", display_text)
-        
+
         self._is_processing = True
         self.send_btn.config(state=tk.DISABLED)
         self.cancel_btn.config(state=tk.NORMAL)
         
-        if preset:
+        self._last_preset_input = user_input   # ← 加这一行
+        
+        threading.Thread(
+            target=self._preset_thread,
+            args=(user_input, preset),
+            daemon=True,
+        ).start()
+        
+    def _on_send(self):
+        if hasattr(self, '_is_processing') and self._is_processing:
+            return
+
+        user_input = self.input_text.get("1.0", tk.END).strip()
+        preset = self._get_selected_preset()
+
+        # 两个都空 → 不能发
+        if not user_input and not preset:
+            return
+
+        self.input_text.delete("1.0", tk.END)
+
+        # 决定走哪条路
+        use_preset = self._should_use_preset(user_input, preset)
+
+        if use_preset:
+            display_text = user_input if user_input else f"（用预设：{preset}）"
+            self._append_message("user", display_text)
+            self._is_processing = True
+            self.send_btn.config(state=tk.DISABLED)
+            self.cancel_btn.config(state=tk.NORMAL)
             threading.Thread(
                 target=self._preset_thread,
                 args=(user_input, preset),
                 daemon=True,
             ).start()
         else:
+            self._append_message("user", user_input)
+            self._is_processing = True
+            self.send_btn.config(state=tk.DISABLED)
+            self.cancel_btn.config(state=tk.NORMAL)
             threading.Thread(target=self._process, args=(user_input,), daemon=True).start()
+
+
+    def _should_use_preset(self, user_input: str, preset: str) -> bool:
+        """判断本次发送是否应该使用下拉框里的预设。
+
+        规则：
+          1. 下拉框为空 → 不用预设
+          2. 输入框为空 + 下拉框有值 → 用预设（触发默认主体）
+          3. 输入框有值 + 显式提到"预设/preset/用...风格" → 用预设
+          4. 其余情况 → 走正常 intent（忽略下拉框）
+        """
+        if not preset:
+            return False
+
+        # 情况 2：输入框为空，下拉框有预设
+        if not user_input:
+            return True
+
+        text_lower = user_input.lower()
+
+        # 情况 3：显式要求用预设
+        if "预设" in text_lower or "preset" in text_lower:
+            return True
+        if "用" in text_lower and ("风格" in text_lower or "画" in text_lower):
+            return True
+
+
+        # 情况 4：有具体描述，走正常 intent
+        return False
 
     def _preset_thread(self, text: str, preset: str):
         """预设流程的线程体"""

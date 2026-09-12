@@ -2,21 +2,25 @@
 一键多平台分发：公众号 + 小红书 + 快手 + 抖音
 
 用法：
-    # 公众号 + 小红书 + 快手
-    python scripts/multi_publish.py output\机甲2 --platforms wechat,xiaohongshu,kuaishou
+    # 只发社媒（跳过鉴赏，直接传图）
+    python scripts/multi_publish.py output\机甲2 --platforms xiaohongshu,kuaishou,douyin --title "未来机甲美学" --tags "机甲,赛博朋克,AI绘画,未来科技"
+
+    # 公众号 + 社媒（自动鉴赏生成文章）
+    python scripts/multi_publish.py output\机甲2 --platforms wechat,xiaohongshu
 
     # 所有平台
     python scripts/multi_publish.py output\机甲2 --platforms all
 
-    # 只发公众号
-    python scripts/multi_publish.py output\机甲2 --platforms wechat
-
-    # 跳过鉴赏（复用已有文章目录）
+    # 复用已有文章目录
     python scripts/multi_publish.py output\articles\20260912_XXX_机甲2 --skip-curate --platforms all
+
+说明：
+    - 只有指定了 wechat 平台时，才会触发图片鉴赏和图文混排
+    - 只发小红书 / 快手 / 抖音时，直接使用输入目录下的图片，不做鉴赏
+    - --skip-curate 表示“目录已是文章目录”，从 assets 子目录取图
 """
 
 import sys
-import json
 import argparse
 from pathlib import Path
 
@@ -35,6 +39,20 @@ ALL_SOCIAL = list(NOTE_PLATFORMS)          # ["douyin", "kuaishou", "xiaohongshu
 ALL_PLATFORMS = [WECHAT_PLATFORM] + ALL_SOCIAL
 
 
+# ---------- 工具 ----------
+
+def scan_images(folder: Path, limit: int) -> list[str]:
+    """扫描文件夹内的图片，按文件名排序，最多返回 limit 张。"""
+    folder = Path(folder)
+    if not folder.exists() or not folder.is_dir():
+        return []
+    files = sorted(
+        p for p in folder.iterdir()
+        if p.is_file() and p.suffix.lower() in SUPPORTED_EXTS
+    )
+    return [str(p) for p in files][:limit]
+
+
 # ---------- 公众号 ----------
 
 def publish_to_wechat(article_md: Path, theme: str, dry_run: bool) -> dict:
@@ -49,7 +67,6 @@ def publish_to_wechat(article_md: Path, theme: str, dry_run: bool) -> dict:
 
     fmt = WechatFormatter()
 
-    # 1) 排版
     print(f"  → 排版 ({theme})...")
     result = fmt.format(str(article_md), theme=theme, open=False)
     if result["status"] != "success":
@@ -58,7 +75,6 @@ def publish_to_wechat(article_md: Path, theme: str, dry_run: bool) -> dict:
     article_dir = result["result"]["article_dir"]
     print(f"  → 已排版: {article_dir}")
 
-    # 2) 推草稿箱
     print(f"  → 推送草稿箱...")
     pub = fmt.publish(article_dir, dry_run=dry_run)
     if pub["status"] != "success":
@@ -82,7 +98,9 @@ def main():
     parser.add_argument("--theme", default="terracotta",
                         help="公众号排版主题（默认 terracotta）")
     parser.add_argument("--skip-curate", action="store_true",
-                        help="目录已是文章目录，跳过鉴赏")
+                        help="目录已是文章目录，跳过鉴赏（从 assets 取图）")
+    parser.add_argument("--force-curate", action="store_true",
+                        help="强制鉴赏（即使不指定 wechat，也生成文章）")
     parser.add_argument("--wechat-dry-run", action="store_true",
                         help="公众号只上传图片不推草稿")
     parser.add_argument("--max-images", type=int, default=18,
@@ -94,39 +112,7 @@ def main():
         print(f"❌ 目录不存在: {src}")
         return 1
 
-    # ---------- 1. 鉴赏 ----------
-    if args.skip_curate:
-        article_dir = src
-        title = args.title or article_dir.name
-        images = sorted([
-            str(p) for p in (article_dir / "assets").iterdir()
-            if p.is_file() and p.suffix.lower() in SUPPORTED_EXTS
-        ])[:args.max_images]
-    else:
-        print(f"\n🎨 鉴赏: {src}")
-        curator = ImageCurator()
-        r = curator.curate(str(src), title=args.title)
-        if r["status"] != "success":
-            print(f"❌ 鉴赏失败: {r.get('error')}")
-            return 1
-        article_dir = Path(r["result"]["article_dir"])
-        title = (args.title or r["result"].get("title") or article_dir.name)[:20]
-        images = sorted([
-            str(p) for p in (article_dir / "assets").iterdir()
-            if p.is_file() and p.suffix.lower() in SUPPORTED_EXTS
-        ])[:args.max_images]
-        print(f"✅ 文章: {article_dir}")
-
-    if not images:
-        print(f"❌ assets 目录无图片")
-        return 1
-
-    article_md = article_dir / "article.md"
-    print(f"📰 标题: {title}")
-    print(f"📷 图片: {len(images)} 张")
-    print(f"📄 文章: {article_md}")
-
-    # ---------- 2. 解析平台 ----------
+    # ---------- 1. 解析平台（先解析，用于决定是否鉴赏）----------
     if args.platforms.lower() == "all":
         platforms = list(ALL_PLATFORMS)
     else:
@@ -136,6 +122,57 @@ def main():
     if unknown:
         print(f"⚠️ 未知平台，已跳过: {unknown}")
     platforms = [p for p in platforms if p in ALL_PLATFORMS]
+
+    if not platforms:
+        print("❌ 没有可用的平台")
+        return 1
+
+    need_wechat = WECHAT_PLATFORM in platforms
+    need_article = need_wechat or args.force_curate
+
+    # ---------- 2. 取图片 / 生成文章 ----------
+    if args.skip_curate:
+        # 用户明确说目录已是文章目录
+        article_dir = src
+        title = args.title or article_dir.name
+        images = scan_images(article_dir / "assets", args.max_images)
+        if not images:
+            # assets 下没图，退回到目录本身
+            images = scan_images(article_dir, args.max_images)
+        print(f"📄 复用已有文章目录: {article_dir}")
+
+    elif need_article:
+        print(f"\n🎨 鉴赏: {src}")
+        curator = ImageCurator()
+        r = curator.curate(str(src), title=args.title)
+        if r["status"] != "success":
+            print(f"❌ 鉴赏失败: {r.get('error')}")
+            return 1
+        article_dir = Path(r["result"]["article_dir"])
+        title = (args.title or r["result"].get("title") or article_dir.name)[:20]
+        images = scan_images(article_dir / "assets", args.max_images)
+        print(f"✅ 文章: {article_dir}")
+
+    else:
+        # 只发社媒，跳过鉴赏
+        article_dir = None
+        title = (args.title or src.name)[:20]
+        print(f"\n📷 跳过鉴赏，直接从目录取图: {src}")
+        images = scan_images(src, args.max_images)
+        if not images:
+            # 若输入目录实际是文章目录（含 assets 子目录），兼容一下
+            images = scan_images(src / "assets", args.max_images)
+
+    if not images:
+        print(f"❌ 未找到可发布的图片")
+        return 1
+
+    article_md = (article_dir / "article.md") if article_dir else None
+
+    print(f"📰 标题: {title}")
+    print(f"📷 图片: {len(images)} 张")
+    if article_md:
+        print(f"📄 文章: {article_md}")
 
     tags = [t.strip() for t in args.tags.split(",") if t.strip()]
 
@@ -149,7 +186,10 @@ def main():
         print(f"{'='*60}")
 
         if platform == WECHAT_PLATFORM:
-            r = publish_to_wechat(article_md, args.theme, args.wechat_dry_run)
+            if article_md is None:
+                r = {"status": "error", "error": "公众号需要文章，但没有生成 article.md"}
+            else:
+                r = publish_to_wechat(article_md, args.theme, args.wechat_dry_run)
         elif platform in ALL_SOCIAL:
             r = pub.publish_note(
                 platform=platform,

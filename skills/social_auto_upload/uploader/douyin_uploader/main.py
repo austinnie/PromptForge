@@ -1152,7 +1152,7 @@ class DouYinNote(DouYinBaseUploader):
         )
         self.image_paths = image_paths
         self.note = note or ""
-        self.title = title or (self.note[:30] if self.note else "")
+        self.title = title or (self.note[:20] if self.note else "")
         self.tags = tags or []
         self.bgm = bgm or ""
 
@@ -1161,8 +1161,12 @@ class DouYinNote(DouYinBaseUploader):
         if not self.title or not str(self.title).strip():
             raise ValueError("图文模式下，title 是必须的")
 
+        # 图文标题上限 20 字；超长只警告 + 截断，不再直接抛错（避免长标题任务整体失败）
         if len(self.title) > 20:
-            raise ValueError(f"标题不能超过20字符，当前: {len(self.title)}字符")
+            douyin_logger.warning(
+                _msg("⚠️", f"图文标题超过 20 字（当前 {len(self.title)} 字），将截断为前 20 字")
+            )
+            self.title = self.title[:20]
 
         if not self.image_paths:
             raise ValueError("图文模式下，图片是必须的")
@@ -1182,15 +1186,146 @@ class DouYinNote(DouYinBaseUploader):
             normalized_image_paths.append(str(self.validate_image_file(image_path)))
         self.image_paths = normalized_image_paths
 
+    async def _dump_note_debug(self, page: Page) -> None:
+        """图文页 DOM 找不到关键元素时，保存现场，便于对照抖音新版页面修选择器。"""
+        try:
+            shot = Path(BASE_DIR) / "douyin_note_debug.png"
+            html = Path(BASE_DIR) / "douyin_note_debug.html"
+            await page.screenshot(path=str(shot), full_page=True)
+            html.write_text(await page.content(), encoding="utf-8")
+            douyin_logger.error(_msg("📸", f"现场已保存: {shot} / {html}"))
+        except Exception as exc:
+            douyin_logger.warning(_msg("📸", f"保存现场失败: {exc}"))
+
+    async def fill_note_title_and_description(
+        self, page: Page, title: str, note: str, tags: list[str] | None = None
+    ) -> None:
+        """抖音图文发布页的标题 / 描述填写。
+
+        与视频发布页 DOM 不同，选择器独立维护，按优先级 fallback。
+        抖音图文页实测要点：
+          - 标题是 input（非 contenteditable），上限 20 字
+          - 描述是 contenteditable 富文本区
+          - 图片上传完 DOM 才渲染完成，调用前需确保已进入图文发布页
+        """
+        # ── 标题：多级 fallback ──
+        title_selectors = [
+            'input[placeholder*="填写作品标题"]',
+            'input[placeholder*="作品标题"]',
+            'input[placeholder*="填写标题"]',
+            'input[placeholder*="添加标题"]',
+            'input[placeholder*="标题"]',
+            '.title-input input',
+            '.semi-input[placeholder*="标题"]',
+            'input.semi-input[type="text"]',
+        ]
+        title_input = None
+        for sel in title_selectors:
+            loc = page.locator(sel).first
+            try:
+                await loc.wait_for(state="visible", timeout=8000)
+                title_input = loc
+                douyin_logger.info(_msg("🏷️", f"标题框命中: {sel}"))
+                break
+            except Exception:
+                continue
+
+        if title_input is None:
+            await self._dump_note_debug(page)
+            raise RuntimeError("抖音图文发布页未找到标题输入框，疑似 DOM 改版（现场已保存）")
+
+        await title_input.fill(title[:20])
+
+        # ── 描述：多级 fallback ──
+        desc_selectors = [
+            'div.zone-container[contenteditable="true"]',
+            'div[contenteditable="true"][data-placeholder*="添加正文"]',
+            'div[contenteditable="true"][data-placeholder*="正文"]',
+            '.editor-kit-container [contenteditable="true"]',
+            'div[contenteditable="true"]',
+        ]
+        desc_editor = None
+        for sel in desc_selectors:
+            loc = page.locator(sel).first
+            try:
+                await loc.wait_for(state="visible", timeout=8000)
+                desc_editor = loc
+                douyin_logger.info(_msg("📝", f"描述框命中: {sel}"))
+                break
+            except Exception:
+                continue
+
+        if desc_editor is None:
+            await self._dump_note_debug(page)
+            raise RuntimeError("抖音图文发布页未找到描述编辑框（现场已保存）")
+
+        await desc_editor.click()
+        await page.keyboard.press("Control+KeyA")
+        await page.keyboard.press("Delete")
+
+        if note and note.strip():
+            await page.keyboard.type(note.strip())
+
+        for tag in tags or []:
+            await page.keyboard.type(" #" + tag)
+            await page.keyboard.press("Space")
+
+        await page.keyboard.press("Escape")  # 收起话题下拉浮层
+
     async def upload_note_content(self, page: Page) -> None:
         douyin_logger.info(_msg("🏃", f"小人开始搬运图文，共 {len(self.image_paths)} 张图片"))
-        douyin_logger.info(_msg("🔀", "小人正在切换到图文发布"))
-        await page.get_by_text("发布图文", exact=True).click()
-        await page.wait_for_timeout(1000)
 
+        # 尝试点「发布图文」入口（新版可能没有 tab，允许失败继续）
+        entry_candidates = [
+            'text="发布图文"',
+            '[role="tab"]:has-text("图文")',
+            'div[class*="tab"]:has-text("图文")',
+            'div[class*="Tab"]:has-text("图文")',
+            'div[class*="tab-item"]:has-text("图文")',
+            'span:has-text("发布图文")',
+            'span:has-text("图文")',
+        ]
+        for sel in entry_candidates:
+            try:
+                entry = page.locator(sel).first
+                if await entry.count() and await entry.is_visible():
+                    await entry.click()
+                    douyin_logger.info(_msg("🔀", f"已切换到图文模式: {sel}"))
+                    await page.wait_for_timeout(1000)
+                    break
+            except Exception:
+                continue
+
+        # 找 file input（放宽 accept 条件，与视频版一致）
         douyin_logger.info(_msg("📤", "小人正在上传图片"))
-        await page.locator("div[class^='container'] input[accept*='image']").set_input_files(self.image_paths)
+        file_input = None
+        candidate_selectors = [
+            "div[class^='container'] input[accept*='image']",
+            "div[class^='container'] input[accept*='jpg']",
+            "div[class^='container'] input[accept]",
+            "input[type='file'][accept*='image']",
+            "input[type='file'][accept*='jpg']",
+            "input[type='file'][accept]",
+            "input.upload-btn-input",
+            "input[type='file']",
+        ]
+        for sel in candidate_selectors:
+            loc = page.locator(sel).first
+            try:
+                if await loc.count():
+                    file_input = loc
+                    douyin_logger.info(_msg("📤", f"文件框命中: {sel}"))
+                    break
+            except Exception:
+                continue
 
+        if file_input is None:
+            await self._dump_note_debug(page)
+            raise RuntimeError("抖音图文发布页未找到文件上传框（现场已保存）")
+
+        await file_input.set_input_files(self.image_paths)
+
+        # 等进入图文发布页（URL 出现 post/image）
         while True:
             try:
                 await page.wait_for_url(
@@ -1204,8 +1339,10 @@ class DouYinNote(DouYinBaseUploader):
                 await asyncio.sleep(0.5)
 
         await asyncio.sleep(1)
+
         douyin_logger.info(_msg("✍️", "小人开始填标题、描述和话题"))
-        await self.fill_title_and_description(page, self.title, self.note, self.tags)
+        await self.fill_note_title_and_description(page, self.title, self.note, self.tags)
+
         title_len = len(self.title) if self.title else 0
         tags_text = " ".join(f"#{t}" for t in self.tags) if self.tags else ""
         desc_and_tags_len = len(self.note or "") + (len(tags_text) + 2 if self.tags else 0)
@@ -1231,14 +1368,20 @@ class DouYinNote(DouYinBaseUploader):
                 break
             except Exception:
                 douyin_logger.info(_msg("🏃", "小人正在冲刺发布图文"))
+                if self.debug:
+                    await page.screenshot(full_page=True)
                 await asyncio.sleep(0.5)
-
+            
     async def upload(self, playwright: Playwright) -> None:
         douyin_logger.info(_msg("🧍", "小人先检查 cookie、图片和发布时间"))
         await self.validate_upload_args()
         douyin_logger.info(_msg("🥳", "图文上传前检查通过"))
 
-        browser = await playwright.chromium.launch(headless=self.headless, channel="chromium", args=["--no-sandbox", "--disable-blink-features=AutomationControlled"])
+        browser = await playwright.chromium.launch(
+            headless=self.headless,
+            channel="chromium",
+            args=["--no-sandbox", "--disable-blink-features=AutomationControlled"],
+        )
         context = await browser.new_context(
             storage_state=f"{self.account_file}",
             permissions=["geolocation"],
@@ -1248,9 +1391,16 @@ class DouYinNote(DouYinBaseUploader):
         upload_success = False
         try:
             page = await context.new_page()
-            await page.goto("https://creator.douyin.com/creator-micro/content/upload", wait_until="domcontentloaded", timeout=90000)
+            await page.goto(
+                "https://creator.douyin.com/creator-micro/content/upload",
+                wait_until="domcontentloaded",
+                timeout=90000,
+            )
             douyin_logger.info(_msg("🧭", "小人正在赶往图文发布页"))
-            await page.wait_for_url("https://creator.douyin.com/creator-micro/content/upload", timeout=90000)
+            await page.wait_for_url(
+                "https://creator.douyin.com/creator-micro/content/upload",
+                timeout=90000,
+            )
 
             await self.upload_note_content(page)
             upload_success = True
@@ -1265,3 +1415,6 @@ class DouYinNote(DouYinBaseUploader):
     async def douyin_upload_note(self):
         async with async_playwright() as playwright:
             await self.upload(playwright)
+
+    async def main(self):
+        await self.douyin_upload_note()
