@@ -549,6 +549,9 @@ python skills/wechat_formatter/wechat_formatter_cli.py article.md --gallery
 # AI 内容增强：自动识别对话/连续图片/核心观点
 python skills/wechat_formatter/wechat_formatter_cli.py article.md --enhance --open
 
+# 文末自动插入二维码引导卡
+python skills/wechat_formatter/wechat_formatter_cli.py article.md --footer-image "assets/qr/公众号结束处.png"
+
 # 排版 → 生成封面 → 推送公众号草稿箱
 python skills/wechat_formatter/wechat_formatter_cli.py article.md --theme terracotta --cover --publish
 
