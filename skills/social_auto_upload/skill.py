@@ -72,7 +72,13 @@ class SocialAutoUpload:
 
     # ---------- 底层执行 ----------
 
-    def _run(self, args: List[str], timeout: int) -> Dict[str, Any]:
+    def _run(self, args: List[str], timeout: int, stream: bool = False) -> Dict[str, Any]:
+        """
+        执行 sau 命令
+
+        stream=False（默认）：捕获输出，命令结束后一次性返回
+        stream=True：实时转发到终端（用于登录这种需要"边跑边看"的场景）
+        """
         if not self._sau_root:
             return {"status": "error", "error": "未找到 sau_cli.py"}
 
@@ -81,6 +87,23 @@ class SocialAutoUpload:
         logger.info(f"▶ {' '.join(cmd)}")
 
         try:
+            if stream:
+                # ✅ 实时模式：输出直接打到终端，不缓存
+                result = subprocess.run(
+                    cmd,
+                    cwd=str(self._sau_root),
+                    timeout=timeout,
+                    # 不传 capture_output，让子进程直接继承父进程的 stdout/stderr
+                )
+                if result.returncode != 0:
+                    return {
+                        "status": "error",
+                        "error": f"退出码 {result.returncode}",
+                        "returncode": result.returncode,
+                    }
+                return {"status": "success"}
+
+            # 默认：捕获模式
             result = subprocess.run(
                 cmd,
                 cwd=str(self._sau_root),
@@ -98,7 +121,6 @@ class SocialAutoUpload:
         stdout = result.stdout or ""
         stderr = result.stderr or ""
 
-        # 实时回显 sau 的输出
         for line in stdout.splitlines():
             if line.strip():
                 logger.info(f"  [sau] {line.strip()}")
@@ -116,7 +138,7 @@ class SocialAutoUpload:
             }
 
         return {"status": "success", "stdout": stdout, "stderr": stderr}
-
+        
     @staticmethod
     def _extract_error(text: str) -> str:
         """从 sau 输出里抓关键错误行"""
@@ -132,13 +154,19 @@ class SocialAutoUpload:
     # ---------- 公开 API ----------
 
     def login(self, platform: str, account: str = None) -> Dict[str, Any]:
-        """登录指定平台（弹浏览器/终端二维码）"""
+        """登录指定平台（弹浏览器/终端二维码）
+
+        登录场景用 stream=True：
+        - 二维码/提示实时打印到终端
+        - 用户可以马上看到、马上扫码
+        """
         if platform not in SUPPORTED_PLATFORMS:
             return {"status": "error", "error": f"不支持的平台: {platform}"}
         account = account or self.config["default_account"]
         return self._run(
             [platform, "login", "--account", account],
             timeout=self.config["timeout_login"],
+            stream=True,   # ✅ 关键：实时输出
         )
 
     def check(self, platform: str, account: str = None) -> Dict[str, Any]:
