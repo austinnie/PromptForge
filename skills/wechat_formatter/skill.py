@@ -165,7 +165,7 @@ class WechatFormatter:
                 logger.info(f"🌐 画廊: {gallery_path}")
 
                 if should_open:
-                    webbrowser.open(Path(gallery_path).resolve().as_uri()
+                    webbrowser.open(Path(gallery_path).resolve().as_uri())
 
                 return {
                     "status": "success",

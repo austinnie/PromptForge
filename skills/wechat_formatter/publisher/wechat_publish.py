@@ -32,8 +32,12 @@ SCRIPT_DIR = Path(__file__).parent
 SKILL_DIR = SCRIPT_DIR.parent
 
 def _load_config():
-    """从 config.settings 读取配置"""
+    """从 config.settings 读取配置（PromptForge 统一配置源）"""
     try:
+        import sys
+        project_root = Path(__file__).parents[3]   # publisher → wechat_formatter → skills → PromptForge
+        if str(project_root) not in sys.path:
+            sys.path.insert(0, str(project_root))
         from config.settings import settings
         return {
             "wechat": {
@@ -43,7 +47,8 @@ def _load_config():
             },
             "output_dir": getattr(settings, "wechat_output_dir", "./output/wechat"),
         }
-    except Exception:
+    except Exception as e:
+        print(f"⚠️ 读取 settings 失败: {e}")
         return {
             "wechat": {"app_id": "", "app_secret": "", "author": ""},
             "output_dir": "./output/wechat",
@@ -60,7 +65,7 @@ def get_access_token():
     app_secret = wechat.get("app_secret")
 
     if not app_id or not app_secret:
-        print("错误: config.json 中未配置 wechat.app_id 或 wechat.app_secret")
+        print("错误: 未配置 WECHAT_APP_ID 或 WECHAT_APP_SECRET，请检查 .env 文件")
         sys.exit(1)
 
     url = (
