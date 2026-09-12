@@ -1,6 +1,16 @@
 # 💬 PromptForge：智能对话式 AI 图像 / 视频 / 多媒体生成器
 
-一个基于 Stable Diffusion 和多种 AI API 的智能对话式创作工具。用户通过自然语言描述即可生成高质量图片、视频，甚至完成从小说脚本到成片的全自动多媒体创作。支持本地模型与云端 API 双模式。
+一个基于 Stable Diffusion 和多种 AI API 的智能对话式创作工具。用户通过自然语言描述即可生成高质量图片、视频，甚至完成从小说脚本到成片的全自动多媒体创作。支持本地模型与云端 API 双模式。提供CLI和整体框架调佣，GUI上预设多种生图提示词集合，选择然后点击发送即可生图，还可以自己写提示词，纯会话直接触发生图，生视频意图，还预设 新闻热点，科技信息 一键获取。集成多种SKILLS，都能独立执行，也可以组合使用，图片生成后，支持图片鉴赏并形成图文混排的文章，支持md，word，pdf，html等多种格式，
+并且支持对生成的文章进行排版，适合微信公众号直接发布，另外集成多平台分发SKILLS，multi_public.py执行后一键分发到过个平台。
+简单总结要点有：
+- **图像生成**：本地 Stable Diffusion + 云端多引擎（HuggingFace / 通义万相 / 文心一格 / 腾讯混元 / Pollinations / Agnes / Replicate / Stability AI），支持文生图、图生图、双人 / 多人合成
+- **视频生成**：文生视频、图生视频，长视频自动分段生成并无缝合成
+- **音乐生成**：MIDI 编曲 + MusicGen 双引擎，5 种情绪、10+ 编曲风格，输出 MP3
+- **语音合成**：Edge TTS 长文本分段合成，自动拼接
+- **长文写作**：小说生成、技术热点文章、图片鉴赏图文混排
+- **多媒体成片**：小说 → 场景拆分 → 视频 → 配音 → 音乐 → 字幕 → 一键合成
+- **排版发布**：Markdown 一键排版为微信公众号 HTML（33 主题），支持 md / word / pdf / html 多格式导出
+- **多平台分发**：通过 social_auto_upload 技能推送至小红书、抖音、快手、B站、视频号、百家号、支付宝生活号、微博、虎扑、YouTube 等 10+ 平台
 
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
