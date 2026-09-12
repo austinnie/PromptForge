@@ -104,6 +104,14 @@ class Settings:
 
     article_image_engine: str = os.getenv("ARTICLE_IMAGE_ENGINE", "agnes")
     
+    # 公众号相关
+    wechat_app_id: str = os.getenv("WECHAT_APP_ID", "")
+    wechat_app_secret: str = os.getenv("WECHAT_APP_SECRET", "")
+    wechat_author: str = os.getenv("WECHAT_AUTHOR", "")
+    wechat_default_theme: str = os.getenv("WECHAT_DEFAULT_THEME", "newspaper")
+    wechat_output_dir: str = os.getenv("WECHAT_OUTPUT_DIR", "./output/wechat")
+    
+    
     def __post_init__(self):
         self.output_dir.mkdir(exist_ok=True)
         # 调试打印

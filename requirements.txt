@@ -47,3 +47,4 @@ moviepy>=2.0.0
 # --- 可选依赖（按需安装） ---
 # openai-whisper>=20231117    # 语音识别
 # sounddevice>=0.4.6          # 录音设备
+markdown

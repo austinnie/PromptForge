@@ -1,0 +1,28 @@
+{
+  "name": "wechat_formatter",
+  "version": "1.0.0",
+  "description": "Markdown 一键排版为微信公众号兼容 HTML，支持 33 套主题、可视化画廊、AI 内容增强、封面图生成、一键推送草稿箱",
+  "author": "PromptForge",
+  "inputs": {
+    "input": "Markdown 文章路径",
+    "theme": "主题名（可选，默认 newspaper）",
+    "gallery": "是否打开主题画廊（默认 false）",
+    "enhance": "是否启用 AI 内容增强（默认 false）",
+    "cover": "是否生成封面图（默认 false）",
+    "publish": "是否推送公众号草稿箱（默认 false）"
+  },
+  "outputs": {
+    "article_path": "微信兼容 HTML 路径",
+    "preview_path": "浏览器预览页路径",
+    "gallery_path": "主题画廊页路径（gallery 模式）",
+    "cover_path": "封面图路径（可选）",
+    "article_dir": "输出目录（含 images/）"
+  },
+  "engines": ["agnes"],
+  "examples": [
+    "python skills/wechat_formatter/wechat_formatter_cli.py article.md",
+    "python skills/wechat_formatter/wechat_formatter_cli.py article.md --theme terracotta",
+    "python skills/wechat_formatter/wechat_formatter_cli.py article.md --gallery",
+    "python skills/wechat_formatter/wechat_formatter_cli.py article.md --theme terracotta --enhance --cover --publish"
+  ]
+}
