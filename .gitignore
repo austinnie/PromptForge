@@ -67,3 +67,6 @@ build/
 !assets/qr/
 !assets/qr/*.png
 !assets/qr/*.jpg.wechat_state.json 
+.wechat_state.json 
+output/ 
+*.pdf 

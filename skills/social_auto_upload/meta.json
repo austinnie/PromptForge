@@ -1,0 +1,30 @@
+{
+  "name": "social_auto_upload",
+  "version": "1.0.0",
+  "description": "多平台内容分发：内嵌 social-auto-upload，通过 sau CLI 把视频/图文上传到抖音、快手、小红书、B站、视频号、微博、YouTube 等",
+  "author": "PromptForge",
+  "inputs": {
+    "platform": "平台名（douyin/kuaishou/xiaohongshu/bilibili/tencent/alipay/weibo/hupu/youtube/baijiahao）",
+    "file": "视频文件路径（publish-video）",
+    "images": "图片路径列表（publish-note）",
+    "title": "标题",
+    "desc": "视频简介",
+    "note": "图文正文",
+    "tags": "标签，逗号分隔",
+    "account": "账号名（对应 cookies/{platform}_{account}.json）",
+    "schedule": "定时发布 '2026-03-24 21:30'",
+    "thumbnail": "封面图路径",
+    "tid": "B站分区 ID"
+  },
+  "outputs": {
+    "status": "success / error",
+    "error": "错误信息",
+    "stdout": "sau 的原始输出"
+  },
+  "engines": ["patchright", "biliup"],
+  "examples": [
+    "python skills/social_auto_upload/social_auto_upload_cli.py login xiaohongshu",
+    "python skills/social_auto_upload/social_auto_upload_cli.py publish-note xiaohongshu img.png \"标题\" --tags 机甲,测试",
+    "python skills/social_auto_upload/social_auto_upload_cli.py publish-video bilibili video.mp4 \"标题\" --tid 249"
+  ]
+}

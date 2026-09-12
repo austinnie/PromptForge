@@ -10,6 +10,8 @@ from .wechat_formatter import WechatFormatter
 from .tech_hot_article.skill import TechHotArticle  # ✅ 新增
 from .image_generator import ImageGenerator    # ✅ 新增
 from .video_generator import VideoGenerator
+from .social_auto_upload import SocialAutoUpload
+
 __all__ = [
     'NewsAggregator',
     'NovelWriterOllama',
@@ -20,4 +22,5 @@ __all__ = [
     'TechHotArticle',  # ✅ 新增
     'ImageGenerator',    # ✅ 新增
     'VideoGenerator',
+    'SocialAutoUpload',    
 ]
