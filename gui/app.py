@@ -241,27 +241,39 @@ class ChatApp:
                 )
             )
             display = [get_display_name(p) for p in sorted_presets]
+
+            # ✅ 在最前面加一个"不使用预设"占位项
+            EMPTY_LABEL = "（不使用预设）"
+            display = [EMPTY_LABEL] + display
+
             self.preset_combo.config(values=display)
-            print(f"✅ 预设列表已加载: {len(display)} 个")
+            self.preset_var.set(EMPTY_LABEL)
+            self._empty_preset_label = EMPTY_LABEL
+            print(f"✅ 预设列表已加载: {len(display) - 1} 个（+1 空项）")
+         
         except Exception as e:
             import traceback
             traceback.print_exc()
             print(f"⚠️ 预设列表加载失败: {e}")
-
+        
     def _get_selected_preset(self) -> str:
-        """从下拉框解析出预设名"""
+        """从下拉框解析出预设名；选中空项时返回 None"""
         val = self.preset_var.get()
         if not val:
+            return None
+        # ✅ 命中"不使用预设"占位项 → 视为未选
+        if val == getattr(self, '_empty_preset_label', None):
             return None
         # "mecha_glow — 机甲发光" → "mecha_glow"
         return val.split(" — ")[0].strip() if " — " in val else val.strip()
 
-
     def _on_preset_selected(self, event=None):
         preset = self._get_selected_preset()
         if not preset:
+            # ✅ 选的是"不使用预设" → 提示并清掉去重记录
+            self._last_shown_preset = None
+            self._append_message("system", "🎨 已清除预设选择（后续发送将走正常意图分析）")
             return
-        # 只在切换预设时才提示
         if getattr(self, '_last_shown_preset', None) == preset:
             return
         self._last_shown_preset = preset
