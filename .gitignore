@@ -66,4 +66,4 @@ build/
 # ============ 允许公众号二维码素材入库 ============
 !assets/qr/
 !assets/qr/*.png
-!assets/qr/*.jpg
+!assets/qr/*.jpg.wechat_state.json 

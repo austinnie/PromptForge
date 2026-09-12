@@ -87,6 +87,8 @@ class WechatFormatter:
           enhance   是否启用 AI 内容增强（默认 False）
           open      完成后是否打开浏览器
           recommend 画廊中推荐的主题 ID 列表
+          footer_image 文末引导图路径（会在末尾自动插入）
+          footer_alt   引导图的 alt 文字（默认 "关注"）          
         """
         start_time = time.time()
         logger.info(f"执行技能: {self.name} (v{self.version})")
@@ -107,6 +109,19 @@ class WechatFormatter:
 
             content = md_path.read_text(encoding="utf-8")
             logger.info(f"读取: {md_path.name} ({len(content)} 字符)")
+
+            # ✅ 追加文末引导图
+            footer_image = kwargs.get("footer_image")
+            if footer_image:
+                footer_path = Path(footer_image).resolve()
+                if not footer_path.exists():
+                    logger.warning(f"⚠️ 文末引导图不存在: {footer_path}")
+                else:
+                    alt_text = kwargs.get("footer_alt", "关注")
+                    content = content.rstrip() + (
+                        f"\n\n---\n\n![{alt_text}]({footer_path.as_posix()})\n"
+                    )
+                    logger.info(f"✅ 已追加文末引导图: {footer_path.name}")
 
             if enhance:
                 content = self._ai_enhance(content)

@@ -32,6 +32,8 @@ def cmd_format(args):
         enhance=args.enhance,
         open=args.open,
         recommend=args.recommend or [],
+        footer_image=args.footer_image,
+        footer_alt=args.footer_alt,        
     )
 
     if result["status"] != "success":
@@ -116,6 +118,10 @@ def main():
     p_fmt.add_argument("--recommend", nargs="*", default=[], help="画廊推荐主题")
     p_fmt.add_argument("--cover", action="store_true", help="同时生成封面")
     p_fmt.add_argument("--publish", action="store_true", help="排版后推送草稿箱")
+
+    p_fmt.add_argument("--footer-image", "-f", default=None, help="文末引导图路径（会在文章末尾自动插入）")
+    p_fmt.add_argument("--footer-alt", default="关注",  help="文末引导图的 alt 文字（默认：关注）")
+                       
     p_fmt.add_argument("--dry-run", action="store_true", help="推送时只上传图片不推草稿")
 
     # cover

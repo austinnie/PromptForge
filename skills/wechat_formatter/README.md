@@ -15,6 +15,7 @@ Markdown 一键排版为微信公众号兼容 HTML。**内联样式、33 套主�
 - 🖼️ **图片本地化**：`![[image]]` 和 `![](image)` 自动搜索并复制到 `images/`
 - 🎨 **封面图生成**（可选）：复用 `image_generator` 生成 2.35:1 Notion 风格封面
 - 📤 **一键推送草稿箱**（可选）：自动上传图片到微信 CDN + 推送到公众号草稿箱
+- 🖼️ **文末引导图**（可选）：`--footer-image` 参数自动在文章末尾插入二维码/关注卡
 
 ---
 
@@ -93,6 +94,9 @@ python skills/wechat_formatter/wechat_formatter_cli.py cover --title "标题" --
 
 :: 只推送已排版好的文章
 python skills/wechat_formatter/wechat_formatter_cli.py publish --dir output/wechat/xxx
+
+:: 文末自动插入二维码引导卡
+python skills/wechat_formatter/wechat_formatter_cli.py article.md --footer-image "assets/qr/公众号结束处.png" --open
 ```
 
 ### 参数说明
@@ -109,6 +113,8 @@ python skills/wechat_formatter/wechat_formatter_cli.py publish --dir output/wech
 | `--recommend` | — | 画廊推荐主题列表 | 空 |
 | `--cover` | — | 同时生成封面 | 关 |
 | `--publish` | — | 排版后推送草稿箱 | 关 |
+| `--footer-image` | `-f` | 文末引导图路径（相对命令运行目录） | 无 |
+| `--footer-alt` | — | 引导图的 alt 文字 | `关注` |
 | `--dry-run` | — | 推送时只上传图片不推草稿 | 关 |
 
 ### Python 调用
@@ -252,6 +258,21 @@ curl ifconfig.me
 
 ```python
 content = engine.fix_cjk_spacing(content)
+```
+
+### Q7：`--footer-image` 图片找不到
+
+**`--footer-image` 是相对 CWD（当前工作目录）的路径**，不是相对文章目录。
+
+推荐用法——**在项目根目录**执行：
+
+```cmd
+cd /d E:\SD_OpenVINO\PromptForge
+python skills/wechat_formatter/wechat_formatter_cli.py output/articles/xxx/article.md --footer-image "assets/qr/公众号结束处.png"
+
+也可以写绝对路径：
+--footer-image "E:/SD_OpenVINO/PromptForge/assets/qr/公众号结束处.png"
+
 ```
 
 ---
