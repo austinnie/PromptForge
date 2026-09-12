@@ -6,6 +6,7 @@ from .novel_writer.skill import NovelWriterOllama
 from .voice_assistant.skill import VoiceAssistant
 from .music_generator.skill import MusicMaestro
 from .image_curator import ImageCurator
+from .wechat_formatter import WechatFormatter
 from .tech_hot_article.skill import TechHotArticle  # ✅ 新增
 from .image_generator import ImageGenerator    # ✅ 新增
 from .video_generator import VideoGenerator
@@ -14,6 +15,7 @@ __all__ = [
     'NovelWriterOllama',
     'VoiceAssistant',
     'MusicMaestro',
+    'ImageCurator',
     'ImageCurator',
     'TechHotArticle',  # ✅ 新增
     'ImageGenerator',    # ✅ 新增

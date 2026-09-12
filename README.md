@@ -15,7 +15,7 @@
 - **丰富的 API 支持**：Pollinations（免费）、Agnes AI（免费）、Free API、通义万相、文心一格、腾讯混元、HuggingFace、Replicate、Stability AI
 - **智能意图分析**：自动识别文生图、图生图、双人/多人合成、视频生成、多媒体创作、普通对话
 - **LLM 增强**：可选 Ollama 本地大模型优化提示词、生成小说、生成技术文章
-- **技能系统**：内置 `image_generator`、`video_generator`、`music_generator`、`image_curator`、`news_aggregator`、`novel_writer`、`tech_hot_article`、`voice_assistant`
+- **技能系统**：内置 `image_generator`、`video_generator`、`music_generator`、`image_curator`、`wechat_formatter`、`news_aggregator`、`novel_writer`、`tech_hot_article`、`voice_assistant`
 - **安全过滤**：内置内容安全检查器，支持安全开关与敏感词清理
 - **轻量级 GUI**：基于 Tkinter 的简洁图形界面，支持图片缩略图预览、双击查看大图
 
@@ -367,6 +367,7 @@ PromptForge/
 │   ├── video_generator/          # 视频生成
 │   ├── music_generator/          # 音乐生成（MIDI + MusicGen）
 │   ├── image_curator/            # 图片鉴赏文章生成（MD/Word/PDF/富文本）
+│   ├── wechat_formatter/         # 微信排版 + 33 主题 + 可选推送草稿箱
 │   ├── news_aggregator/          # 新闻聚合 + AI 摘要
 │   ├── novel_writer/             # 小说生成（多语言）
 │   ├── tech_hot_article/         # 技术热点文章 + 配图 + Word
@@ -532,6 +533,36 @@ pip install requests Pillow python-dotenv python-docx xhtml2pdf
 
 详见 skills/image_curator/README.md
 ```
+
+### wechat_formatter 单独使用举例
+
+```text
+# 默认主题排版
+python skills/wechat_formatter/wechat_formatter_cli.py article.md
+
+# 指定主题（赤陶）
+python skills/wechat_formatter/wechat_formatter_cli.py article.md --theme terracotta
+
+# 主题画廊：浏览器里用真实文章预览 20 个主题
+python skills/wechat_formatter/wechat_formatter_cli.py article.md --gallery
+
+# AI 内容增强：自动识别对话/连续图片/核心观点
+python skills/wechat_formatter/wechat_formatter_cli.py article.md --enhance --open
+
+# 排版 → 生成封面 → 推送公众号草稿箱
+python skills/wechat_formatter/wechat_formatter_cli.py article.md --theme terracotta --cover --publish
+
+# 只生成封面
+python skills/wechat_formatter/wechat_formatter_cli.py cover --title "标题" --topic "主题"
+```
+
+**输出**：`output/wechat/<时间戳>_<文章名>/`，含 `article.html`（微信兼容 HTML）、`preview.html`（浏览器预览，带"复制到微信"按钮）、`images/`（本地化图片）
+
+**发布到公众号**：浏览器打开 `preview.html` → 点右上角"复制到微信" → 到公众号后台 `Ctrl+V` → 图片从 `images/` 拖入（未认证账号推荐此方式）；认证账号可用 `--publish` 自动推草稿箱
+
+**依赖**：`pip install markdown requests`
+
+详见 [skills/wechat_formatter/README.md](skills/wechat_formatter/README.md)
 
 ## news_aggregator 单独使用举例
 ```python
@@ -722,6 +753,7 @@ print(result["result"]["audio_path"])
 | `video_generator` | `video_generator_cli.py` | 文生视频、长视频拼接 |
 | `music_generator` | `music_generator_cli.py` | 音乐生成（MIDI/MusicGen） |
 | `image_curator` | `image_curator_cli.py` | 图片鉴赏文章（MD/Word/PDF/富文本） |
+| `wechat_formatter` | `wechat_formatter_cli.py` | 微信排版 / 33 主题 / 推草稿箱 |
 | `news_aggregator` | 仅 Python 调用 | 新闻抓取 + AI 摘要 |
 | `novel_writer` | 仅 Python 调用 | 小说生成（多语言） |
 | `tech_hot_article` | `tech_hot_article_cli.py` | 技术文章生成 + 配图 |
@@ -735,6 +767,7 @@ print(result["result"]["audio_path"])
 | `video_generator` | `python skills/video_generator/video_generator_cli.py` |
 | `music_generator` | `python skills/music_generator/music_generator_cli.py` |
 | `image_curator` | `python skills/image_curator/image_curator_cli.py` |
+| `wechat_formatter` | `python skills/wechat_formatter/wechat_formatter_cli.py` |
 | `news_aggregator` | Python 调用 `from skills import NewsAggregator` |
 | `novel_writer` | Python 调用 `from skills.novel_writer.skill import NovelWriterOllama` |
 | `tech_hot_article` | `python skills/tech_hot_article/tech_hot_article_cli.py` |
