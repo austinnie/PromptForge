@@ -1,12 +1,12 @@
 {
   "name": "social_auto_upload",
   "version": "1.0.0",
-  "description": "多平台内容分发：内嵌 social-auto-upload，通过 sau CLI 把视频/图文上传到抖音、快手、小红书、B站、视频号、微博、YouTube 等",
+  "description": "多平台内容分发 skill：内嵌 social-auto-upload，通过 social_auto_upload_cli.py 或 sau CLI 把视频/图文上传到抖音、快手、小红书、B站、视频号、百家号、支付宝生活号、微博、虎扑、YouTube 等",
   "author": "PromptForge",
   "inputs": {
-    "platform": "平台名（douyin/kuaishou/xiaohongshu/bilibili/tencent/alipay/weibo/hupu/youtube/baijiahao）",
+    "platform": "平台名（douyin/kuaishou/xiaohongshu/bilibili/tencent/baijiahao/alipay/weibo/hupu/youtube）",
     "file": "视频文件路径（publish-video）",
-    "images": "图片路径列表（publish-note）",
+    "images": "图片路径列表（publish-note，位置参数可多个）",
     "title": "标题",
     "desc": "视频简介",
     "note": "图文正文",
@@ -14,17 +14,40 @@
     "account": "账号名（对应 cookies/{platform}_{account}.json）",
     "schedule": "定时发布 '2026-03-24 21:30'",
     "thumbnail": "封面图路径",
-    "tid": "B站分区 ID"
+    "tid": "B站分区 ID",
+    "playlist": "YouTube 播放列表（仅 sau youtube upload-video 支持）",
+    "visibility": "YouTube 可见性：public / unlisted / private（仅 sau youtube upload-video 支持）"
   },
   "outputs": {
     "status": "success / error",
     "error": "错误信息",
-    "stdout": "sau 的原始输出"
+    "stdout": "命令原始输出"
   },
   "engines": ["patchright", "biliup"],
   "examples": [
-    "python skills/social_auto_upload/social_auto_upload_cli.py login xiaohongshu",
-    "python skills/social_auto_upload/social_auto_upload_cli.py publish-note xiaohongshu img.png \"标题\" --tags 机甲,测试",
-    "python skills/social_auto_upload/social_auto_upload_cli.py publish-video bilibili video.mp4 \"标题\" --tid 249"
+    "# 登录 / 校验（小红书为例）",
+    "python social_auto_upload_cli.py login xiaohongshu --account myaccount",
+    "python social_auto_upload_cli.py check xiaohongshu --account myaccount",
+
+    "# 同一平台 · 图文混排文章（多图 + 标题 + 长正文 + 标签）",
+    "python social_auto_upload_cli.py publish-note xiaohongshu cover.png detail1.png detail2.png \"春季露营装备清单｜新手必看\" --note \"这次整理了 10 件入门级露营装备，从帐篷到炊具都实测过，附上避坑建议……\" --tags 露营,户外,好物推荐 --account myaccount",
+
+    "# 同一平台 · 单图/纯图片笔记",
+    "python social_auto_upload_cli.py publish-note xiaohongshu photo.png \"今日份的晚霞\" --account myaccount",
+
+    "# 同一平台 · 视频（含封面图 + 简介 + 标签 + 定时发布）",
+    "python social_auto_upload_cli.py publish-video xiaohongshu vlog.mp4 \"周末露营 Vlog\" --desc \"两天的露营记录，全程 4K 拍摄\" --thumbnail cover.png --tags 露营,Vlog --schedule \"2026-03-24 21:30\" --account myaccount",
+
+    "# 其他平台示例（B站视频 + 分区 tid）",
+    "python social_auto_upload_cli.py publish-video bilibili demo.mp4 \"示例标题\" --desc \"示例简介\" --tid 249 --account myaccount",
+
+    "# YouTube · 登录（交互式，弹出浏览器登录 Google 账号）",
+    "sau youtube login --account myaccount",
+
+    "# YouTube · 校验登录态",
+    "sau youtube check --account myaccount",
+
+    "# YouTube · 上传视频（含封面 + 播放列表 + 可见性；不支持图文）",
+    "sau youtube upload-video --account myaccount --file demo.mp4 --title \"示例标题\" --desc \"示例简介\" --tags tag1,tag2 --thumbnail cover.png --playlist \"我的系列\" --visibility public"
   ]
 }
