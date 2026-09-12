@@ -62,3 +62,8 @@ htmlcov/
 dist/
 build/
 *.egg-info/"skills/music_generator/soundfonts/SGM-V2.01.sf2" 
+
+# ============ 允许公众号二维码素材入库 ============
+!assets/qr/
+!assets/qr/*.png
+!assets/qr/*.jpg
