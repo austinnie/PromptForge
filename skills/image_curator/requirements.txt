@@ -1,0 +1,6 @@
+# ============ image_curator 专用依赖 ============
+requests>=2.31.0          # 调用 Agnes 多模态 API
+Pillow>=10.0.0            # 图片缩放、格式转换
+python-dotenv>=1.0.0      # 读取 .env 中的 AGNES_API_KEY
+python-docx>=1.1.0        # 生成 Word (.docx)
+xhtml2pdf>=0.2.11         # 生成 PDF（Windows 友好，纯 Python）

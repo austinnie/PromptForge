@@ -15,7 +15,7 @@
 - **丰富的 API 支持**：Pollinations（免费）、Agnes AI（免费）、Free API、通义万相、文心一格、腾讯混元、HuggingFace、Replicate、Stability AI
 - **智能意图分析**：自动识别文生图、图生图、双人/多人合成、视频生成、多媒体创作、普通对话
 - **LLM 增强**：可选 Ollama 本地大模型优化提示词、生成小说、生成技术文章
-- **技能系统**：内置 `image_generator`、`video_generator`、`music_generator`、`news_aggregator`、`novel_writer`、`tech_hot_article`、`voice_assistant`
+- **技能系统**：内置 `image_generator`、`video_generator`、`music_generator`、`image_curator`、`news_aggregator`、`novel_writer`、`tech_hot_article`、`voice_assistant`
 - **安全过滤**：内置内容安全检查器，支持安全开关与敏感词清理
 - **轻量级 GUI**：基于 Tkinter 的简洁图形界面，支持图片缩略图预览、双击查看大图
 
@@ -45,6 +45,14 @@
 - **技术文章生成**：基于实时技术热点生成文章，自动配图并输出 Word 文档
 - **新闻简报**：RSS 多源抓取 + AI 智能摘要，支持 7 大类新闻
 - **小说生成**：使用本地 Ollama 大模型自动写小说，支持 17 种语言与断点续写
+
+### 🖼️ 图片鉴赏
+- **目录扫描**：自动扫描目录中的图片（png / jpg / jpeg / webp / bmp / gif）
+- **AI 逐张鉴赏**：使用多模态模型描述主体、构图、色彩、光影、风格、氛围
+- **智能重试**：单张最多重试 3 次，第 2 次起自动换更简单的提示词
+- **文件名兜底**：连续失败时用文件名生成占位描述，文章不出现空洞
+- **多格式输出**：Markdown / HTML / Word / PDF / 微信·知乎富文本
+- **一键粘贴**：生成内联样式 HTML，直接 Ctrl+V 到微信公众号或知乎编辑器
 
 ### 🎙️ 语音处理
 - **TTS（语音合成）**：支持多语言、多音色
@@ -358,6 +366,7 @@ PromptForge/
 │   ├── image_generator/          # 图像生成
 │   ├── video_generator/          # 视频生成
 │   ├── music_generator/          # 音乐生成（MIDI + MusicGen）
+│   ├── image_curator/            # 图片鉴赏文章生成（MD/Word/PDF/富文本）
 │   ├── news_aggregator/          # 新闻聚合 + AI 摘要
 │   ├── novel_writer/             # 小说生成（多语言）
 │   ├── tech_hot_article/         # 技术热点文章 + 配图 + Word
@@ -402,6 +411,7 @@ PromptForge/
 - `image_generator`：图像生成技能，支持文生图、图生图，多引擎切换与自动回退
 - `video_generator`：视频生成技能，支持文生视频与长视频分段拼接
 - `music_generator`：AI 音乐大师，自动写词、谱曲，支持 MIDI 与 MusicGen 两种模式
+- `image_curator`：图片鉴赏文章生成器，扫描目录中的图片逐张 AI 鉴赏，输出 Markdown / HTML / Word / PDF / 微信·知乎富文本
 - `news_aggregator`：新闻聚合器，RSS 新闻抓取 + AI 智能摘要，支持多分类
 - `novel_writer`：小说生成技能，使用本地 Ollama 大模型自动写小说，支持多语言与断点续写
 - `tech_hot_article`：技术热点文章生成器，基于实时热点生成文章，自动配图并输出 Word 文档
@@ -473,6 +483,55 @@ python skills/music_generator/generate_symphony.py
 ```
 
 可用情绪：peaceful, melancholic, joyful, epic, mysterious
+
+
+### image_curator 单独使用举例
+
+```text
+命令行调用
+# 全格式生成（默认 md,html,docx,pdf,clipboard），生成后自动打开
+python skills/image_curator/image_curator_cli.py output/机甲 --open
+
+# 自定义标题
+python skills/image_curator/image_curator_cli.py output/机甲 -t "机甲之美" --open
+
+# 递归子目录
+python skills/image_curator/image_curator_cli.py output/机甲 -r
+
+# 限定张数
+python skills/image_curator/image_curator_cli.py output/机甲 --max-images 20
+
+# 只生成 Markdown + 微信富文本（最快）
+python skills/image_curator/image_curator_cli.py output/机甲 -f md,clipboard
+
+# 只生成 Word 和 PDF
+python skills/image_curator/image_curator_cli.py output/机甲 -f md,docx,pdf
+
+# 补跑：只重跑 metadata.json 中描述为空的图片
+python skills/image_curator/retry_empty.py output/articles/20260912_HHMMSS_机甲
+
+输出目录：
+
+output/articles/20260912_HHMMSS_机甲/
+├── article.md           # Markdown 文章
+├── article.html         # 网页阅读版
+├── article.docx         # Word（可导入公众号）
+├── article.pdf          # PDF
+├── clipboard.html       # 微信/知乎富文本（点"复制全文"）
+├── metadata.json        # 原始数据
+└── assets/              # 本地化图片副本
+
+发布到微信/知乎：
+浏览器打开 clipboard.html
+点顶部橙色按钮 📋 复制全文
+到微信公众平台编辑器 / 知乎编辑器里 Ctrl+V
+图片从 assets/ 目录手动拖进编辑器即可
+
+依赖：
+pip install requests Pillow python-dotenv python-docx xhtml2pdf
+
+详见 skills/image_curator/README.md
+```
 
 ## news_aggregator 单独使用举例
 ```python
@@ -603,6 +662,7 @@ from skills import (
     ImageGenerator,
     VideoGenerator,
     MusicMaestro,
+	ImageCurator,       # ← 新增
     NewsAggregator,
     NovelWriterOllama,
     TechHotArticle,
@@ -623,6 +683,11 @@ print(result["result"]["video_path"])
 music = MusicMaestro({"music_mode": "auto"})
 result = music.execute(topic="星辰大海", emotion="peaceful", duration=30)
 print(result["result"]["audio_file"])
+
+# 图片鉴赏文章生成
+curator = ImageCurator()
+result = curator.curate("output/机甲", title="机甲之美")
+print(result["result"]["article_path"])
 
 # 新闻聚合
 news = NewsAggregator({"output_dir": "./output/news"})
@@ -656,6 +721,7 @@ print(result["result"]["audio_path"])
 | `image_generator` | `image_generator_cli.py` | 文生图、图生图 |
 | `video_generator` | `video_generator_cli.py` | 文生视频、长视频拼接 |
 | `music_generator` | `music_generator_cli.py` | 音乐生成（MIDI/MusicGen） |
+| `image_curator` | `image_curator_cli.py` | 图片鉴赏文章（MD/Word/PDF/富文本） |
 | `news_aggregator` | 仅 Python 调用 | 新闻抓取 + AI 摘要 |
 | `novel_writer` | 仅 Python 调用 | 小说生成（多语言） |
 | `tech_hot_article` | `tech_hot_article_cli.py` | 技术文章生成 + 配图 |
@@ -668,6 +734,7 @@ print(result["result"]["audio_path"])
 | `image_generator` | `python skills/image_generator/image_generator_cli.py` |
 | `video_generator` | `python skills/video_generator/video_generator_cli.py` |
 | `music_generator` | `python skills/music_generator/music_generator_cli.py` |
+| `image_curator` | `python skills/image_curator/image_curator_cli.py` |
 | `news_aggregator` | Python 调用 `from skills import NewsAggregator` |
 | `novel_writer` | Python 调用 `from skills.novel_writer.skill import NovelWriterOllama` |
 | `tech_hot_article` | `python skills/tech_hot_article/tech_hot_article_cli.py` |

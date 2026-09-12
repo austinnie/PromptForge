@@ -1,0 +1,27 @@
+{
+  "name": "image_curator",
+  "version": "1.1.0",
+  "description": "扫描目录中的图片，用多模态 AI 逐张鉴赏，生成 Markdown / HTML / Word / PDF 文章，以及可一键粘贴到微信·知乎的富文本",
+  "author": "MarkFlow",
+  "inputs": {
+    "directory": "图片目录路径",
+    "title": "文章标题（可选）",
+    "intro": "引言（可选，默认 AI 生成）",
+    "recursive": "是否递归子目录",
+    "max_images": "最多处理张数",
+    "formats": "输出格式：md,html,docx,pdf,clipboard"
+  },
+  "outputs": {
+    "article_path":   "Markdown 路径",
+    "html_path":      "HTML 路径（阅读）",
+    "docx_path":      "Word 路径",
+    "pdf_path":       "PDF 路径",
+    "clipboard_path": "富文本剪贴板页（微信/知乎）",
+    "article_dir":    "输出目录（含 assets/）"
+  },
+  "engines": ["agnes"],
+  "examples": [
+    "python skills/image_curator/image_curator_cli.py output/机甲 --open",
+    "python skills/image_curator/image_curator_cli.py output/机甲 -t \"机甲之美\" -f md,docx,pdf,clipboard"
+  ]
+}
