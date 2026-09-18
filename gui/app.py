@@ -25,7 +25,8 @@ class _DailyLogHandler(logging.Handler):
     - 带 emoji 的进度日志原样显示，其他 INFO 过滤掉，避免刷屏
     """
 
-    KEEP_HINTS = ("✅", "❌", "⚠️", "🎯", "🎨", "📄", "📤", "🎉", "📁", "🖼️", "⬇️", "🔄", "😴")
+    KEEP_HINTS = ("✅", "❌", "⚠️", "🎯", "🎨", "📄", "📤", "🎉",
+                  "📁", "🖼️", "⬇️", "🔄", "😴")
 
     def __init__(self, app):
         super().__init__()
@@ -49,10 +50,10 @@ class _DailyLogHandler(logging.Handler):
                     return
                 text = msg
 
-            # 回到主线程
             self.app.root.after(0, lambda t=text: self.app._append_message("system", t))
         except Exception:
             pass
+
 
 
     
@@ -85,6 +86,7 @@ class ChatApp:
         self._bound_double_click = False  # 标记是否已绑定双击事件
         
         self._setup_ui()
+        self._build_menubar()
         self._check_llm()
     
     def _setup_ui(self):
@@ -387,7 +389,254 @@ class ChatApp:
             self.status_label.config(text=text, foreground=color)
         except:
             pass
-            
+
+    # ============================================================
+    # ✅ 第一批：菜单栏
+    # ============================================================
+    def _build_menubar(self):
+        """构建菜单栏。工具栏只留高频操作，长尾功能收进菜单。"""
+        menubar = tk.Menu(self.root)
+
+        # ── 生成 ──
+        gen_menu = tk.Menu(menubar, tearoff=0)
+        gen_menu.add_command(label="🎨 图像（预设）", command=self._on_send_with_preset)
+        gen_menu.add_command(label="🎬 视频生成（待接入）", state="disabled")
+        gen_menu.add_command(label="🎵 音乐生成（待接入）", state="disabled")
+        gen_menu.add_command(label="📝 小说生成（待接入）", state="disabled")
+        gen_menu.add_command(label="🎙️ 语音合成（待接入）", state="disabled")
+        gen_menu.add_separator()
+        gen_menu.add_command(label="🎞️ 多媒体成片（待接入）", state="disabled")
+        menubar.add_cascade(label="生成", menu=gen_menu)
+
+        # ── 排版 ──
+        fmt_menu = tk.Menu(menubar, tearoff=0)
+        fmt_menu.add_command(label="🖼️ 图片鉴赏文章", command=self._run_image_curator)
+        fmt_menu.add_command(label="📰 微信排版", command=self._run_wechat_formatter)
+        menubar.add_cascade(label="排版", menu=fmt_menu)
+
+        # ── 发布 ──
+        pub_menu = tk.Menu(menubar, tearoff=0)
+        pub_menu.add_command(label="🚀 一键多平台分发（待接入）", state="disabled")
+        pub_menu.add_command(label="🔑 平台登录（待接入）", state="disabled")
+        menubar.add_cascade(label="发布", menu=pub_menu)
+
+        # ── 自动化 ──
+        auto_menu = tk.Menu(menubar, tearoff=0)
+        auto_menu.add_command(label="📅 每日任务", command=self._run_daily_task)
+        auto_menu.add_command(label="📰 新闻简报", command=self._fetch_news)
+        auto_menu.add_command(label="📄 技术文章", command=self._generate_tech_article)
+        menubar.add_cascade(label="自动化", menu=auto_menu)
+
+        self.root.config(menu=menubar)
+
+    # ============================================================
+    # ✅ 第一批：通用 Skill 执行框架
+    # ============================================================
+    def _run_skill(self, title: str, worker, on_success=None):
+        """通用 skill 执行器。
+
+        Args:
+            title: 状态栏标题，如 "🖼️ 图片鉴赏"
+            worker: 无参函数，返回 result dict：{"status", "result", "error"}
+            on_success: 可选。result["result"] 处理回调（在主线程）
+        """
+        if getattr(self, "_skill_running", False):
+            self._append_message("system", f"⏳ {title} 正在执行中，请稍候...")
+            return
+
+        self._skill_running = True
+        self._append_message("system", f"{title} 开始...")
+        self.status_var.set(f"{title} 执行中...")
+
+        def thread_func():
+            try:
+                result = worker()
+                if result.get("status") != "success":
+                    err = result.get("error", "未知错误")
+                    self.root.after(0, lambda e=err: self._append_message(
+                        "assistant", f"❌ {title} 失败：{e}"
+                    ))
+                    return
+
+                data = result.get("result") or {}
+                if on_success:
+                    self.root.after(0, lambda d=data: on_success(d))
+                else:
+                    preview = json.dumps(data, ensure_ascii=False, indent=2)[:800]
+                    self.root.after(0, lambda p=preview: self._append_message(
+                        "assistant", f"✅ {title} 完成\n{p}"
+                    ))
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                err = str(e)
+                self.root.after(0, lambda m=err: self._append_message(
+                    "assistant", f"❌ {title} 异常：{m}"
+                ))
+            finally:
+                self._skill_running = False
+                self.root.after(0, lambda: self.status_var.set("就绪"))
+
+        threading.Thread(target=thread_func, daemon=True).start()
+
+    # ── 弹窗小工具 ──
+    def _ask_string(self, title, prompt, default=""):
+        """单行文本输入。取消返回 None。"""
+        from tkinter import simpledialog
+        return simpledialog.askstring(title, prompt, initialvalue=default, parent=self.root)
+
+    def _ask_int(self, title, prompt, default, min_v, max_v):
+        """整数输入（带范围）。取消返回 None。"""
+        from tkinter import simpledialog
+        return simpledialog.askinteger(
+            title, prompt, initialvalue=default,
+            minvalue=min_v, maxvalue=max_v, parent=self.root,
+        )
+
+    def _ask_choice(self, title, prompt, options, default=None):
+        """下拉选择对话框。取消返回 None。"""
+        from tkinter import simpledialog
+        top = tk.Toplevel(self.root)
+        top.title(title)
+        top.transient(self.root)
+        top.grab_set()
+        top.geometry("360x130")
+
+        ttk.Label(top, text=prompt, wraplength=330).pack(padx=15, pady=(15, 8), anchor="w")
+        var = tk.StringVar(value=default or (options[0] if options else ""))
+        combo = ttk.Combobox(top, textvariable=var, values=options, state="readonly", width=40)
+        combo.pack(padx=15, fill=tk.X)
+
+        result = {"value": None}
+        def on_ok():
+            result["value"] = var.get()
+            top.destroy()
+        def on_cancel():
+            top.destroy()
+
+        btn = ttk.Frame(top)
+        btn.pack(pady=12)
+        ttk.Button(btn, text="确定", command=on_ok).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn, text="取消", command=on_cancel).pack(side=tk.LEFT, padx=5)
+        top.wait_window()
+        return result["value"]
+
+    # ============================================================
+    # ✅ 第一批：图片鉴赏文章
+    # ============================================================
+    def _run_image_curator(self):
+        """选目录 → 鉴赏 → 生成多格式文章。"""
+        from tkinter import filedialog
+        folder = filedialog.askdirectory(title="选择图片目录", parent=self.root)
+        if not folder:
+            return
+
+        default_title = Path(folder).name
+        title = self._ask_string("图片鉴赏文章", "文章标题：", default_title)
+        if title is None:
+            return  # 用户取消
+
+        def worker():
+            from skills.image_curator import ImageCurator
+            curator = ImageCurator({
+                "generate_html": True,
+                "generate_docx": True,
+                "generate_pdf": True,
+                "generate_clipboard": True,
+            })
+            return curator.curate(folder, title=title)
+
+        self._run_skill("🖼️ 图片鉴赏", worker, on_success=self._show_curator_result)
+
+    def _show_curator_result(self, data):
+        """图片鉴赏结果：聊天区汇总 + 首图缩略 + 自动打开预览页。"""
+        lines = ["✅ 图片鉴赏文章生成完成！", ""]
+        lines.append(f"📝 标题：{data.get('title', '-')}")
+        lines.append(f"🖼️ 张数：{data.get('image_count', 0)}")
+        lines.append(f"⏱️ 耗时：{data.get('elapsed', '-')}")
+        lines.append("")
+        for key, label in [
+            ("article_path",   "📄 Markdown"),
+            ("html_path",      "🌐 HTML"),
+            ("docx_path",      "📘 Word"),
+            ("pdf_path",       "📄 PDF"),
+            ("clipboard_path", "📋 富文本"),
+        ]:
+            p = data.get(key)
+            if p:
+                lines.append(f"{label}：{p}")
+        self._append_message("assistant", "\n".join(lines))
+
+        # 首图缩略
+        article_dir = data.get("article_dir")
+        if article_dir and os.path.isdir(article_dir):
+            assets = os.path.join(article_dir, "assets")
+            if os.path.isdir(assets):
+                imgs = []
+                for ext in ("*.png", "*.jpg", "*.jpeg", "*.webp"):
+                    imgs.extend(glob.glob(os.path.join(assets, ext)))
+                if imgs:
+                    self._append_image(sorted(imgs)[0], f"文章首图（共 {len(imgs)} 张）")
+
+        # 自动打开富文本（优先）或 HTML
+        open_target = data.get("clipboard_path") or data.get("html_path")
+        if open_target and os.path.exists(open_target):
+            try:
+                webbrowser.open(Path(open_target).as_uri())
+            except Exception:
+                pass
+
+    # ============================================================
+    # ✅ 第一批：微信排版
+    # ============================================================
+    def _run_wechat_formatter(self):
+        """选 md 文件 → 选主题 → 排版。"""
+        from tkinter import filedialog
+        md = filedialog.askopenfilename(
+            title="选择 Markdown 文件",
+            filetypes=[("Markdown", "*.md"), ("所有文件", "*.*")],
+            parent=self.root,
+        )
+        if not md:
+            return
+
+        # 主题下拉。列几个常用的，用户也可以手输（简化：用 askstring）
+        common_themes = [
+            "newspaper", "terracotta", "magazine", "ink",
+            "bytedance", "github", "sspai", "midnight",
+            "minimal-gold", "warm-card", "fresh-card", "ocean-card",
+        ]
+        theme = self._ask_choice(
+            "微信排版", "选择主题：", common_themes, default="newspaper",
+        )
+        if not theme:
+            return
+
+        def worker():
+            from skills.wechat_formatter import WechatFormatter
+            fmt = WechatFormatter()
+            return fmt.format(md, theme=theme, open=False)
+
+        self._run_skill("📰 微信排版", worker, on_success=self._show_formatter_result)
+
+    def _show_formatter_result(self, data):
+        """微信排版结果：汇总 + 自动打开 preview.html。"""
+        lines = ["✅ 微信排版完成！", ""]
+        lines.append(f"📂 输出目录：{data.get('article_dir', '-')}")
+        if data.get("preview_path"):
+            lines.append(f"🌐 浏览器预览：{data['preview_path']}")
+        if data.get("article_path"):
+            lines.append(f"📄 微信 HTML：{data['article_path']}")
+        lines.append("")
+        lines.append("💡 在浏览器里点「复制到微信」按钮，粘到公众号后台即可。")
+        self._append_message("assistant", "\n".join(lines))
+
+        preview = data.get("preview_path")
+        if preview and os.path.exists(preview):
+            try:
+                webbrowser.open(Path(preview).as_uri())
+            except Exception:
+                pass            
     # ============================================================
     # 模式切换
     # ============================================================
