@@ -13,9 +13,13 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 from pathlib import Path
 
+# [改] 根目录定位 + 自检，避免脚本挪位后静默失败
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if not (PROJECT_ROOT / "skills" / "daily_pipeline").is_dir():
+    sys.exit(f"❌ 项目根目录识别失败：{PROJECT_ROOT}")
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -33,20 +37,33 @@ def main() -> int:
     parser.add_argument("--preset-category", default=None, choices=VALID_PRESET_CATEGORIES)
     parser.add_argument("--vary-preset", action="store_true",
                         help="每张图从同分类换一个预设")
-    parser.add_argument("--count", "-c", type=int, default=6, help="张数（默认 6）")
+    # [改] 限定范围，防止误传 0 或负值
+    parser.add_argument("--count", "-c", type=int, default=6,
+                        choices=range(1, 21), metavar="[1-20]",
+                        help="张数（默认 6，范围 1-20）")
     parser.add_argument("--theme", default="newspaper", help="排版主题")
-    parser.add_argument("--output-root", default="output/daily", help="生图输出根目录")
-    parser.add_argument("--qr", default="assets/qr/公众号结束处.png", help="文末二维码")
+    # [改] 路径类参数用 Path，参数校验时立刻发现
+    parser.add_argument("--output-root", type=Path, default=Path("output/daily"),
+                        help="生图输出根目录")
+    parser.add_argument("--qr", type=Path,
+                        default=Path("assets/qr/公众号结束处.png"),
+                        help="文末二维码")
     parser.add_argument("--no-publish", action="store_true",
                         help="不推草稿箱（默认推送）")
     parser.add_argument("--open", action="store_true", help="完成后打开浏览器")
     parser.add_argument("--skip-curate", action="store_true", help="只生图")
     parser.add_argument("--skip-generate", action="store_true",
                         help="跳过生图（需 --image-dir）")
-    parser.add_argument("--image-dir", default=None, help="已有图片目录")
+    parser.add_argument("--image-dir", type=Path, default=None, help="已有图片目录")
     parser.add_argument("--list-presets", action="store_true")
     parser.add_argument("--list-topics", action="store_true")
     args = parser.parse_args()
+
+    # [改] 参数互锁：skip-generate 必须配 image-dir
+    if args.skip_generate and not args.image_dir:
+        parser.error("--skip-generate 必须配合 --image-dir 使用")
+    if args.image_dir and not args.image_dir.is_dir():
+        parser.error(f"--image-dir 不存在或不是目录：{args.image_dir}")
 
     # 加载 .env
     try:
@@ -84,6 +101,8 @@ def main() -> int:
         print(f"\n共 {total} 个主题")
         return 0
 
+    # [改] 计时，方便回看耗时
+    t0 = time.time()
     result = pipe.execute(
         topic=args.topic,
         preset=args.preset,
@@ -99,9 +118,11 @@ def main() -> int:
         skip_generate=args.skip_generate,
         image_dir=args.image_dir,
     )
+    elapsed = time.time() - t0
 
     if result["status"] != "success":
         print(f"\n❌ 失败: {result.get('error')}")
+        print(f"⏱️  耗时: {elapsed:.1f}s")
         return 1
 
     r = result["result"]
@@ -114,6 +135,7 @@ def main() -> int:
     print(f"🌐 浏览器预览: {r['preview_path']}")
     print(f"📋 富文本    : {r['clipboard_path']}")
     print(f"📤 已推送    : {'是' if r['published'] else '否'}")
+    print(f"⏱️  耗时      : {elapsed:.1f}s")
     return 0
 
 
