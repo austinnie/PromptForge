@@ -4,6 +4,12 @@ from tkinter import ttk, messagebox
 import threading
 import os
 import re
+import glob
+import json
+import logging
+import webbrowser
+import subprocess
+from pathlib import Path
 from PIL import Image, ImageTk
 
 from config.settings import settings
@@ -12,7 +18,44 @@ from core.context_manager import ContextManager
 from services.llm_service import LLMService
 from handlers import TextToImageHandler, ImageToImageHandler, CoupleHandler,ChatHandler, VideoHandler,PresetHandler
 
+class _DailyLogHandler(logging.Handler):
+    """把 DailyPipeline 的日志转发到聊天区。
 
+    - 只转发来自 skills.daily_pipeline.* 的记录
+    - 带 emoji 的进度日志原样显示，其他 INFO 过滤掉，避免刷屏
+    """
+
+    KEEP_HINTS = ("✅", "❌", "⚠️", "🎯", "🎨", "📄", "📤", "🎉", "📁", "🖼️", "⬇️", "🔄", "😴")
+
+    def __init__(self, app):
+        super().__init__()
+        self.app = app
+
+    def emit(self, record):
+        try:
+            if not record.name.startswith("skills.daily_pipeline"):
+                return
+            if record.levelno < logging.INFO:
+                return
+
+            msg = self.format(record).strip()
+            if not msg:
+                return
+
+            if record.levelno >= logging.WARNING:
+                text = f"⚠️ {msg}"
+            else:
+                if not any(h in msg for h in self.KEEP_HINTS):
+                    return
+                text = msg
+
+            # 回到主线程
+            self.app.root.after(0, lambda t=text: self.app._append_message("system", t))
+        except Exception:
+            pass
+
+
+    
 class ChatApp:
     """智能生图主应用"""
     
@@ -176,6 +219,13 @@ class ChatApp:
             toolbar_row2,
             text="📰 新闻简报",
             command=self._fetch_news
+        ).pack(side=tk.LEFT, padx=2)
+
+        # ✅ 每日任务：一键生图 → 鉴赏 → 排版 → 推送
+        ttk.Button(
+            toolbar_row2,
+            text="📅 每日任务",
+            command=self._run_daily_task
         ).pack(side=tk.LEFT, padx=2)
         
         ttk.Separator(toolbar_row2, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
@@ -985,7 +1035,146 @@ class ChatApp:
                 self.root.after(0, lambda: self.status_var.set("就绪"))
         
         threading.Thread(target=thread_func, daemon=True).start()
-    
+
+
+    # ============================================================
+    # 每日任务：一键生图 → 鉴赏 → 排版 → 推送草稿箱
+    # ============================================================
+    def _run_daily_task(self):
+        """一键执行每日任务。
+
+        默认参数：6 张 / newspaper 主题 / 每张换预设 / 推草稿箱。
+        支持项目根目录下 daily_task.json 覆盖默认值。
+        """
+        # 防止重复触发
+        if getattr(self, "_daily_running", False):
+            self._append_message("system", "⏳ 每日任务正在执行中，请稍候...")
+            return
+
+        # ── 读配置（可选）──
+        cfg = {}
+        try:
+            root = Path(__file__).resolve().parents[1]
+            cfg_path = root / "daily_task.json"
+            if cfg_path.exists():
+                cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+                self._append_message("system", f"⚙️ 已加载 daily_task.json 配置")
+        except Exception as e:
+            self._append_message("system", f"⚠️ daily_task.json 解析失败，使用默认参数: {e}")
+
+        count = int(cfg.get("count", 6))
+        theme = cfg.get("theme", "newspaper")
+        vary_preset = bool(cfg.get("vary_preset", True))
+        publish = bool(cfg.get("publish", True))
+        preset_category = cfg.get("preset_category")
+        topic = cfg.get("topic")
+        preset = cfg.get("preset")
+
+        self._daily_running = True
+        self._append_message(
+            "system",
+            f"📅 开始执行每日任务...\n"
+            f"   流程：🎨 生图 → 📝 鉴赏 → 🎨 排版 → 📤 推送草稿箱\n"
+            f"   参数：{count} 张 / {theme} 主题 / "
+            f"{'换预设' if vary_preset else '固定预设'} / "
+            f"{'推送' if publish else '不推送'}",
+        )
+        self.status_var.set("📅 每日任务执行中...")
+
+        # ── 把 daily_pipeline 的日志转发到聊天区 ──
+        handler = _DailyLogHandler(self)
+        handler.setLevel(logging.INFO)
+        handler.setFormatter(logging.Formatter("%(message)s"))
+
+        plog = logging.getLogger("skills.daily_pipeline")
+        plog.setLevel(logging.INFO)
+        plog.addHandler(handler)
+        plog.propagate = False  # 不往 root 冒泡，避免刷屏
+
+        def thread_func():
+            try:
+                from skills.daily_pipeline import DailyPipeline
+
+                pipeline = DailyPipeline()
+                result = pipeline.execute(
+                    topic=topic,
+                    preset=preset,
+                    preset_category=preset_category,
+                    count=count,
+                    theme=theme,
+                    vary_preset=vary_preset,
+                    publish=publish,
+                    open_browser=False,  # GUI 里我们自己打开
+                )
+
+                if result.get("status") != "success":
+                    err = result.get("error", "未知错误")
+                    self.root.after(0, lambda e=err: self._append_message(
+                        "assistant", f"❌ 每日任务失败：{e}"
+                    ))
+                    return
+
+                r = result["result"]
+
+                # ── 汇总消息 ──
+                lines = ["✅ 每日任务全部完成！", ""]
+                lines.append(f"🎯 主题：{r.get('topic', '-')}")
+                lines.append(f"🎨 预设：{r.get('preset', '-')}")
+                lines.append(f"📁 图片目录：{r.get('image_dir', '-')}")
+
+                if r.get("md_path"):
+                    lines.append(f"📄 文章：{r['md_path']}")
+                if r.get("article_dir"):
+                    lines.append(f"🎨 排版输出：{r['article_dir']}")
+                if r.get("preview_path"):
+                    lines.append(f"🌐 浏览器预览：{r['preview_path']}")
+                if r.get("clipboard_path"):
+                    lines.append(f"📋 富文本：{r['clipboard_path']}")
+
+                lines.append(f"📤 已推送草稿箱：{'是' if r.get('published') else '否'}")
+
+                msg = "\n".join(lines)
+                self.root.after(0, lambda m=msg: self._append_message("assistant", m))
+
+                # ── 在聊天区展示第一张图片 ──
+                image_dir = r.get("image_dir")
+                if image_dir and os.path.isdir(image_dir):
+                    exts = ("*.png", "*.jpg", "*.jpeg", "*.webp")
+                    imgs = []
+                    for ext in exts:
+                        imgs.extend(glob.glob(os.path.join(image_dir, ext)))
+                    imgs = sorted(imgs)
+                    if imgs:
+                        self.root.after(0, lambda p=imgs[0], n=len(imgs): self._append_image(
+                            p, f"今日首图（共 {n} 张）"
+                        ))
+
+                # ── 打开浏览器预览 ──
+                preview = r.get("preview_path")
+                if preview and os.path.exists(preview):
+                    self.root.after(0, lambda p=preview: webbrowser.open(
+                        Path(p).as_uri()
+                    ))
+
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                err = str(e)
+                self.root.after(0, lambda m=err: self._append_message(
+                    "assistant", f"❌ 每日任务异常：{m}"
+                ))
+            finally:
+                # 移除 handler，避免下次重复
+                try:
+                    plog.removeHandler(handler)
+                except Exception:
+                    pass
+                self._daily_running = False
+                self.root.after(0, lambda: self.status_var.set("就绪"))
+
+        threading.Thread(target=thread_func, daemon=True).start()
+
+
     # ============================================================
     # 消息添加（文本）
     # ============================================================
