@@ -405,7 +405,7 @@ class ChatApp:
         gen_menu.add_command(label="📝 小说生成", command=self._run_novel_writer)
         gen_menu.add_command(label="🎙️ 语音合成（TTS）", command=self._run_voice_tts)
         gen_menu.add_separator()
-        gen_menu.add_command(label="🎞️ 多媒体成片（待接入）", state="disabled")
+        gen_menu.add_command(label="🎞️ 多媒体成片", state="disabled")
         menubar.add_cascade(label="生成", menu=gen_menu)
 
         # ── 排版 ──
@@ -416,8 +416,8 @@ class ChatApp:
 
         # ── 发布 ──
         pub_menu = tk.Menu(menubar, tearoff=0)
-        pub_menu.add_command(label="🚀 一键多平台分发（待接入）", state="disabled")
-        pub_menu.add_command(label="🔑 平台登录（待接入）", state="disabled")
+        pub_menu.add_command(label="🚀 一键多平台分发", command=self._run_multi_publish)
+        pub_menu.add_command(label="🔑 平台登录", command=self._run_platform_login)
         menubar.add_cascade(label="发布", menu=pub_menu)
 
         # ── 自动化 ──
@@ -858,6 +858,195 @@ class ChatApp:
             )
 
         self._run_skill("🎙️ 语音合成", worker, on_success=self._show_audio_result)
+
+    # ============================================================
+    # ✅ 第三批：多媒体全自动成片
+    # ============================================================
+    def _run_multimedia(self):
+        """多媒体成片：小说 → 场景 → 视频 → 配音 → 音乐 → 字幕 → 合成。"""
+        ok = messagebox.askyesno(
+            "多媒体成片",
+            "将自动执行以下流程：\n\n"
+            "  小说生成 → 场景拆分 → 视频片段\n"
+            "  → 语音旁白 → 背景音乐 → 字幕 → 最终合成\n\n"
+            "预计耗时 5~15 分钟（取决于视频段数和 API 速度），\n"
+            "期间请勿关闭窗口。\n\n是否继续？",
+            parent=self.root,
+        )
+        if not ok:
+            return
+
+        theme = self._ask_string(
+            "多媒体成片", "主题：", "月光下的森林，镜头缓缓推进"
+        )
+        if not theme:
+            return
+
+        self._append_message(
+            "system",
+            f"🎞️ 主题：{theme}\n"
+            f"   流水线：小说 → 视频 → 配音 → 音乐 → 字幕 → 合成\n"
+            f"   长任务，可去喝茶 ☕",
+        )
+
+        def worker():
+            from multimedia.workflow import MultimediaWorkflow
+            wf = MultimediaWorkflow(self)   # 传 app 进去，内部会推消息到聊天区
+            result = wf.execute(theme)
+            # execute 失败会 raise，_run_skill 已捕获
+            return {"status": "success", "result": result}
+
+        self._run_skill("🎞️ 多媒体成片", worker, on_success=self._show_multimedia_result)
+
+    def _show_multimedia_result(self, data):
+        """多媒体成片结果：汇总 + 打开视频所在目录。"""
+        lines = ["✅ 多媒体成片完成！", ""]
+        final = data.get("final_video", "-")
+        lines.append(f"📁 最终视频：{final}")
+
+        scenes = data.get("scenes") or []
+        segments = data.get("video_segments") or []
+        if scenes:
+            lines.append(f"🎬 场景数：{len(scenes)}")
+        if segments:
+            lines.append(f"📹 片段数：{len(segments)}")
+
+        novel = data.get("novel") or {}
+        if novel.get("title"):
+            lines.append(f"📖 小说：{novel['title']}（{novel.get('total_words', 0)} 字）")
+
+        self._append_message("assistant", "\n".join(lines))
+
+        if final and os.path.exists(final):
+            self._open_file_location(final)
+
+    # ============================================================
+    # ✅ 第三批：一键多平台分发
+    # ============================================================
+    def _run_multi_publish(self):
+        """选目录 → 选平台 → 跑 multi_publish.py。
+
+        内部会调 skills/image_curator + skills/wechat_formatter +
+        skills/social_auto_upload，由 multi_publish.py 编排。
+        """
+        from tkinter import filedialog
+        folder = filedialog.askdirectory(
+            title="选择图片目录或文章目录",
+            parent=self.root,
+        )
+        if not folder:
+            return
+
+        self._append_message(
+            "system",
+            "💡 平台列表可选：\n"
+            "   wechat, xiaohongshu, douyin, kuaishou\n"
+            "   或输入 all（全部支持的平台）",
+        )
+        platforms = self._ask_string(
+            "一键多平台分发",
+            "平台（逗号分隔，或 all）：",
+            "wechat,xiaohongshu",
+        )
+        if not platforms:
+            return
+
+        def worker():
+            import sys
+            root = Path(__file__).resolve().parents[1]
+            script = root / "scripts" / "multi_publish.py"
+            if not script.exists():
+                return {"status": "error", "error": f"找不到 {script}"}
+
+            cmd = [
+                sys.executable, str(script), folder,
+                "--platforms", platforms,
+            ]
+            try:
+                proc = subprocess.run(
+                    cmd,
+                    capture_output=True, text=True, encoding="utf-8",
+                    cwd=str(root), timeout=1800,  # 30 分钟上限
+                )
+            except subprocess.TimeoutExpired:
+                return {"status": "error", "error": "分发超时（>30 分钟）"}
+
+            ok = proc.returncode == 0
+            return {
+                "status": "success" if ok else "error",
+                "result": {
+                    "stdout": (proc.stdout or "")[-4000:],
+                    "stderr": (proc.stderr or "")[-1000:],
+                    "returncode": proc.returncode,
+                },
+                "error": (proc.stderr or proc.stdout or "")[-500:] if not ok else None,
+            }
+
+        self._run_skill("🚀 多平台分发", worker, on_success=self._show_publish_result)
+
+    def _show_publish_result(self, data):
+        """多平台分发结果：提取关键行（✅/❌/📊）展示。"""
+        stdout = data.get("stdout", "")
+        lines = ["✅ 多平台分发完成！", ""]
+
+        key_lines = []
+        for line in stdout.splitlines():
+            s = line.strip()
+            if not s:
+                continue
+            if s.startswith(("✅", "❌", "📊", "💡")):
+                key_lines.append(s)
+            elif "个平台，成功" in s:
+                key_lines.append(s)
+
+        if key_lines:
+            lines.extend(key_lines[-20:])
+        else:
+            # 没识别到关键行，展示尾部原始日志
+            lines.append("（未识别到结果行，以下为原始输出尾部）")
+            lines.append(stdout[-1500:])
+
+        self._append_message("assistant", "\n".join(lines))
+
+    # ============================================================
+    # ✅ 第三批：平台登录
+    # ============================================================
+    def _run_platform_login(self):
+        """平台登录：选平台 + 账号名 → 调 SocialAutoUpload.login。
+
+        ⚠️ 二维码打印在**终端**（不是 GUI）。请从命令行启动本程序，
+        或在弹出的浏览器窗口中直接扫码。
+        """
+        platforms = [
+            "douyin", "kuaishou", "xiaohongshu", "bilibili",
+            "tencent", "weibo", "hupu", "youtube",
+            "baijiahao", "alipay",
+        ]
+        platform = self._ask_choice(
+            "平台登录", "选择平台：", platforms, default="xiaohongshu",
+        )
+        if not platform:
+            return
+
+        account = self._ask_string("平台登录", "账号名（自定义标识）：", "default")
+        if not account:
+            return
+
+        self._append_message(
+            "system",
+            f"🔑 准备登录 {platform} / {account}\n"
+            f"   ⚠️ 二维码会打印在**终端**；若没有终端，请在弹出的浏览器窗口里直接扫码。\n"
+            f"   扫码完成后会自动保存 cookie。",
+        )
+
+        def worker():
+            from skills.social_auto_upload import SocialAutoUpload
+            sau = SocialAutoUpload()
+            result = sau.login(platform, account=account)
+            # login 返回 {"status": "success"/"error", ...}
+            return result
+
+        self._run_skill(f"🔑 {platform} 登录", worker)
 
     # ============================================================
     # 模式切换
@@ -1650,12 +1839,23 @@ class ChatApp:
     # 消息添加（文本）
     # ============================================================
     def _append_message(self, role: str, content: str):
-        self.chat_text.config(state=tk.NORMAL)
-        timestamps = {"user": "👤 你", "assistant": "🤖 助手", "system": "📌 系统"}
-        prefix = timestamps.get(role, "📝")
-        self.chat_text.insert(tk.END, f"{prefix}: {content}\n\n")
-        self.chat_text.see(tk.END)
-        self.chat_text.config(state=tk.DISABLED)
+        """添加消息到聊天区（线程安全）。
+
+        主线程直接写入；子线程通过 root.after 派发到主线程。
+        Tk 的 Text.insert 只能在主线程调用，否则会随机崩。
+        """
+        def _do():
+            self.chat_text.config(state=tk.NORMAL)
+            timestamps = {"user": "👤 你", "assistant": "🤖 助手", "system": "📌 系统"}
+            prefix = timestamps.get(role, "📝")
+            self.chat_text.insert(tk.END, f"{prefix}: {content}\n\n")
+            self.chat_text.see(tk.END)
+            self.chat_text.config(state=tk.DISABLED)
+
+        if threading.current_thread() is threading.main_thread():
+            _do()
+        else:
+            self.root.after(0, _do)
     
     def _append_log(self, msg: str):
         self.root.after(0, lambda: self.status_var.set(msg))
