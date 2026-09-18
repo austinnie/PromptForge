@@ -400,10 +400,10 @@ class ChatApp:
         # ── 生成 ──
         gen_menu = tk.Menu(menubar, tearoff=0)
         gen_menu.add_command(label="🎨 图像（预设）", command=self._on_send_with_preset)
-        gen_menu.add_command(label="🎬 视频生成（待接入）", state="disabled")
-        gen_menu.add_command(label="🎵 音乐生成（待接入）", state="disabled")
-        gen_menu.add_command(label="📝 小说生成（待接入）", state="disabled")
-        gen_menu.add_command(label="🎙️ 语音合成（待接入）", state="disabled")
+        gen_menu.add_command(label="🎬 视频生成", command=self._run_video_generator)
+        gen_menu.add_command(label="🎵 音乐生成", command=self._run_music_generator)
+        gen_menu.add_command(label="📝 小说生成", command=self._run_novel_writer)
+        gen_menu.add_command(label="🎙️ 语音合成（TTS）", command=self._run_voice_tts)
         gen_menu.add_separator()
         gen_menu.add_command(label="🎞️ 多媒体成片（待接入）", state="disabled")
         menubar.add_cascade(label="生成", menu=gen_menu)
@@ -439,12 +439,22 @@ class ChatApp:
             title: 状态栏标题，如 "🖼️ 图片鉴赏"
             worker: 无参函数，返回 result dict：{"status", "result", "error"}
             on_success: 可选。result["result"] 处理回调（在主线程）
+
+        并发策略：同一时刻只允许一个 skill 运行。
+        若已有任务在跑，本次请求**不入队、直接拒绝**，
+        并在聊天区明确告知"当前在跑什么 + 本次没跑"，避免误以为已开始。
         """
         if getattr(self, "_skill_running", False):
-            self._append_message("system", f"⏳ {title} 正在执行中，请稍候...")
+            current = getattr(self, "_skill_current", "另一个任务")
+            self._append_message(
+                "system",
+                f"⏳ 有任务正在执行（当前：{current}）\n"
+                f"   请等待完成后再点「{title}」——本次请求未入队。"
+            )
             return
 
         self._skill_running = True
+        self._skill_current = title   # ✅ 记住当前跑的是谁
         self._append_message("system", f"{title} 开始...")
         self.status_var.set(f"{title} 执行中...")
 
@@ -475,6 +485,7 @@ class ChatApp:
                 ))
             finally:
                 self._skill_running = False
+                self._skill_current = None
                 self.root.after(0, lambda: self.status_var.set("就绪"))
 
         threading.Thread(target=thread_func, daemon=True).start()
@@ -636,7 +647,218 @@ class ChatApp:
             try:
                 webbrowser.open(Path(preview).as_uri())
             except Exception:
-                pass            
+                pass      
+
+
+
+                
+    # ============================================================
+    # ✅ 第二批：视频生成
+    # ============================================================
+    def _run_video_generator(self):
+        """视频生成：主题 + 时长。"""
+        topic = self._ask_string("视频生成", "视频主题：", "月光下的森林，镜头缓缓推进")
+        if not topic:
+            return
+
+        duration = self._ask_int("视频生成", "目标时长（秒，5-120）：", 30, 5, 120)
+        if duration is None:
+            return
+
+        # 短任务不需要额外提示；超过 30s 会分段生成，提醒一下
+        if duration > 30:
+            self._append_message("system",
+                f"⏳ 时长 {duration}s 会拆成多段生成，可能耗时几分钟，请耐心等待...")
+
+        def worker():
+            from skills.video_generator import VideoGenerator
+            gen = VideoGenerator()
+            return gen.generate(prompt=topic, duration=duration)
+
+        self._run_skill("🎬 视频生成", worker, on_success=self._show_video_result)
+
+    def _show_video_result(self, data):
+        """视频生成结果：汇总 + 打开所在目录（视频不内嵌预览）。"""
+        lines = ["✅ 视频生成完成！", ""]
+        lines.append(f"📁 文件：{data.get('video_path', '-')}")
+        lines.append(f"⏱️ 时长：{data.get('duration', '-')}s")
+        lines.append(f"📹 片段：{data.get('segments', 1)}")
+        lines.append(f"⏱️ 耗时：{data.get('elapsed', '-')}")
+        self._append_message("assistant", "\n".join(lines))
+
+        path = data.get("video_path")
+        if path and os.path.exists(path):
+            self._open_file_location(path)
+
+    # ============================================================
+    # ✅ 第二批：音乐生成
+    # ============================================================
+    def _run_music_generator(self):
+        """音乐生成：主题 + 情绪 + 时长。"""
+        topic = self._ask_string("音乐生成", "主题：", "星辰大海")
+        if not topic:
+            return
+
+        emotions = [
+            "peaceful   — 宁静",
+            "melancholic— 深情",
+            "joyful     — 欢乐",
+            "epic       — 壮丽",
+            "mysterious — 神秘",
+            "romantic   — 浪漫",
+            "energetic  — 活力",
+        ]
+        choice = self._ask_choice(
+            "音乐生成", "情绪：", emotions, default=emotions[0],
+        )
+        if not choice:
+            return
+        emotion = choice.split("—")[0].strip()
+
+        duration = self._ask_int("音乐生成", "时长（秒，10-120）：", 30, 10, 120)
+        if duration is None:
+            return
+
+        def worker():
+            from skills.music_generator.skill import MusicMaestro
+            maestro = MusicMaestro()
+            return maestro.execute(
+                topic=topic, emotion=emotion, duration=duration,
+            )
+
+        self._run_skill("🎵 音乐生成", worker, on_success=self._show_audio_result)
+
+    def _show_audio_result(self, data):
+        """音频生成结果（音乐/语音共用）：汇总 + 打开文件所在目录。"""
+        lines = ["✅ 音频生成完成！", ""]
+        audio = data.get("audio_file") or data.get("audio_path")
+        lines.append(f"📁 文件：{audio or '-'}")
+        if data.get("mode_used"):
+            lines.append(f"🎛️ 引擎：{data['mode_used']}")
+        if data.get("duration"):
+            lines.append(f"⏱️ 时长：{data['duration']}s")
+        if data.get("size_kb"):
+            lines.append(f"📊 大小：{data['size_kb']:.1f} KB")
+        lyrics = data.get("lyrics")
+        if isinstance(lyrics, dict) and lyrics.get("title"):
+            lines.append(f"📝 歌词：{lyrics['title']}")
+        self._append_message("assistant", "\n".join(lines))
+
+        if audio and os.path.exists(audio):
+            try:
+                import sys
+                if sys.platform == "win32":
+                    os.startfile(audio)
+                elif sys.platform == "darwin":
+                    subprocess.Popen(["open", audio])
+                else:
+                    subprocess.Popen(["xdg-open", audio])
+            except Exception as e:
+                self._append_message("system", f"⚠️ 自动播放失败：{e}")
+                self._open_file_location(audio)
+
+    # ============================================================
+    # ✅ 第二批：小说生成
+    # ============================================================
+    def _run_novel_writer(self):
+        """小说生成：标题 + 大纲 + 章数。"""
+        title = self._ask_string("小说生成", "标题：", "星际行者")
+        if not title:
+            return
+
+        outline = self._ask_string("小说生成", "故事大纲（一句话即可）：", "探索未知宇宙，寻找失落文明")
+        if not outline:
+            return
+
+        genres = ["科幻", "奇幻", "言情", "悬疑", "武侠", "都市"]
+        genre = self._ask_choice("小说生成", "类型：", genres, default="科幻")
+        if not genre:
+            return
+
+        chapters = self._ask_int("小说生成", "章数（1-10）：", 3, 1, 10)
+        if chapters is None:
+            return
+
+        def worker():
+            from skills.novel_writer.skill import NovelWriterOllama
+            writer = NovelWriterOllama()
+            return writer.execute(
+                genre=genre,
+                title=title,
+                outline=outline,
+                characters="主角：一位勇敢的探索者",
+                chapter_count=chapters,
+                words_per_chapter=600,
+                language="zh",
+            )
+
+        self._run_skill("📝 小说生成", worker, on_success=self._show_novel_result)
+
+    def _show_novel_result(self, data):
+        """小说生成结果：汇总 + 打开文件所在目录。"""
+        lines = ["✅ 小说生成完成！", ""]
+        lines.append(f"📖 标题：{data.get('title', '-')}")
+        lines.append(f"🎭 类型：{data.get('genre', '-')}")
+        lines.append(f"📚 章节：{len(data.get('chapters', []))} 章")
+        lines.append(f"📝 字数：{data.get('total_words', 0)} 字")
+        lines.append(f"⏱️ 耗时：{data.get('generation_time', '-')}")
+        lines.append("")
+        lines.append(f"📁 文件：{data.get('saved_to', '-')}")
+        self._append_message("assistant", "\n".join(lines))
+
+        saved = data.get("saved_to")
+        if saved and os.path.exists(saved):
+            self._open_file_location(saved)
+
+    # ============================================================
+    # ✅ 第二批：语音合成（TTS）
+    # ============================================================
+    def _run_voice_tts(self):
+        """语音合成：多行文本 → mp3。"""
+        # 优先取输入框内容，方便"先写好文本，再点菜单"
+        default_text = self.input_text.get("1.0", tk.END).strip()
+        if default_text:
+            self._append_message("system",
+                f"💡 检测到输入框有 {len(default_text)} 字，可直接使用（留空则使用输入框内容）")
+
+        text = self._ask_string("语音合成", "要朗读的文本：", default_text[:200])
+        if not text:
+            return
+
+        # 音色选择
+        voices = [
+            "zh-CN-XiaoxiaoNeural — 晓晓（女·中文）",
+            "zh-CN-YunxiNeural    — 云希（男·中文）",
+            "zh-CN-XiaoyiNeural   — 晓伊（女·中文）",
+            "en-US-JennyNeural    — Jenny（女·英文）",
+            "en-US-GuyNeural      — Guy（男·英文）",
+            "ja-JP-NanamiNeural   — Nanami（女·日文）",
+        ]
+        choice = self._ask_choice(
+            "语音合成", "音色：", voices, default=voices[0],
+        )
+        if not choice:
+            return
+        voice = choice.split("—")[0].strip()
+
+        # 语速（0.5-2.0），用整数百分比对话框凑合：100 = 1.0 倍速
+        speed_pct = self._ask_int("语音合成", "语速（50-200，100 为正常语速）：", 100, 50, 200)
+        if speed_pct is None:
+            return
+        speed = speed_pct / 100.0
+
+        def worker():
+            from skills.voice_assistant.skill import VoiceAssistant
+            va = VoiceAssistant()
+            return va.execute(
+                action="tts",
+                text=text,
+                voice=voice,
+                speed=speed,
+            )
+
+        self._run_skill("🎙️ 语音合成", worker, on_success=self._show_audio_result)
+
     # ============================================================
     # 模式切换
     # ============================================================
