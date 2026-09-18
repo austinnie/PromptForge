@@ -292,6 +292,7 @@ class DailyPipeline:
                 "preview_path": None,
                 "clipboard_path": None,
                 "published": False,
+                "publish_error": None,
             }
 
             # ---- 步骤 1：生图 ----
@@ -330,8 +331,12 @@ class DailyPipeline:
 
             # ---- 步骤 4：推送 ----
             if publish:
-                ok = self.publish_wechat(article_dir)
-                result["published"] = ok
+                pub = self.publish_wechat(article_dir)
+                result["published"] = pub.get("published", False)
+                result["publish_error"] = pub.get("error")
+            else:
+                result["published"] = False
+                result["publish_error"] = "未启用推送"
 
             # ---- 打开浏览器 ----
             if open_browser and article_dir:
@@ -505,20 +510,24 @@ class DailyPipeline:
         logger.info(f"✅ 排版输出: {out_dir}")
         return out_dir
 
-    def publish_wechat(self, article_dir: Path) -> bool:
-        """推送草稿箱"""
+    def publish_wechat(self, article_dir: Path) -> dict:
         from skills.wechat_formatter import WechatFormatter
 
         fmt = WechatFormatter()
-        r = fmt.publish(str(article_dir))
+        try:
+            r = fmt.publish(str(article_dir))
+        except Exception as e:
+            logger.error(f"❌ 推送异常: {e}")
+            return {"published": False, "error": str(e)}
 
         if r.get("status") == "success":
             logger.info("✅ 已推送到公众号草稿箱")
-            return True
+            return {"published": True, "error": None}
 
-        logger.error(f"❌ 推送失败: {r.get('error')}")
+        err = r.get("error") or "未知错误"
+        logger.error(f"❌ 推送失败: {err}")
         logger.info("   排查：1) WECHAT_APP_ID/SECRET  2) IP 白名单  3) 账号是否认证")
-        return False
+        return {"published": False, "error": err}
 
     # ---------- 主题/预设 智能匹配 ----------
 

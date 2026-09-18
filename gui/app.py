@@ -44,7 +44,11 @@ class _DailyLogHandler(logging.Handler):
                 return
 
             if record.levelno >= logging.WARNING:
-                text = f"⚠️ {msg}"
+                # 已带 emoji 就不再叠加，避免 "⚠️ ❌ xxx"
+                if msg.startswith(("✅", "❌", "⚠️", "🎉", "🚫", "⏹️")):
+                    text = msg
+                else:
+                    text = f"⚠️ {msg}"
             else:
                 if not any(h in msg for h in self.KEEP_HINTS):
                     return
@@ -62,6 +66,7 @@ class ChatApp:
     
     def __init__(self):
         self.root = tk.Tk()
+        self.publish_wechat_var = tk.BooleanVar(value=True)
         self.root.title("💬 智能生图")
         self.root.geometry("850x650")
         
@@ -282,11 +287,18 @@ class ChatApp:
 
         # N 张
         ttk.Label(toolbar_row3, text="张数:").pack(side=tk.LEFT, padx=5)
-        self.count_var = tk.IntVar(value=1)
+        count = int(self.count_var.get()) if hasattr(self, "count_var") else 6
         ttk.Spinbox(
             toolbar_row3, from_=1, to=10, width=3,
             textvariable=self.count_var,
         ).pack(side=tk.LEFT)
+
+        # ✅ 放在最后，靠右
+        ttk.Checkbutton(
+            toolbar_row3,
+            text="📤 自动推公众号草稿箱",
+            variable=self.publish_wechat_var,
+        ).pack(side=tk.RIGHT, padx=8)
 
         # 加载预设列表（同步，很快）
         self._load_presets()        
@@ -1703,32 +1715,21 @@ class ChatApp:
     def _run_daily_task(self):
         """一键执行每日任务。
 
-        默认参数：6 张 / newspaper 主题 / 每张换预设 / 推草稿箱。
-        支持项目根目录下 daily_task.json 覆盖默认值。
+        参数全部走 GUI：
+          - 张数：复用工具栏「张数」spinner（self.count_var）
+          - 主题：随机
+          - 预设：随机；每张换预设
+          - 是否推公众号草稿箱：工具栏「📤 自动推公众号草稿箱」复选框
         """
         # 防止重复触发
         if getattr(self, "_daily_running", False):
             self._append_message("system", "⏳ 每日任务正在执行中，请稍候...")
             return
 
-        # ── 读配置（可选）──
-        cfg = {}
-        try:
-            root = Path(__file__).resolve().parents[1]
-            cfg_path = root / "daily_task.json"
-            if cfg_path.exists():
-                cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
-                self._append_message("system", f"⚙️ 已加载 daily_task.json 配置")
-        except Exception as e:
-            self._append_message("system", f"⚠️ daily_task.json 解析失败，使用默认参数: {e}")
-
-        count = int(cfg.get("count", 6))
-        theme = cfg.get("theme", "newspaper")
-        vary_preset = bool(cfg.get("vary_preset", True))
-        publish = bool(cfg.get("publish", True))
-        preset_category = cfg.get("preset_category")
-        topic = cfg.get("topic")
-        preset = cfg.get("preset")
+        count = 6
+        theme = "newspaper"
+        vary_preset = True
+        publish = bool(self.publish_wechat_var.get())
 
         self._daily_running = True
         self._append_message(
@@ -1737,7 +1738,7 @@ class ChatApp:
             f"   流程：🎨 生图 → 📝 鉴赏 → 🎨 排版 → 📤 推送草稿箱\n"
             f"   参数：{count} 张 / {theme} 主题 / "
             f"{'换预设' if vary_preset else '固定预设'} / "
-            f"{'推送' if publish else '不推送'}",
+            f"{'推送公众号草稿箱' if publish else '不推送公众号'}",
         )
         self.status_var.set("📅 每日任务执行中...")
 
@@ -1757,14 +1758,14 @@ class ChatApp:
 
                 pipeline = DailyPipeline()
                 result = pipeline.execute(
-                    topic=topic,
-                    preset=preset,
-                    preset_category=preset_category,
+                    topic=None,
+                    preset=None,
+                    preset_category=None,
                     count=count,
                     theme=theme,
                     vary_preset=vary_preset,
                     publish=publish,
-                    open_browser=False,  # GUI 里我们自己打开
+                    open_browser=False,   # GUI 里我们自己打开
                 )
 
                 if result.get("status") != "success":
@@ -1791,7 +1792,11 @@ class ChatApp:
                 if r.get("clipboard_path"):
                     lines.append(f"📋 富文本：{r['clipboard_path']}")
 
-                lines.append(f"📤 已推送草稿箱：{'是' if r.get('published') else '否'}")
+                if r.get("published"):
+                    lines.append("📤 公众号草稿箱：✅ 已推送")
+                else:
+                    err = r.get("publish_error") or "未推送或推送失败"
+                    lines.append(f"📤 公众号草稿箱：❌ {err}")
 
                 msg = "\n".join(lines)
                 self.root.after(0, lambda m=msg: self._append_message("assistant", m))
@@ -1813,7 +1818,7 @@ class ChatApp:
                 preview = r.get("preview_path")
                 if preview and os.path.exists(preview):
                     self.root.after(0, lambda p=preview: webbrowser.open(
-                        Path(p).as_uri()
+                        Path(p).resolve().as_uri()
                     ))
 
             except Exception as e:
@@ -1834,7 +1839,52 @@ class ChatApp:
 
         threading.Thread(target=thread_func, daemon=True).start()
 
+    def _show_daily_result(self, r):
+        """每日任务结果：汇总 + 首图缩略 + 打开浏览器预览。
 
+        参数 r 是 DailyPipeline.execute() 里的 result["result"]。
+        """
+        lines = ["✅ 每日任务全部完成！", ""]
+        lines.append(f"🎯 主题：{r.get('topic', '-')}")
+        lines.append(f"🎨 预设：{r.get('preset', '-')}")
+        lines.append(f"📁 图片目录：{r.get('image_dir', '-')}")
+
+        if r.get("md_path"):
+            lines.append(f"📄 文章：{r['md_path']}")
+        if r.get("article_dir"):
+            lines.append(f"🎨 排版输出：{r['article_dir']}")
+        if r.get("preview_path"):
+            lines.append(f"🌐 浏览器预览：{r['preview_path']}")
+        if r.get("clipboard_path"):
+            lines.append(f"📋 富文本：{r['clipboard_path']}")
+
+        if r.get("published"):
+            lines.append("📤 公众号草稿箱：✅ 已推送")
+        else:
+            err = r.get("publish_error") or "未推送或推送失败"
+            lines.append(f"📤 公众号草稿箱：❌ {err}")
+
+        self._append_message("assistant", "\n".join(lines))
+
+        # ── 首图缩略 ──
+        image_dir = r.get("image_dir")
+        if image_dir and os.path.isdir(image_dir):
+            exts = ("*.png", "*.jpg", "*.jpeg", "*.webp")
+            imgs = []
+            for ext in exts:
+                imgs.extend(glob.glob(os.path.join(image_dir, ext)))
+            imgs = sorted(imgs)
+            if imgs:
+                self._append_image(imgs[0], f"今日首图（共 {len(imgs)} 张）")
+
+        # ── 打开浏览器预览 ──
+        preview = r.get("preview_path")
+        if preview and os.path.exists(preview):
+            try:
+                webbrowser.open(Path(preview).resolve().as_uri())
+            except Exception:
+                pass
+                
     # ============================================================
     # 消息添加（文本）
     # ============================================================
