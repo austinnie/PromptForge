@@ -67,6 +67,7 @@ class ChatApp:
     def __init__(self):
         self.root = tk.Tk()
         self.publish_wechat_var = tk.BooleanVar(value=True)
+        self.count_var = tk.IntVar(value=6) 
         self.root.title("💬 智能生图")
         self.root.geometry("850x650")
         
@@ -287,7 +288,6 @@ class ChatApp:
 
         # N 张
         ttk.Label(toolbar_row3, text="张数:").pack(side=tk.LEFT, padx=5)
-        count = int(self.count_var.get()) if hasattr(self, "count_var") else 6
         ttk.Spinbox(
             toolbar_row3, from_=1, to=10, width=3,
             textvariable=self.count_var,
@@ -1470,7 +1470,7 @@ class ChatApp:
         try:
             from handlers.preset_handler import PresetHandler
             handler = PresetHandler(self)
-            count = self.count_var.get() if hasattr(self, 'count_var') else 1
+            count = self.count_var.get()
             handler.handle({
                 "type": "preset_image",
                 "original_text": text,
