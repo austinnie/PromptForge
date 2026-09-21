@@ -90,6 +90,9 @@ class ChatApp:
         # ---------- 新增：图片显示相关 ----------
         self.image_refs = []          # 保存 PhotoImage 引用，防止被GC
         self._bound_double_click = False  # 标记是否已绑定双击事件
+
+        # 网络广播播放器（懒加载）
+        self._radio_player = None
         
         self._setup_ui()
         self._build_menubar()
@@ -440,6 +443,15 @@ class ChatApp:
         pub_menu.add_command(label="🔑 平台登录", command=self._run_platform_login)
         menubar.add_cascade(label="发布", menu=pub_menu)
 
+
+        # ── 媒体 ──
+        media_menu = tk.Menu(menubar, tearoff=0)
+        media_menu.add_command(label="📻 网络广播", command=self._run_radio_player)
+        media_menu.add_command(label="⏹️ 停止广播", command=self._stop_radio)
+        media_menu.add_separator()
+        media_menu.add_command(label="📋 收藏电台", command=self._show_radio_favorites)
+        menubar.add_cascade(label="媒体", menu=media_menu)
+        
         # ── 自动化 ──
         auto_menu = tk.Menu(menubar, tearoff=0)
         auto_menu.add_command(label="📅 每日任务", command=self._run_daily_task)
@@ -1069,6 +1081,105 @@ class ChatApp:
 
         self._run_skill(f"🔑 {platform} 登录", worker)
 
+
+    # ============================================================
+    # 网络广播
+    # ============================================================
+    def _get_radio_player(self):
+        """懒加载 RadioPlayer（保留播放状态）"""
+        if not hasattr(self, "_radio_player") or self._radio_player is None:
+            from skills.radio_player import RadioPlayer
+            self._radio_player = RadioPlayer()
+        return self._radio_player
+
+    def _run_radio_player(self):
+        """📻 选分类 → 选电台 → 播放"""
+        player = self._get_radio_player()
+
+        categories = player.get_categories()
+        cat_labels = [player.CATEGORY_NAMES.get(c, c) for c in categories]
+
+        cat_choice = self._ask_choice(
+            "📻 网络广播", "选择分类：", cat_labels, default=cat_labels[0],
+        )
+        if not cat_choice:
+            return
+        category = categories[cat_labels.index(cat_choice)]
+
+        stations = list(player.get_stations(category).keys())
+        if not stations:
+            self._append_message("system", f"⚠️ {cat_choice} 下没有电台")
+            return
+
+        # 收藏置顶
+        favs = [s for s in stations if s in player.favorites]
+        others = [s for s in stations if s not in player.favorites]
+        ordered = favs + others
+        labels = [("⭐ " + s) if s in player.favorites else s for s in ordered]
+
+        choice = self._ask_choice(
+            "📻 网络广播",
+            f"选择电台（{cat_choice}）：",
+            labels,
+            default=labels[0],
+        )
+        if not choice:
+            return
+        station = choice.replace("⭐ ", "", 1)
+
+        self._append_message("system", f"📻 正在启动：{station} ...")
+        ok = player.play(station_name=station, category=category)
+
+        if not ok:
+            self._append_message("assistant", f"❌ 播放失败：{station}")
+            return
+
+        cur = player.current_station or {}
+        kind = player._player_kind or "?"
+        hint = {
+            "mpv":    "💡 mpv 播放中，支持菜单「停止广播」",
+            "ffplay": "💡 ffplay 播放中，支持菜单「停止广播」",
+            "vlc":    "💡 VLC 播放中，支持菜单「停止广播」",
+            "system": "⚠️ 系统默认程序打开，无法通过菜单停止",
+            "browser": "⚠️ 已在浏览器打开，无法通过菜单停止",
+        }.get(kind, "")
+
+        self._append_message(
+            "assistant",
+            f"✅ 播放中：{station}\n"
+            f"   播放器：{kind}\n"
+            f"   流地址：{cur.get('url', '-')}\n"
+            f"   {hint}",
+        )
+
+    def _stop_radio(self):
+        """⏹️ 停止广播"""
+        if not hasattr(self, "_radio_player") or self._radio_player is None:
+            self._append_message("system", "⏹️ 当前没有在播放")
+            return
+        stopped = self._radio_player.stop()
+        if stopped:
+            self._radio_player.current_station = None      # ← 加这行
+            self._append_message("assistant", "⏹️ 已停止广播")
+        else:
+            self._append_message(
+                "system",
+                "⏹️ 无可停止的播放器（可能是系统程序或浏览器打开，请手动关闭）",
+            )
+
+    def _show_radio_favorites(self):
+        """📋 查看/管理收藏"""
+        player = self._get_radio_player()
+        favs = player.get_favorites()
+        if not favs:
+            self._append_message("system", "📋 收藏列表为空")
+            return
+
+        lines = [f"📋 收藏电台（{len(favs)} 个）", ""]
+        for i, name in enumerate(favs, 1):
+            lines.append(f"  {i}. {name}")
+        self._append_message("assistant", "\n".join(lines))
+        
     # ============================================================
     # 模式切换
     # ============================================================
