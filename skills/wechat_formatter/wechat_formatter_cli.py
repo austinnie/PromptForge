@@ -66,13 +66,39 @@ def cmd_format(args):
 
     if args.publish:
         print(f"\n📤 推送草稿箱...")
-        pub = fmt.publish(data["article_dir"], data.get("cover_path"), dry_run=args.dry_run)
+        push_type = getattr(args, "type", "news")
+
+        if push_type == "newspic":
+            # 从排版目录的 images/ 里取图
+            img_dir = Path(data["article_dir"]) / "images"
+            imgs = sorted([
+                str(p) for p in img_dir.iterdir()
+                if p.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp")
+            ]) if img_dir.exists() else []
+            if not imgs:
+                print("   ❌ newspic 模式：images/ 目录里没有图片")
+                return 1
+
+            pub = fmt.publish(
+                article_type="newspic",
+                images=imgs,
+                content=getattr(args, "content", "") or data.get("title", ""),
+                title=data.get("title", ""),
+                dry_run=args.dry_run,
+            )
+        else:
+            pub = fmt.publish(
+                data["article_dir"],
+                data.get("cover_path"),
+                dry_run=args.dry_run,
+            )
+
         if pub["status"] == "success":
             print(f"   ✅ 推送成功")
         else:
             print(f"   ❌ {pub.get('error')}")
             return 1
-
+            
     print(f"\n📂 输出目录: {data['article_dir']}")
     return 0
 
@@ -91,7 +117,24 @@ def cmd_cover(args):
 
 def cmd_publish(args):
     fmt = WechatFormatter()
-    result = fmt.publish(args.dir, args.cover, dry_run=args.dry_run)
+
+    # newspic 模式不需要 --dir
+    if args.type == "newspic":
+        if not args.images:
+            print("❌ --type newspic 需要提供 --images")
+            return 1
+        result = fmt.publish(
+            article_type="newspic",
+            images=args.images,
+            content=args.content,
+            title=args.title,
+            dry_run=args.dry_run,
+        )
+    else:
+        if not args.dir:
+            print("❌ --type news 需要提供 --dir")
+            return 1
+        result = fmt.publish(args.dir, args.cover, dry_run=args.dry_run)
 
     if result["status"] == "success":
         print(f"\n✅ 推送成功")
@@ -122,6 +165,12 @@ def main():
     p_fmt.add_argument("--footer-image", "-f", default=None, help="文末引导图路径（会在文章末尾自动插入）")
     p_fmt.add_argument("--footer-alt", default="关注",  help="文末引导图的 alt 文字（默认：关注）")
                        
+
+    p_fmt.add_argument("--type", choices=["news", "newspic"], default="news",
+                       help="推送类型：news=文章（默认），newspic=贴图")
+    p_fmt.add_argument("--content", default="",
+                       help="newspic 模式下的文字说明（<=1000字）")
+                       
     p_fmt.add_argument("--dry-run", action="store_true", help="推送时只上传图片不推草稿")
 
     # cover
@@ -132,8 +181,18 @@ def main():
 
     # publish
     p_pub = sub.add_parser("publish", help="推送草稿箱")
-    p_pub.add_argument("--dir", "-d", required=True, help="排版输出目录")
+    p_pub.add_argument("--dir", "-d", default=None, help="排版输出目录（news 模式必填）")
     p_pub.add_argument("--cover", "-c", default=None, help="封面图路径")
+    
+    p_pub.add_argument("--type", choices=["news", "newspic"], default="news",
+                       help="推送类型：news=文章（默认），newspic=贴图")
+    p_pub.add_argument("--images", nargs="*", default=None,
+                       help="newspic 模式：本地图片路径列表")
+    p_pub.add_argument("--content", default="",
+                       help="newspic 模式：文字说明")
+    p_pub.add_argument("--title", default="",
+                       help="newspic 模式：标题（默认取文件名）")
+                       
     p_pub.add_argument("--dry-run", action="store_true", help="只上传不推送")
 
     # 兼容"无子命令"调用：wechat_formatter_cli.py article.md --theme xxx

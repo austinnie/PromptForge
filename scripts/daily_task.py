@@ -24,6 +24,17 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 
+def _fmt_pub(ok, err):
+    """推送状态格式化：None=未执行，True=成功，False=失败（区分是否启用）"""
+    if ok is None:
+        return None
+    if ok:
+        return "✅"
+    if err == "未启用推送":
+        return "⏭️  未启用"
+    return f"❌  ({err or '未知错误'})"
+
+
 def main() -> int:
     from skills.daily_pipeline import DailyPipeline
     from skills.daily_pipeline.skill import VALID_PRESET_CATEGORIES
@@ -48,15 +59,21 @@ def main() -> int:
     parser.add_argument("--qr", type=Path,
                         default=Path("assets/qr/公众号结束处.png"),
                         help="文末二维码")
+
+    parser.add_argument("--type", choices=["news", "newspic", "both"], default="news",
+                        help="发布类型：news=文章（默认），newspic=贴图，both=文章+贴图（共用同一批图）")
+
     parser.add_argument("--no-publish", action="store_true",
                         help="不推草稿箱（默认推送）")
     parser.add_argument("--open", action="store_true", help="完成后打开浏览器")
-    parser.add_argument("--skip-curate", action="store_true", help="只生图")
+    parser.add_argument("--skip-curate", action="store_true",
+                        help="跳过鉴赏/文章流程（只生图，或与 --type newspic 搭配）")
     parser.add_argument("--skip-generate", action="store_true",
                         help="跳过生图（需 --image-dir）")
     parser.add_argument("--image-dir", type=Path, default=None, help="已有图片目录")
     parser.add_argument("--list-presets", action="store_true")
     parser.add_argument("--list-topics", action="store_true")
+
     args = parser.parse_args()
 
     # [改] 参数互锁：skip-generate 必须配 image-dir
@@ -64,6 +81,12 @@ def main() -> int:
         parser.error("--skip-generate 必须配合 --image-dir 使用")
     if args.image_dir and not args.image_dir.is_dir():
         parser.error(f"--image-dir 不存在或不是目录：{args.image_dir}")
+
+    # [提示] skip-curate 与 type 组合时的语义提醒
+    if args.skip_curate and args.type == "both":
+        print("⚠️  --skip-curate 与 --type both 组合：文章流程会被跳过，实际等同于 newspic")
+    if args.skip_curate and args.type == "news":
+        print("⚠️  --skip-curate + --type news：只会生图，不会排版/推送文章")
 
     # 加载 .env
     try:
@@ -117,6 +140,7 @@ def main() -> int:
         skip_curate=args.skip_curate,
         skip_generate=args.skip_generate,
         image_dir=args.image_dir,
+        article_type=args.type,          # ✅ 传给 execute，否则 --type 会被默认值吃掉
     )
     elapsed = time.time() - t0
 
@@ -130,11 +154,31 @@ def main() -> int:
     print("  🎉 全部完成！")
     print("=" * 62)
     print(f"📁 图片目录  : {r['image_dir']}")
-    print(f"📄 文章      : {r['md_path']}")
-    print(f"🎨 排版输出  : {r['article_dir']}")
-    print(f"🌐 浏览器预览: {r['preview_path']}")
-    print(f"📋 富文本    : {r['clipboard_path']}")
-    print(f"📤 已推送    : {'是' if r['published'] else '否'}")
+
+    # 文章流程产物（仅 news / both 且未 skip_curate 时才有）
+    if r.get("md_path"):
+        print(f"📄 文章      : {r['md_path']}")
+    if r.get("article_dir"):
+        print(f"🎨 排版输出  : {r['article_dir']}")
+        print(f"🌐 浏览器预览: {r['preview_path']}")
+        print(f"📋 富文本    : {r['clipboard_path']}")
+
+    # 分渠道推送状态
+    news_ok = r.get("news_published")
+    pic_ok = r.get("newspic_published")
+
+    line_news = _fmt_pub(news_ok, r.get("news_error"))
+    line_pic = _fmt_pub(pic_ok, r.get("newspic_error"))
+
+    if line_news is not None:
+        print(f"📤 文章推送  : {line_news}")
+    if line_pic is not None:
+        print(f"📤 贴图推送  : {line_pic}")
+
+    # 兜底：都没跑（例如 news 模式 + --no-publish 时 news_published=False，不会进这里）
+    if line_news is None and line_pic is None:
+        print("📤 已推送    : 否（未启用）")
+
     print(f"⏱️  耗时      : {elapsed:.1f}s")
     return 0
 

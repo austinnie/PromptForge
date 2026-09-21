@@ -257,21 +257,49 @@ class WechatFormatter:
             logger.error(f"封面生成失败: {e}")
             return {"status": "error", "error": str(e)}
 
-    def publish(self, article_dir: str, cover_path: str = None, dry_run: bool = False) -> Dict[str, Any]:
-        """推送文章到公众号草稿箱（subprocess 调用 publisher 脚本）"""
+    def publish(
+        self,
+        article_dir: str = None,
+        cover_path: str = None,
+        dry_run: bool = False,
+        article_type: str = "news",
+        images: list = None,
+        content: str = None,
+        title: str = None,
+    ) -> Dict[str, Any]:
+        """
+        推送文章或贴图到公众号草稿箱。
+
+        news 模式：需要 article_dir（排版输出目录），可选 cover_path
+        newspic 模式：需要 images（本地图片路径列表），可选 content / title；
+                     不需要 article_dir
+        """
         try:
-            project_root = Path(__file__).parents[2]
             publish_script = Path(__file__).parent / "publisher" / "wechat_publish.py"
             if not publish_script.exists():
                 return {"status": "error", "error": f"未找到: {publish_script}"}
 
-            article_dir = Path(article_dir).resolve()
-            if not article_dir.exists():
-                return {"status": "error", "error": f"目录不存在: {article_dir}"}
+            cmd = [sys.executable, str(publish_script)]
 
-            cmd = [sys.executable, str(publish_script), "--dir", str(article_dir)]
-            if cover_path:
-                cmd += ["--cover", str(cover_path)]
+            if article_type == "newspic":
+                if not images:
+                    return {"status": "error", "error": "newspic 模式需要提供 images"}
+                cmd += ["--type", "newspic"]
+                cmd += ["--images", *[str(Path(p).resolve()) for p in images]]
+                if content:
+                    cmd += ["--content", content]
+                if title:
+                    cmd += ["--title", title]
+            else:
+                if not article_dir:
+                    return {"status": "error", "error": "news 模式需要提供 article_dir"}
+                article_dir_path = Path(article_dir).resolve()
+                if not article_dir_path.exists():
+                    return {"status": "error", "error": f"目录不存在: {article_dir_path}"}
+                cmd += ["--dir", str(article_dir_path)]
+                if cover_path:
+                    cmd += ["--cover", str(cover_path)]
+
             if dry_run:
                 cmd += ["--dry-run"]
 
@@ -288,7 +316,7 @@ class WechatFormatter:
         except Exception as e:
             logger.error(f"推送异常: {e}")
             return {"status": "error", "error": str(e)}
-
+            
     # ---------- 内部方法 ----------
 
     def _ai_enhance(self, markdown: str) -> str:

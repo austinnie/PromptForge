@@ -210,6 +210,11 @@ class DailyPipeline:
         """
         执行每日任务。
 
+        支持三种发布模式（article_type 控制）：
+          - "news"     只发文章（生成 → 鉴赏 → 排版 → 推送）
+          - "newspic"  只发贴图（生成 → 直接推送图片消息，跳过鉴赏/排版）
+          - "both"     文章 + 贴图，两条流程共用同一批图
+
         kwargs:
           topic           str   主题（默认随机）
           preset          str   预设（默认随机）
@@ -218,28 +223,56 @@ class DailyPipeline:
           count           int   张数
           theme           str   排版主题
           output_root     str   生图输出根目录
-          qr              str   文末二维码
-          publish         bool  是否推送草稿箱
-          open_browser    bool  完成后打开浏览器
-          skip_curate     bool  跳过鉴赏
-          skip_generate   bool  跳过生图（需 image_dir）
-          image_dir       str   已有图片目录
+          qr              str   文末二维码路径
+          publish         bool  是否推送草稿箱（默认取 config["auto_publish"]）
+          open_browser    bool  完成后打开浏览器（默认取 config["auto_open"]）
+          skip_curate     bool  跳过鉴赏/文章流程（仅对 news / both 生效）
+          skip_generate   bool  跳过生图（需同时提供 image_dir）
+          image_dir       str   已有图片目录（skip_generate=True 时必填）
+          article_type    str   发布类型："news"（默认）| "newspic" | "both"
 
         返回:
           {
             "status": "success" | "error",
             "result": {
-              "topic": str,
-              "preset": str | None,
-              "image_dir": str,
-              "md_path": str | None,
-              "article_dir": str | None,
-              "preview_path": str | None,
-              "clipboard_path": str | None,
-              "published": bool,
+              # ---- 主题 / 素材 ----
+              "topic":             str,          # 实际使用的主题
+              "preset":            str | None,   # 实际使用的预设
+              "image_dir":         str,          # 图片目录（文章与贴图共用）
+              "title":             str | None,   # 仅 newspic 模式：贴图标题
+
+              # ---- 文章流程产物（news / both，且未 skip_curate 时才非空）----
+              "md_path":           str | None,   # 鉴赏产出的 Markdown
+              "article_dir":       str | None,   # 排版输出目录
+              "preview_path":      str | None,   # preview.html
+              "clipboard_path":    str | None,   # clipboard.html
+
+              # ---- 推送状态（按渠道拆分）----
+              "news_published":    bool | None,  # None = 该渠道未执行
+              "news_error":        str  | None,  # 该渠道失败原因 / 提示
+              "newspic_published": bool | None,
+              "newspic_error":     str  | None,
+
+              # ---- 兼容旧字段 ----
+              "published":         bool,         # 任一渠道成功即 True
+              "publish_error":     str  | None,  # 全部失败时的原因摘要
             },
-            "error": str (仅失败时),
+            "metadata": {
+              "skill":   str,   # "daily_pipeline"
+              "version": str,
+              "elapsed": str,   # 形如 "0:00:12.345678"
+            },
+            "error": str (仅 status="error" 时),
           }
+
+        示例:
+            # 每天文章 + 贴图，共用一批图
+            pipe.execute(topic="月下松林", count=6, article_type="both")
+
+            # 复用昨天生成好的图，只发贴图
+            pipe.execute(article_type="newspic",
+                         skip_generate=True,
+                         image_dir="output/daily/20250621_093000_images")
         """
         start_time = datetime.now()
 
@@ -258,14 +291,18 @@ class DailyPipeline:
             skip_curate = bool(kwargs.get("skip_curate", False))
             skip_generate = bool(kwargs.get("skip_generate", False))
             image_dir_arg = kwargs.get("image_dir")
+            article_type = kwargs.get("article_type", "news")
+
+            if article_type not in ("news", "newspic", "both"):
+                return self._err(f"article_type 无效: {article_type}")
 
             # ---- 选主题 + 预设 ----
             topic, preset = self.pick_topic_and_preset(
                 topic=topic, preset=preset, preset_category=preset_category,
             )
-
             logger.info(f"🎯 主题: {topic}")
             logger.info(f"🎨 预设: {preset or '（无）'}")
+            logger.info(f"📦 发布类型: {article_type}")
 
             date_str = start_time.strftime("%Y-%m-%d")
             today_ts = start_time.strftime("%Y%m%d_%H%M%S")
@@ -283,7 +320,7 @@ class DailyPipeline:
                 image_dir = (PROJECT_ROOT / output_root / f"{today_ts}_images").resolve()
                 image_dir.mkdir(parents=True, exist_ok=True)
 
-            result = {
+            result: Dict[str, Any] = {
                 "topic": topic,
                 "preset": preset,
                 "image_dir": str(image_dir),
@@ -291,56 +328,110 @@ class DailyPipeline:
                 "article_dir": None,
                 "preview_path": None,
                 "clipboard_path": None,
+                # 分渠道状态（推荐用法）
+                "news_published": None,
+                "news_error": None,
+                "newspic_published": None,
+                "newspic_error": None,
+                # 兼容旧字段：任一渠道成功即 True
                 "published": False,
                 "publish_error": None,
             }
 
-            # ---- 步骤 1：生图 ----
+            # ---- 步骤 1：生图（文章 + 贴图共享这一批图）----
             if not skip_generate:
                 paths = self.generate_images(topic, count, image_dir, preset, vary_preset)
                 if not paths:
                     return self._err("未生成任何图片")
                 logger.info(f"✅ 生成 {len(paths)} 张 → {image_dir}")
 
-            if skip_curate:
-                return {
-                    "status": "success",
-                    "result": result,
-                    "metadata": {"skill": self.name, "version": self.version},
-                }
+            # 收集图片列表（贴图会用到，也包括 skip_generate 时传入的现成目录）
+            images: List[Path] = sorted([
+                p for p in image_dir.iterdir()
+                if p.is_file() and p.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}
+            ])
 
-            # ---- 步骤 2：鉴赏 + 文章 ----
-            title = f"{topic} {date_str}"
-            md_path = self.curate_article(image_dir, title)
-            if not md_path:
-                return self._err("鉴赏/文章生成失败")
-            result["md_path"] = str(md_path)
+            need_news = article_type in ("news", "both")
+            need_newspic = article_type in ("newspic", "both")
 
-            # ---- 步骤 3：排版 ----
-            qr_path = (PROJECT_ROOT / qr).resolve()
-            if not qr_path.exists():
-                logger.warning(f"⚠️ 二维码不存在，跳过: {qr_path}")
-                qr_path = None
+            # ============================================================
+            # 步骤 2：文章流程（news / both）
+            # ============================================================
+            if need_news:
+                if skip_curate:
+                    result["news_error"] = "skip_curate=True，跳过文章流程"
+                    logger.info("⏭️  skip_curate=True，跳过文章流程")
+                else:
+                    title = f"{topic} {date_str}"
+                    md_path = self.curate_article(image_dir, title)
+                    if not md_path:
+                        result["news_error"] = "鉴赏/文章生成失败"
+                        logger.error("❌ 鉴赏/文章生成失败")
+                        if article_type == "news":
+                            return self._err("鉴赏/文章生成失败")
+                    else:
+                        result["md_path"] = str(md_path)
 
-            article_dir = self.format_wechat(md_path, theme, qr_path)
-            if not article_dir:
-                return self._err("排版失败")
-            result["article_dir"] = str(article_dir)
-            result["preview_path"] = str(article_dir / "preview.html")
-            result["clipboard_path"] = str(article_dir / "clipboard.html")
+                        qr_path = (PROJECT_ROOT / qr).resolve()
+                        if not qr_path.exists():
+                            logger.warning(f"⚠️ 二维码不存在，跳过: {qr_path}")
+                            qr_path = None
 
-            # ---- 步骤 4：推送 ----
-            if publish:
-                pub = self.publish_wechat(article_dir)
-                result["published"] = pub.get("published", False)
-                result["publish_error"] = pub.get("error")
-            else:
-                result["published"] = False
-                result["publish_error"] = "未启用推送"
+                        article_dir = self.format_wechat(md_path, theme, qr_path)
+                        if not article_dir:
+                            result["news_error"] = "排版失败"
+                            if article_type == "news":
+                                return self._err("排版失败")
+                        else:
+                            result["article_dir"] = str(article_dir)
+                            result["preview_path"] = str(article_dir / "preview.html")
+                            result["clipboard_path"] = str(article_dir / "clipboard.html")
+
+                            if publish:
+                                pub = self.publish_wechat(article_dir)
+                                result["news_published"] = pub.get("published", False)
+                                result["news_error"] = pub.get("error")
+                            else:
+                                result["news_published"] = False
+                                result["news_error"] = "未启用推送"
+
+            # ============================================================
+            # 步骤 3：贴图流程（newspic / both），复用同一批图
+            # ============================================================
+            if need_newspic:
+                if not images:
+                    result["newspic_error"] = "没有可用的图片"
+                    logger.error("❌ 贴图模式未找到任何图片")
+                    if article_type == "newspic":
+                        return self._err("贴图模式未找到任何图片")
+                else:
+                    np_title = topic[:20]
+                    logger.info(f"🖼️  贴图模式，共 {len(images)} 张 → 标题「{np_title}」")
+                    if publish:
+                        pub_np = self.publish_wechat_newspic(
+                            article_dir=image_dir,   # 签名保留，实际未使用
+                            images=images,
+                            title=np_title,
+                            content=f"{topic}\n\n每日 AI 生图 · {date_str}",
+                        )
+                        result["newspic_published"] = pub_np.get("published", False)
+                        result["newspic_error"] = pub_np.get("error")
+                    else:
+                        result["newspic_published"] = False
+                        result["newspic_error"] = "未启用推送"
+
+            # ---- 兼容字段 ----
+            result["published"] = bool(
+                (result["news_published"] is True) or (result["newspic_published"] is True)
+            )
+            if not result["published"]:
+                result["publish_error"] = (
+                    result["news_error"] or result["newspic_error"] or "未启用推送"
+                )
 
             # ---- 打开浏览器 ----
-            if open_browser and article_dir:
-                preview = (article_dir / "preview.html").resolve()
+            if open_browser and result["article_dir"]:
+                preview = (Path(result["article_dir"]) / "preview.html").resolve()
                 if preview.exists():
                     webbrowser.open(preview.as_uri())
 
@@ -358,7 +449,7 @@ class DailyPipeline:
             logger.error(f"执行失败: {e}")
             traceback.print_exc()
             return self._err(str(e))
-
+            
     # ---------- 子步骤 ----------
 
     def generate_images(
@@ -529,6 +620,60 @@ class DailyPipeline:
         logger.info("   排查：1) WECHAT_APP_ID/SECRET  2) IP 白名单  3) 账号是否认证")
         return {"published": False, "error": err}
 
+    def publish_wechat_newspic(
+        self,
+        article_dir: Path,
+        images: List[Path],
+        title: str,
+        content: str = "",
+    ) -> dict:
+        """推送贴图草稿（不经过 wechat_formatter 的 HTML 排版）"""
+        try:
+            # 直接调 publisher 里的 push_draft / upload_images_as_material
+            import sys as _sys
+            _wechat_publisher_dir = (
+                PROJECT_ROOT / "skills" / "wechat_formatter" / "publisher"
+            )
+            if str(_wechat_publisher_dir) not in _sys.path:
+                _sys.path.insert(0, str(_wechat_publisher_dir))
+
+            # 用 importlib 动态导入，避免 package 命名冲突
+            import importlib.util
+            spec = importlib.util.spec_from_file_location(
+                "wechat_publish_mod",
+                str(_wechat_publisher_dir / "wechat_publish.py"),
+            )
+            wp = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(wp)
+
+            token = wp.get_access_token()
+            logger.info("✅ access_token 获取成功")
+
+            image_media_ids = wp.upload_images_as_material(
+                token, [str(p) for p in images]
+            )
+            if not image_media_ids:
+                return {"published": False, "error": "所有图片上传为永久素材失败"}
+
+            media_id = wp.push_draft(
+                token,
+                title=title[:20],
+                content=content[:1000],
+                article_type="newspic",
+                image_media_ids=image_media_ids,
+            )
+
+            if media_id:
+                logger.info(f"✅ 贴图已推送到草稿箱: {media_id}")
+                return {"published": True, "error": None, "media_id": media_id}
+            else:
+                return {"published": False, "error": "推送贴图草稿失败"}
+        except Exception as e:
+            logger.error(f"❌ 贴图推送异常: {e}")
+            import traceback
+            traceback.print_exc()
+            return {"published": False, "error": str(e)}
+        
     # ---------- 主题/预设 智能匹配 ----------
 
     def load_presets_by_category(self) -> Dict[str, List[str]]:
@@ -716,11 +861,18 @@ def _cli_main() -> int:
     parser.add_argument("--qr", default="assets/qr/公众号结束处.png")
     parser.add_argument("--no-publish", action="store_true")
     parser.add_argument("--open", action="store_true")
+
+    parser.add_argument("--type", choices=["news", "newspic", "both"], default="news",
+                    help="发布类型：news=文章，newspic=贴图，both=都发")
+                    
     parser.add_argument("--skip-curate", action="store_true")
     parser.add_argument("--skip-generate", action="store_true")
     parser.add_argument("--image-dir", default=None)
     parser.add_argument("--list-presets", action="store_true")
     parser.add_argument("--list-topics", action="store_true")
+
+
+                    
     args = parser.parse_args()
 
     pipe = DailyPipeline()
@@ -764,6 +916,7 @@ def _cli_main() -> int:
         skip_curate=args.skip_curate,
         skip_generate=args.skip_generate,
         image_dir=args.image_dir,
+        article_type=args.type,          # ✅ 补上这行
     )
 
     if result["status"] == "success":
@@ -772,11 +925,23 @@ def _cli_main() -> int:
         print("  🎉 全部完成！")
         print("=" * 62)
         print(f"📁 图片目录  : {r['image_dir']}")
-        print(f"📄 文章      : {r['md_path']}")
-        print(f"🎨 排版输出  : {r['article_dir']}")
-        print(f"🌐 浏览器预览: {r['preview_path']}")
-        print(f"📋 富文本    : {r['clipboard_path']}")
-        print(f"📤 已推送    : {'是' if r['published'] else '否'}")
+        if r.get("md_path"):
+            print(f"📄 文章      : {r['md_path']}")
+        if r.get("article_dir"):
+            print(f"🎨 排版输出  : {r['article_dir']}")
+            print(f"🌐 浏览器预览: {r['preview_path']}")
+            print(f"📋 富文本    : {r['clipboard_path']}")
+
+        # 分渠道推送状态
+        np_ok = r.get("news_published")
+        pic_ok = r.get("newspic_published")
+        if np_ok is not None:
+            tag = "✅" if np_ok else "❌"
+            print(f"📤 文章推送  : {tag} {r.get('news_error') or ''}")
+        if pic_ok is not None:
+            tag = "✅" if pic_ok else "❌"
+            print(f"📤 贴图推送  : {tag} {r.get('newspic_error') or ''}")
+
         return 0
     else:
         print(f"\n❌ 失败: {result.get('error')}")

@@ -245,41 +245,132 @@ def get_draft_detail(token, media_id):
     return ""
 
 
-def push_draft(token, title, content, thumb_media_id, author=""):
-    """推送文章到草稿箱"""
+def push_draft(
+    token,
+    title,
+    content,
+    thumb_media_id=None,
+    author="",
+    article_type="news",
+    image_media_ids=None,
+):
+    """
+    推送草稿到微信公众号
+
+    Args:
+        token:            access_token
+        title:            标题
+        content:          news 模式=HTML 正文；newspic 模式=纯文字说明（<=1000字）
+        thumb_media_id:   封面图 media_id（仅 news 模式需要）
+        author:           作者（仅 news 模式使用）
+        article_type:     "news"（普通文章，默认）或 "newspic"（贴图/图片消息）
+        image_media_ids:  贴图模式的图片 media_id 列表（永久素材，最多 20 张）
+
+    Returns:
+        成功 → media_id 字符串；失败 → None
+    """
     url = f"https://api.weixin.qq.com/cgi-bin/draft/add?access_token={token}"
 
-    data = {
-        "articles": [
-            {
-                "title": title,
-                "author": author,
-                "content": content,
-                "content_source_url": "",
-                "thumb_media_id": thumb_media_id,
-                "need_open_comment": 0,
-                "only_fans_can_comment": 0,
-            }
-        ]
-    }
+    # ---------- 贴图模式 ----------
+    if article_type == "newspic":
+        if not image_media_ids:
+            print("错误: newspic 模式必须提供 image_media_ids")
+            return None
+
+        if len(image_media_ids) > 20:
+            print(f"⚠️  贴图最多 20 张，当前 {len(image_media_ids)} 张，只取前 20 张")
+            image_media_ids = image_media_ids[:20]
+
+        article = {
+            "article_type": "newspic",
+            "title": title[:20],          # 贴图标题上限 20 字
+            "content": content[:1000],    # 贴图正文上限 1000 字
+            "need_open_comment": 0,
+            "only_fans_can_comment": 0,
+            "image_info": {
+                "image_list": [
+                    {"image_media_id": mid} for mid in image_media_ids
+                ]
+            },
+        }
+
+    # ---------- 普通文章模式 ----------
+    else:
+        if not thumb_media_id:
+            print("错误: news 模式必须提供 thumb_media_id（封面图）")
+            return None
+
+        article = {
+            "title": title,
+            "author": author,
+            "content": content,
+            "content_source_url": "",
+            "thumb_media_id": thumb_media_id,
+            "need_open_comment": 0,
+            "only_fans_can_comment": 0,
+        }
+
+    data = {"articles": [article]}
 
     # 必须用 ensure_ascii=False，否则中文被转义为 \uXXXX 导致微信计算标题长度错误
     body = json.dumps(data, ensure_ascii=False).encode("utf-8")
-    resp = requests.post(url, data=body,
-                         headers={"Content-Type": "application/json"}, timeout=30)
+    resp = requests.post(
+        url,
+        data=body,
+        headers={"Content-Type": "application/json"},
+        timeout=30,
+    )
     result = resp.json()
-
 
     if "media_id" in result:
         return result["media_id"]
-    else:
-        errcode = result.get("errcode", "?")
-        errmsg = result.get("errmsg", "未知错误")
-        print(f"错误: 推送草稿箱失败 (errcode={errcode}: {errmsg})")
-        return None
+
+    # ---------- 错误处理 ----------
+    errcode = result.get("errcode", "?")
+    errmsg = result.get("errmsg", "未知错误")
+    print(f"错误: 推送草稿箱失败 (errcode={errcode}: {errmsg})")
+
+    hints = {
+        40001: "access_token 无效，请检查 AppSecret 或重新获取",
+        40007: "media_id 无效，可能是图片未成功上传为永久素材",
+        40056: "media_id 数量超过限制或类型不匹配",
+        40164: "IP 不在白名单，请到公众号后台添加当前公网 IP",
+        45009: "接口调用超过限额",
+        48001: "接口未授权，账号可能未认证或该类型不支持",
+        53500: "已开通帐号迁移，不允许调用此接口",
+    }
+    if errcode in hints:
+        print(f"  → {hints[errcode]}")
+
+    return None
 
 
 # ── 辅助函数 ──────────────────────────────────────────────────────────
+def upload_images_as_material(token, image_paths):
+    """
+    批量上传本地图片为永久素材，返回 media_id 列表
+
+    Args:
+        token:       access_token
+        image_paths: 本地图片路径列表（str 或 Path）
+
+    Returns:
+        list[str]: 成功上传的 media_id 列表（顺序与输入一致，失败的会跳过）
+    """
+    media_ids = []
+    for i, p in enumerate(image_paths, 1):
+        p = Path(p)
+        if not p.exists():
+            print(f"  ✗ [{i}/{len(image_paths)}] 文件不存在: {p}")
+            continue
+        mid = upload_thumb_image(token, str(p))  # 复用现有函数
+        if mid:
+            media_ids.append(mid)
+            print(f"  ✓ [{i}/{len(image_paths)}] {p.name} → {mid[:20]}...")
+        else:
+            print(f"  ✗ [{i}/{len(image_paths)}] 上传失败: {p.name}")
+    return media_ids
+
 def extract_title_from_html(html):
     """从 HTML 中提取 h1 标题"""
     match = re.search(r"<h1[^>]*>(.*?)</h1>", html, re.DOTALL)
@@ -320,9 +411,12 @@ def find_cover_image(article_dir, cover_arg=None):
 # ── 主流程 ────────────────────────────────────────────────────────────
 def main():
     parser = argparse.ArgumentParser(description="微信公众号草稿箱发布工具")
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--dir", "-d", help="format.py 的输出目录（含 article.html 和 images/）")
-    group.add_argument("--input", "-i", help="Markdown 文件路径（自动调用 format.py 排版后发布）")
+    
+    # newspic 模式两个都不需要，所以 required=False；news 模式在上面手动校验
+    group = parser.add_mutually_exclusive_group(required=False)
+    group.add_argument("--dir", "-d", help="format.py 的输出目录（news 模式使用）")
+    group.add_argument("--input", "-i", help="Markdown 文件路径（news 模式使用）")
+    
     parser.add_argument("--cover", "-c", help="封面图片路径")
     parser.add_argument("--title", "-t", help="文章标题（默认从 HTML 提取）")
     parser.add_argument("--theme", default=None,
@@ -330,10 +424,69 @@ def main():
     parser.add_argument("--author", "-a",
                         default=CONFIG.get("wechat", {}).get("author", ""),
                         help="作者名")
+
+    parser.add_argument("--type", choices=["news", "newspic"], default="news",
+                        help="草稿类型：news=文章（默认），newspic=贴图")
+    parser.add_argument("--images", nargs="*", default=None,
+                        help="newspic 模式下要发成贴图的本地图片路径列表")
+    parser.add_argument("--content", default="",
+                        help="newspic 模式下的文字说明（<=1000字）")
+
+    parser.add_argument("--title", "-T", default="",
+                        help="newspic 模式：草稿标题（默认取首图文件名）")
+                        
     parser.add_argument("--dry-run", action="store_true",
                         help="只做排版和图片上传，不推送草稿箱（用于测试）")
+
     args = parser.parse_args()
 
+    # ── newspic 模式：提前返回，不读 article.html ────────────────────
+    if args.type == "newspic":
+        if not args.images:
+            print("错误: --type newspic 必须提供 --images")
+            sys.exit(1)
+
+        # 标题兜底：--title > 首图 stem
+        title = (args.title or Path(args.images[0]).stem).strip() or "每日一图"
+
+        print(f"\n=== 贴图模式 ===")
+        print(f"标题  : {title}")
+        print(f"图片数: {len(args.images)}")
+
+        print(f"\n获取 access_token...")
+        token = get_access_token()
+        print("✓ token 获取成功")
+
+        print(f"\n上传图片为永久素材...")
+        image_media_ids = upload_images_as_material(token, args.images)
+        if not image_media_ids:
+            print("错误: 所有图片上传失败")
+            sys.exit(1)
+        print(f"  上传完成: {len(image_media_ids)}/{len(args.images)}")
+
+        if args.dry_run:
+            print(f"\n[dry-run] 跳过推送草稿箱")
+            sys.exit(0)
+
+        print(f"\n推送到草稿箱（贴图）...")
+        media_id = push_draft(
+            token,
+            title=title[:20],
+            content=args.content or title,
+            article_type="newspic",
+            image_media_ids=image_media_ids,
+        )
+        if media_id:
+            print(f"✓ 推送成功: {media_id}")
+            sys.exit(0)
+        print("✗ 推送失败")
+        sys.exit(1)
+
+    # ── news 模式：原有流程 ──────────────────────────────────────────
+    if not args.dir and not args.input:
+        print("错误: news 模式需要提供 --dir 或 --input")
+        sys.exit(1)
+        
     # ── 1. 确定文章目录 ──────────────────────────────────────────────
     if args.input:
         # 确定主题：优先命令行指定 > gallery 选中 > 默认
@@ -457,26 +610,38 @@ def main():
     # ── 7. 推送草稿箱 ────────────────────────────────────────────────
     if args.dry_run:
         print(f"\n[dry-run] 跳过推送草稿箱")
+        print(f"  类型: {args.type}")
         print(f"  标题: {title}")
-        print(f"  封面 media_id: {thumb_media_id}")
-        print(f"  HTML 长度: {len(html)} 字符")
+        if args.type == "news":
+            print(f"  封面 media_id: {thumb_media_id}")
+            print(f"  HTML 长度: {len(html)} 字符")
+        else:
+            print(f"  图片数量: {len(args.images or [])}")
         return
 
-    print(f"\n推送到草稿箱...")
-    media_id = push_draft(token, title, html, thumb_media_id, author)
+    print(f"\n推送到草稿箱（类型={args.type}）...")
 
-    if media_id:
-        preview_url = get_draft_detail(token, media_id)
-        print(f"\n{'='*40}")
-        print(f"  发布成功!")
-        print(f"  草稿 media_id: {media_id}")
-        if preview_url:
-            print(f"  预览链接: {preview_url}")
-        print(f"  → 请到微信公众号后台 → 草稿箱 查看和发布")
-        print(f"{'='*40}")
+    if args.type == "newspic":
+        # 贴图模式
+        if not args.images:
+            print("错误: --type newspic 必须提供 --images")
+            sys.exit(1)
+
+        image_media_ids = upload_images_as_material(token, args.images)
+        if not image_media_ids:
+            print("错误: 所有图片上传失败")
+            sys.exit(1)
+
+        media_id = push_draft(
+            token,
+            title=title[:20],
+            content=args.content or title,
+            article_type="newspic",
+            image_media_ids=image_media_ids,
+        )
     else:
-        print(f"\n发布失败")
-        sys.exit(1)
+        # 普通文章
+        media_id = push_draft(token, title, html, thumb_media_id, author)
 
 
 if __name__ == "__main__":
