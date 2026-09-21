@@ -43,9 +43,8 @@ if not "%EXIT_CODE%"=="0" (
     echo ⚠️ 日志：%LOG_FILE%
 
     REM [可选] 失败时通知 webhook，启用前把 URL 换成你自己的
-    REM curl -s -X POST "https://your-webhook.example.com/pf" ^
-    REM      -H "Content-Type: application/json" ^
-    REM      -d "{\"text\":\"PromptForge 每日任务失败 %TODAY%，退出码 %EXIT_CODE%\"}" >nul 2>&1
+	REM [可选] 失败时通知 webhook（要启用就删掉下面三行的 REM）
+	REM curl -s -X POST "https://your-webhook.example.com/pf" -H "Content-Type: application/json" -d "{\"text\":\"PromptForge 每日任务失败 %TODAY%，退出码 %EXIT_CODE%\"}" >nul 2>&1
 )
 
 endlocal & exit /b %EXIT_CODE%
