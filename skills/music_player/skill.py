@@ -80,7 +80,10 @@ class MusicPlayer:
         # 运行时状态
         self._proc: Optional[subprocess.Popen] = None
         self._player_kind: Optional[str] = None
+        
         self._current_track: Optional[Dict[str, Any]] = None
+        self._last_track: Optional[Dict[str, Any]] = None    # ← 新增：用于 replay
+        
         self._playlist: List[Dict[str, Any]] = []
         self._playlist_index: int = -1
         self._volume: int = int(self.config["default_volume"])   # 0-100
@@ -292,6 +295,7 @@ class MusicPlayer:
             return {"status": "error", "error": "启动播放器失败"}
 
         self._current_track = track
+        self._last_track = track  
         logger.info(f"播放: {track.get('title', '未知')} [{self._player_kind}]")
 
         return {
@@ -362,6 +366,12 @@ class MusicPlayer:
         self._current_track = None
         return stopped
 
+    def replay(self) -> Dict[str, Any]:
+        """重播上一次播放的曲目（从头开始）"""
+        if not self._last_track:
+            return {"status": "error", "error": "没有可重播的曲目"}
+        return self.play(self._last_track)
+        
     def set_volume(self, v: int) -> bool:
         """音量 0-100（下次播放生效）"""
         self._volume = max(0, min(100, int(v)))
@@ -561,6 +571,14 @@ class MusicPlayer:
                 stopped = self.stop()
                 return {"status": "success", "result": {"stopped": stopped}}
 
+            if action == "replay":
+                r = self.replay()
+                return {
+                    "status": "success" if r.get("status") == "playing" else "error",
+                    "result": r,
+                    "error": r.get("error"),
+                }
+                
             # ---- volume ----
             if action == "volume":
                 v = kwargs.get("volume")

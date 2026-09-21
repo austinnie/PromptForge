@@ -134,6 +134,7 @@ class RadioPlayer:
 
         # 运行时状态
         self.current_station: Optional[Dict[str, Any]] = None
+        self._last_station: Optional[Dict[str, Any]] = None
         self.is_playing = False
         self.is_paused = False
         self.volume = int(self.config["default_volume"])
@@ -423,6 +424,7 @@ class RadioPlayer:
             "url": url,
             "started_at": datetime.now().isoformat(timespec="seconds"),
         }
+        self._last_station = dict(self.current_station)
         logger.info(f"播放: {name} ({url})")
 
         if self._is_web_url(url):
@@ -460,6 +462,13 @@ class RadioPlayer:
         self.current_station = None 
         return stopped
 
+    def replay(self) -> bool:
+        """重播上一次播放的电台"""
+        if not self._last_station:
+            return False
+        s = self._last_station
+        return self._play_url(s["url"], s["name"])
+        
     def pause(self) -> bool:
         """暂停（仅 Unix 系 + CLI 播放器可用）"""
         if self._proc is None or self.is_paused:
@@ -560,6 +569,18 @@ class RadioPlayer:
                 return {"status": "success",
                         "result": {"action": "stop", "stopped": True}}
 
+            if action == "replay":
+                ok = self.replay()
+                return {
+                    "status": "success" if ok else "error",
+                    "result": {
+                        "action": "replay",
+                        "station": self.current_station,
+                        "player": self._player_kind,
+                    },
+                    "error": None if ok else "没有可重播的电台",
+                }
+                
             if action == "pause":
                 paused = self.is_paused
                 if paused:

@@ -449,6 +449,7 @@ class ChatApp:
         media_menu.add_command(label="🎵 音乐播放器", command=self._run_music_player) 
         
         media_menu.add_command(label="📻 网络广播", command=self._run_radio_player)
+        media_menu.add_command(label="▶️ 重播上一个", command=self._replay_media)
         media_menu.add_command(label="⏹️ 停止广播", command=self._stop_radio)
         media_menu.add_separator()
         media_menu.add_command(label="📋 收藏电台", command=self._show_radio_favorites)
@@ -1170,6 +1171,34 @@ class ChatApp:
             self._append_message("system",
                 "⏹️ 无可停止的播放器（可能是系统程序或浏览器打开，请手动关闭）")
 
+    def _replay_media(self):
+        """▶️ 重播上一次停止的媒体（优先音乐，其次广播）"""
+        # 1) 先看音乐有没有可重播的
+        if getattr(self, "_music_player", None):
+            r = self._music_player.replay()
+            if r.get("status") == "playing":
+                info = r.get("track") or {}
+                self._append_message(
+                    "assistant",
+                    f"▶️ 重播：{info.get('title', '未知')} — {info.get('artist', '')}\n"
+                    f"   播放器：{r.get('player', '?')}",
+                )
+                return
+
+        # 2) 再看广播
+        if getattr(self, "_radio_player", None):
+            if self._radio_player.replay():
+                s = self._radio_player.current_station or {}
+                self._append_message(
+                    "assistant",
+                    f"▶️ 重播：{s.get('name', '未知')}\n"
+                    f"   播放器：{self._radio_player._player_kind or '?'}",
+                )
+                return
+
+        # 3) 都没有
+        self._append_message("system", "▶️ 没有可重播的内容")
+        
     def _show_radio_favorites(self):
         """📋 查看/管理收藏"""
         player = self._get_radio_player()
