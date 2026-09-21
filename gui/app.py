@@ -230,10 +230,18 @@ class ChatApp:
         ).pack(side=tk.LEFT, padx=2)
 
         # ✅ 每日任务：一键生图 → 鉴赏 → 排版 → 推送
+
         ttk.Button(
             toolbar_row2,
             text="📅 每日任务",
             command=self._run_daily_task
+        ).pack(side=tk.LEFT, padx=2)
+
+        # ✅ 每周任务：技术热点文章（脚本：scripts/weekly_tech_task.py）
+        ttk.Button(
+            toolbar_row2,
+            text="📆 每周任务",
+            command=self._run_weekly_tech_task
         ).pack(side=tk.LEFT, padx=2)
         
         ttk.Separator(toolbar_row2, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
@@ -435,6 +443,7 @@ class ChatApp:
         # ── 自动化 ──
         auto_menu = tk.Menu(menubar, tearoff=0)
         auto_menu.add_command(label="📅 每日任务", command=self._run_daily_task)
+        auto_menu.add_command(label="🔥 每周技术热点", command=self._run_weekly_tech_task)
         auto_menu.add_command(label="📰 新闻简报", command=self._fetch_news)
         auto_menu.add_command(label="📄 技术文章", command=self._generate_tech_article)
         menubar.add_cascade(label="自动化", menu=auto_menu)
@@ -1884,6 +1893,94 @@ class ChatApp:
                 webbrowser.open(Path(preview).resolve().as_uri())
             except Exception:
                 pass
+                
+
+    # ============================================================
+    # 每周任务：调 scripts/weekly_tech_task.py
+    # ============================================================
+    def _run_weekly_tech_task(self):
+        """📆 每周任务：技术热点 → 文章 → 排版 → 封面 → 推草稿箱。
+
+        实际逻辑在 scripts/weekly_tech_task.py。
+        这里只负责：拼参数 → subprocess → 把关键行展示到聊天区。
+        """
+        def worker():
+            import sys as _sys
+            root = Path(__file__).resolve().parents[1]
+            script = root / "scripts" / "weekly_tech_task.py"
+            if not script.exists():
+                return {"status": "error", "error": f"找不到 {script}"}
+
+            cmd = [_sys.executable, str(script)]
+
+            # 不推草稿箱时，把 GUI 上那个复选框透传过去
+            if not self.publish_wechat_var.get():
+                cmd.append("--no-publish")
+
+            try:
+                proc = subprocess.run(
+                    cmd,
+                    capture_output=True, text=True, encoding="utf-8",
+                    cwd=str(root), timeout=1800,   # 30 分钟上限
+                )
+            except subprocess.TimeoutExpired:
+                return {"status": "error", "error": "每周任务超时（>30 分钟）"}
+
+            ok = proc.returncode == 0
+            return {
+                "status": "success" if ok else "error",
+                "result": {
+                    "stdout": (proc.stdout or "")[-5000:],
+                    "stderr": (proc.stderr or "")[-1000:],
+                    "returncode": proc.returncode,
+                },
+                "error": (proc.stderr or proc.stdout or "")[-500:] if not ok else None,
+            }
+
+        self._run_skill(
+            "🔥 每周技术热点",
+            worker,
+            on_success=self._show_weekly_tech_result,
+        )
+
+    def _show_weekly_tech_result(self, data):
+        """从 weekly_tech_task.py 的 stdout 里抽关键行展示。"""
+        stdout = data.get("stdout", "")
+
+        # 这些是脚本里固定的收尾行，直接抓
+        keep_prefixes = (
+            "📄 标题", "📁 Markdown", "🎨 排版目录",
+            "🌐 预览页面", "🖼️  封面", "📤 已推送", "⏱️  耗时",
+        )
+        # 中间过程行，有就带一条
+        stage_lines = ("✅ 已推送到公众号草稿箱",
+                       "❌ 推送失败", "⚠️  封面生成失败")
+
+        lines = ["✅ 每周技术热点完成！", ""]
+        for line in stdout.splitlines():
+            s = line.strip()
+            if not s:
+                continue
+            if s.startswith(keep_prefixes) or s.startswith(stage_lines):
+                lines.append(s)
+
+        if len(lines) == 2:
+            # 没识别到关键行，退而显示尾部日志
+            lines.append("（未识别到结果行，以下为原始输出尾部）")
+            lines.append(stdout[-2000:])
+
+        self._append_message("assistant", "\n".join(lines))
+
+        # 尝试打开预览
+        for line in stdout.splitlines():
+            if line.strip().startswith("🌐 预览页面"):
+                path = line.split(":", 1)[-1].strip()
+                if path and os.path.exists(path):
+                    try:
+                        webbrowser.open(Path(path).resolve().as_uri())
+                    except Exception:
+                        pass
+                break
                 
     # ============================================================
     # 消息添加（文本）
