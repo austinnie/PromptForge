@@ -446,11 +446,15 @@ class ChatApp:
 
         # ── 媒体 ──
         media_menu = tk.Menu(menubar, tearoff=0)
-        media_menu.add_command(label="🎵 音乐播放器", command=self._run_music_player) 
-        
+        media_menu.add_command(label="📺 视频播放器", command=self._run_video_player)         
+        media_menu.add_command(label="🎵 音乐播放器", command=self._run_music_player)         
         media_menu.add_command(label="📻 网络广播", command=self._run_radio_player)
+
+        media_menu.add_separator()
+        media_menu.add_command(label="⏸️ 暂停/继续", command=self._toggle_pause_media)
         media_menu.add_command(label="▶️ 重播上一个", command=self._replay_media)
-        media_menu.add_command(label="⏹️ 停止广播", command=self._stop_radio)
+        media_menu.add_command(label="⏹️ 停止广播", command=self._stop_radio)        
+        
         media_menu.add_separator()
         media_menu.add_command(label="📋 收藏电台", command=self._show_radio_favorites)
         menubar.add_cascade(label="媒体", menu=media_menu)
@@ -1156,24 +1160,45 @@ class ChatApp:
         )
 
     def _stop_radio(self):
-        """⏹️ 停止所有媒体（广播 + 音乐）"""
+        """⏹️ 停止所有媒体（视频 + 音乐 + 广播）"""
         stopped = False
-        if getattr(self, "_radio_player", None):
-            if self._radio_player.stop():
-                stopped = True
-        if getattr(self, "_music_player", None):
-            if self._music_player.stop():
-                stopped = True
+        for player in (
+            getattr(self, "_video_player", None),
+            getattr(self, "_music_player", None),
+            getattr(self, "_radio_player", None),
+        ):
+            if player is None:
+                continue
+            try:
+                if player.stop():
+                    stopped = True
+            except Exception:
+                pass
 
         if stopped:
             self._append_message("assistant", "⏹️ 已停止媒体播放")
         else:
-            self._append_message("system",
-                "⏹️ 无可停止的播放器（可能是系统程序或浏览器打开，请手动关闭）")
-
+            self._append_message(
+                "system",
+                "⏹️ 无可停止的播放器（可能是系统程序或浏览器打开，请手动关闭）",
+            )
+            
     def _replay_media(self):
-        """▶️ 重播上一次停止的媒体（优先音乐，其次广播）"""
-        # 1) 先看音乐有没有可重播的
+        """▶️ 重播上一次停止的媒体（视频 > 音乐 > 广播）"""
+        # 1) 视频
+        if getattr(self, "_video_player", None):
+            r = self._video_player.replay()
+            if r.get("status") == "playing":
+                info = r.get("result") or r
+                self._append_message(
+                    "assistant",
+                    f"▶️ 重播：{info.get('title', '未知')}\n"
+                    f"   播放器：{info.get('player', '?')}\n"
+                    + (f"   📁 {info['record_path']}" if info.get("record_path") else ""),
+                )
+                return
+
+        # 2) 音乐
         if getattr(self, "_music_player", None):
             r = self._music_player.replay()
             if r.get("status") == "playing":
@@ -1185,7 +1210,7 @@ class ChatApp:
                 )
                 return
 
-        # 2) 再看广播
+        # 3) 广播
         if getattr(self, "_radio_player", None):
             if self._radio_player.replay():
                 s = self._radio_player.current_station or {}
@@ -1196,8 +1221,8 @@ class ChatApp:
                 )
                 return
 
-        # 3) 都没有
         self._append_message("system", "▶️ 没有可重播的内容")
+        
         
     def _show_radio_favorites(self):
         """📋 查看/管理收藏"""
@@ -1354,7 +1379,158 @@ class ChatApp:
         if not data.get("converted"):
             lines.append("💡 未检测到 ffmpeg，已保留原始音频格式")
         self._append_message("assistant", "\n".join(lines))
-        
+
+
+    # ============================================================
+    # 视频播放器
+    # ============================================================
+    def _get_video_player(self):
+        if not hasattr(self, "_video_player") or self._video_player is None:
+            from skills.video_player import VideoPlayer
+            self._video_player = VideoPlayer()
+        return self._video_player
+
+    def _run_video_player(self):
+        """📺 视频播放器：搜索 → 播放（边播边存）/ 下载 / 浏览器打开"""
+        player = self._get_video_player()
+
+        query = self._ask_string(
+            "📺 视频播放器",
+            "搜索关键词（如：仙逆 动漫 / 大明王朝 历史剧）：",
+            "",
+        )
+        if query is None:
+            return
+        query = query.strip()
+        if not query:
+            return
+
+        source_label = self._ask_choice(
+            "📺 视频播放器", "选择来源：",
+            ["🇨🇳 B站（bilibili）", "🌐 YouTube", "🌍 全部"],
+            default="🇨🇳 B站（bilibili）",
+        )
+        if not source_label:
+            return
+        source_map = {
+            "🇨🇳 B站（bilibili）": "bilibili",
+            "🌐 YouTube":          "youtube",
+            "🌍 全部":             "all",
+        }
+        source = source_map[source_label]
+
+        self._append_message("system", f"🔍 搜索：{query}（{source_label}）...")
+
+        def worker_search():
+            return player.execute(action="search", query=query,
+                                  source=source, limit=15)
+
+        def show_search(data):
+            hits = data.get("results", [])
+            if not hits:
+                self._append_message("assistant", f"❌ 未找到：{query}")
+                return
+
+            labels = []
+            for i, t in enumerate(hits, 1):
+                dur = f"  [{t['duration_str']}]" if t.get("duration_str") else ""
+                labels.append(f"{i}. {t['title']}{dur}")
+
+            choice = self._ask_choice(
+                "📺 搜索结果",
+                f"找到 {len(hits)} 条，选择一条：",
+                labels,
+                default=labels[0],
+            )
+            if not choice:
+                return
+            idx = int(choice.split(".", 1)[0]) - 1
+            track = hits[idx]
+
+            action = self._ask_choice(
+                "📺 视频播放器",
+                f"对「{track['title']}」：",
+                ["▶️ 播放（边播边存）", "🌊 流播（不录制）",
+                 "⬇️ 下载到本地", "🌐 浏览器打开"],
+                default="▶️ 播放（边播边存）",
+            )
+            if not action:
+                return
+
+            if action.startswith("▶️"):
+                self._append_message("system",
+                    f"▶️ 启动播放（边播边存）：{track['title']}")
+                r = player.execute(action="play", url=track["url"], record=True)
+                self._show_video_play_result(r, track)
+
+            elif action.startswith("🌊"):
+                self._append_message("system",
+                    f"🌊 流播（不录制）：{track['title']}")
+                r = player.execute(action="play", url=track["url"], record=False)
+                self._show_video_play_result(r, track)
+
+            elif action.startswith("⬇️"):
+                self._append_message("system",
+                    f"⬇️ 下载中（可能几分钟）：{track['title']}")
+                def worker_dl():
+                    return player.execute(action="play",
+                                          url=track["url"], record=True)
+                self._run_skill("⬇️ 下载视频", worker_dl,
+                                on_success=lambda d: self._show_video_play_result(
+                                    {"status": "success", "result": d}, track))
+
+            else:
+                webbrowser.open(track["url"])
+                self._append_message("assistant",
+                    f"🌐 已在浏览器打开：{track['title']}")
+
+        self._run_skill("📺 搜索视频", worker_search, on_success=show_search)
+
+    def _show_video_play_result(self, r, track):
+        """视频播放/下载结果汇总"""
+        if r.get("status") != "success":
+            self._append_message("assistant",
+                f"❌ 失败：{r.get('error', '未知')}")
+            return
+        info = r.get("result") or {}
+        lines = [f"✅ {info.get('message', '已启动')}", ""]
+        lines.append(f"🎬 标题：{info.get('title', track.get('title', '-'))}")
+        lines.append(f"🎞️ 播放器：{info.get('player', '?')}")
+        if info.get("record_path"):
+            lines.append(f"📁 保存到：{info['record_path']}")
+        lines.append("")
+        lines.append("💡 菜单「媒体」→「⏸️ 暂停/继续」控制播放")
+        self._append_message("assistant", "\n".join(lines))
+
+    def _toggle_pause_media(self):
+        """⏸️ 暂停/继续：遍历所有媒体，谁在播就切谁"""
+        toggled = []
+        for label, player in (
+            ("视频", getattr(self, "_video_player", None)),
+            ("音乐", getattr(self, "_music_player", None)),
+            ("广播", getattr(self, "_radio_player", None)),
+        ):
+            if player is None:
+                continue
+            try:
+                st = player.get_status()
+            except Exception:
+                continue
+            if not st.get("is_playing"):
+                continue
+
+            if st.get("is_paused"):
+                if hasattr(player, "resume") and player.resume():
+                    toggled.append(f"▶️ {label}：继续")
+            else:
+                if hasattr(player, "pause") and player.pause():
+                    toggled.append(f"⏸️ {label}：暂停")
+
+        if toggled:
+            self._append_message("assistant", "\n".join(toggled))
+        else:
+            self._append_message("system", "⏸️ 没有正在播放的媒体")
+            
     # ============================================================
     # 模式切换
     # ============================================================

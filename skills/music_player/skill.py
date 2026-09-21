@@ -44,6 +44,11 @@ try:
 except ImportError:
     YT_DLP_AVAILABLE = False
 
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
 
 class MusicPlayer:
     """音乐播放器 - 搜索 / 下载 / 播放"""
@@ -92,6 +97,7 @@ class MusicPlayer:
         self.system = platform.system()
         self._available_player = self._detect_player()
 
+        self.is_paused = False
         logger.info(
             f"MusicPlayer v{self.version} 就绪 "
             f"(系统={self.system}, 播放器={self._available_player})"
@@ -348,6 +354,9 @@ class MusicPlayer:
 
     def stop(self) -> bool:
         """停止播放（仅 CLI 播放器能停）"""
+        if self._is_paused:
+            self.resume()
+            
         stopped = False
         if self._proc is not None:
             try:
@@ -371,7 +380,34 @@ class MusicPlayer:
         if not self._last_track:
             return {"status": "error", "error": "没有可重播的曲目"}
         return self.play(self._last_track)
-        
+
+    def pause(self) -> bool:
+        if self._proc is None or self._is_paused:
+            return False
+        if not PSUTIL_AVAILABLE:
+            logger.warning("psutil 未安装，无法暂停")
+            return False
+        try:
+            psutil.Process(self._proc.pid).suspend()
+            self._is_paused = True
+            return True
+        except Exception as e:
+            logger.error(f"暂停失败: {e}")
+            return False
+
+    def resume(self) -> bool:
+        if self._proc is None or not self._is_paused:
+            return False
+        if not PSUTIL_AVAILABLE:
+            return False
+        try:
+            psutil.Process(self._proc.pid).resume()
+            self._is_paused = False
+            return True
+        except Exception as e:
+            logger.error(f"恢复失败: {e}")
+            return False
+            
     def set_volume(self, v: int) -> bool:
         """音量 0-100（下次播放生效）"""
         self._volume = max(0, min(100, int(v)))
@@ -578,7 +614,19 @@ class MusicPlayer:
                     "result": r,
                     "error": r.get("error"),
                 }
-                
+
+            if action == "pause":
+                ok = self.pause()
+                return {"status": "success" if ok else "error",
+                        "result": {"paused": ok},
+                        "error": None if ok else "暂停失败"}
+
+            if action == "resume":
+                ok = self.resume()
+                return {"status": "success" if ok else "error",
+                        "result": {"resumed": ok},
+                        "error": None if ok else "继续失败"}
+                        
             # ---- volume ----
             if action == "volume":
                 v = kwargs.get("volume")

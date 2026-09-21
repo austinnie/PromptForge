@@ -31,6 +31,12 @@ if str(PROJECT_ROOT) not in sys.path:
 logger = logging.getLogger(__name__)
 
 
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
+    
 class RadioPlayer:
     """网络广播播放器"""
 
@@ -442,6 +448,9 @@ class RadioPlayer:
     # ============================================================
     def stop(self) -> bool:
         """停止播放（仅 CLI 播放器可停）"""
+        if self.is_paused:
+            self.resume() 
+            
         stopped = False
         if self._proc is not None:
             try:
@@ -470,15 +479,15 @@ class RadioPlayer:
         return self._play_url(s["url"], s["name"])
         
     def pause(self) -> bool:
-        """暂停（仅 Unix 系 + CLI 播放器可用）"""
         if self._proc is None or self.is_paused:
             return False
-        if self.system == "Windows":
-            logger.warning("Windows 上暂不支持运行时暂停")
+        if not PSUTIL_AVAILABLE:
+            logger.warning("psutil 未安装，无法暂停")
             return False
         try:
-            self._proc.send_signal(signal.SIGSTOP)
+            psutil.Process(self._proc.pid).suspend()
             self.is_paused = True
+            logger.info("已暂停")
             return True
         except Exception as e:
             logger.error(f"暂停失败: {e}")
@@ -487,11 +496,12 @@ class RadioPlayer:
     def resume(self) -> bool:
         if self._proc is None or not self.is_paused:
             return False
-        if self.system == "Windows":
+        if not PSUTIL_AVAILABLE:
             return False
         try:
-            self._proc.send_signal(signal.SIGCONT)
+            psutil.Process(self._proc.pid).resume()
             self.is_paused = False
+            logger.info("已继续")
             return True
         except Exception as e:
             logger.error(f"恢复失败: {e}")
