@@ -446,6 +446,8 @@ class ChatApp:
 
         # ── 媒体 ──
         media_menu = tk.Menu(menubar, tearoff=0)
+        media_menu.add_command(label="🎵 音乐播放器", command=self._run_music_player) 
+        
         media_menu.add_command(label="📻 网络广播", command=self._run_radio_player)
         media_menu.add_command(label="⏹️ 停止广播", command=self._stop_radio)
         media_menu.add_separator()
@@ -1153,19 +1155,20 @@ class ChatApp:
         )
 
     def _stop_radio(self):
-        """⏹️ 停止广播"""
-        if not hasattr(self, "_radio_player") or self._radio_player is None:
-            self._append_message("system", "⏹️ 当前没有在播放")
-            return
-        stopped = self._radio_player.stop()
+        """⏹️ 停止所有媒体（广播 + 音乐）"""
+        stopped = False
+        if getattr(self, "_radio_player", None):
+            if self._radio_player.stop():
+                stopped = True
+        if getattr(self, "_music_player", None):
+            if self._music_player.stop():
+                stopped = True
+
         if stopped:
-            self._radio_player.current_station = None      # ← 加这行
-            self._append_message("assistant", "⏹️ 已停止广播")
+            self._append_message("assistant", "⏹️ 已停止媒体播放")
         else:
-            self._append_message(
-                "system",
-                "⏹️ 无可停止的播放器（可能是系统程序或浏览器打开，请手动关闭）",
-            )
+            self._append_message("system",
+                "⏹️ 无可停止的播放器（可能是系统程序或浏览器打开，请手动关闭）")
 
     def _show_radio_favorites(self):
         """📋 查看/管理收藏"""
@@ -1178,6 +1181,149 @@ class ChatApp:
         lines = [f"📋 收藏电台（{len(favs)} 个）", ""]
         for i, name in enumerate(favs, 1):
             lines.append(f"  {i}. {name}")
+        self._append_message("assistant", "\n".join(lines))
+
+
+
+    # ============================================================
+    # 音乐播放器
+    # ============================================================
+    def _get_music_player(self):
+        if not hasattr(self, "_music_player") or self._music_player is None:
+            from skills.music_player import MusicPlayer
+            self._music_player = MusicPlayer()
+        return self._music_player
+
+    def _run_music_player(self):
+        """🎵 音乐播放器：搜索 → 播放 / 下载"""
+        player = self._get_music_player()
+
+        # 1) 输入搜索词
+        query = self._ask_string(
+            "🎵 音乐播放器",
+            "输入歌名 / 歌手（留空则扫描本地）：",
+            "",
+        )
+        if query is None:
+            return
+
+        # 2) 空输入 → 只扫描本地
+        if not query.strip():
+            def worker_scan():
+                return player.execute(action="scan")
+            self._run_skill("🎵 扫描本地音乐", worker_scan,
+                            on_success=self._show_music_scan_result)
+            return
+
+        # 3) 有输入 → 先搜本地，命中就本地，否则在线
+        self._append_message("system", f"🔍 搜索：{query} ...")
+        local = player.search_local(query)
+        if local:
+            hits = local
+            source = "local"
+        else:
+            hits = player.search_online(
+                query, limit=int(player.config["max_search_results"]),
+            )
+            source = "online"
+
+        if not hits:
+            self._append_message("assistant", f"❌ 未找到：{query}")
+            return
+
+        # 4) 结果列表
+        labels = []
+        for i, t in enumerate(hits, 1):
+            title = t.get("title", "未知")
+            artist = t.get("artist", "未知")
+            labels.append(f"{i}. {title} — {artist}")
+
+        choice = self._ask_choice(
+            "🎵 搜索结果",
+            f"找到 {len(hits)} 条（{source}）。选择一条：",
+            labels,
+            default=labels[0],
+        )
+        if not choice:
+            return
+        idx = int(choice.split(".", 1)[0]) - 1
+        track = hits[idx]
+
+        # 5) 选择动作
+        action = self._ask_choice(
+            "🎵 音乐播放器",
+            f"对「{track.get('title', '')}」：",
+            ["▶️ 播放", "⬇️ 下载到本地", "📄 查看详情"],
+            default="▶️ 播放",
+        )
+        if not action:
+            return
+
+        if action.startswith("▶️"):
+            self._append_message("system",
+                f"▶️ 播放：{track.get('title', '')} — {track.get('artist', '')}")
+            r = player.execute(action="play", track=track)
+            if r.get("status") == "success":
+                info = r["result"]
+                hint = {
+                    "vlc":    "💡 VLC 播放中，可从菜单「⏹️ 停止广播」停止",
+                    "mpv":    "💡 mpv 播放中，可从菜单「⏹️ 停止广播」停止",
+                    "system": "⚠️ 系统默认程序打开，无法从菜单停止",
+                }.get(info.get("player"), "")
+                self._append_message("assistant",
+                    f"✅ 播放中：{track.get('title', '')}\n"
+                    f"   播放器：{info.get('player', '?')}\n"
+                    f"   {hint}")
+            else:
+                self._append_message("assistant",
+                    f"❌ 播放失败：{r.get('error', '未知')}")
+
+        elif action.startswith("⬇️"):
+            self._append_message("system",
+                f"⬇️ 下载中（可能需要 30~60 秒）：{track.get('title', '')}")
+
+            def worker_dl():
+                return player.execute(
+                    action="download",
+                    url=track.get("url") or track.get("path"),
+                )
+            self._run_skill("⬇️ 下载音乐", worker_dl,
+                            on_success=self._show_music_download_result)
+
+        else:
+            lines = [f"📄 {track.get('title', '')}", ""]
+            for k, lab in [("artist", "🎤 艺术家"),
+                           ("album", "💿 专辑"),
+                           ("duration", "⏱️ 时长"),
+                           ("format", "🎵 格式"),
+                           ("url", "🌐 URL"),
+                           ("path", "📁 路径")]:
+                v = track.get(k)
+                if v:
+                    lines.append(f"{lab}：{v}")
+            self._append_message("assistant", "\n".join(lines))
+
+    def _show_music_scan_result(self, data):
+        total = data.get("total", 0)
+        tracks = data.get("tracks", [])
+        lines = [f"✅ 本地扫描完成：{total} 首", ""]
+        for i, t in enumerate(tracks[:15], 1):
+            lines.append(f"  {i}. {t.get('title', '')} — {t.get('artist', '')}")
+        if total > 15:
+            lines.append(f"  ... 共 {total} 首")
+        self._append_message("assistant", "\n".join(lines))
+
+    def _show_music_download_result(self, data):
+        if data.get("status") != "success":
+            self._append_message("assistant",
+                f"❌ 下载失败：{data.get('error', '未知')}")
+            return
+        saved = data.get("saved", "")
+        lines = [f"✅ 下载完成：{data.get('title', '')}", ""]
+        if saved:
+            lines.append(f"📁 {saved}")
+        if not data.get("converted"):
+            lines.append("💡 未检测到 ffmpeg，已保留原始音频格式")
         self._append_message("assistant", "\n".join(lines))
         
     # ============================================================
