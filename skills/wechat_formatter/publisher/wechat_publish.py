@@ -372,10 +372,11 @@ def upload_images_as_material(token, image_paths):
     return media_ids
 
 def extract_title_from_html(html):
-    """从 HTML 中提取 h1 标题"""
-    match = re.search(r"<h1[^>]*>(.*?)</h1>", html, re.DOTALL)
-    if match:
-        return re.sub(r"<[^>]+>", "", match.group(1)).strip()
+    """从 HTML 中提取标题（优先 h1，退化到 h2）"""
+    for tag in ("h1", "h2"):
+        match = re.search(rf"<{tag}[^>]*>(.*?)</{tag}>", html, re.DOTALL)
+        if match:
+            return re.sub(r"<[^>]+>", "", match.group(1)).strip()
     return None
 
 
@@ -431,9 +432,6 @@ def main():
                         help="newspic 模式下要发成贴图的本地图片路径列表")
     parser.add_argument("--content", default="",
                         help="newspic 模式下的文字说明（<=1000字）")
-
-    parser.add_argument("--title", "-T", default="",
-                        help="newspic 模式：草稿标题（默认取首图文件名）")
                         
     parser.add_argument("--dry-run", action="store_true",
                         help="只做排版和图片上传，不推送草稿箱（用于测试）")
@@ -554,6 +552,9 @@ def main():
 
     # ── 3. 提取标题 ──────────────────────────────────────────────────
     title = args.title or extract_title_from_html(html) or article_dir.name
+    # 剥掉任意层级的 Markdown 标题前缀 + 头尾空白
+    title = re.sub(r"^#+\s*", "", title).strip()
+    
     author = args.author
     print(f"标题: {title}")
     print(f"作者: {author}")

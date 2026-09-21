@@ -464,12 +464,19 @@ class TechHotArticle:
         # 提取标题和正文
         lines = content.strip().split("\n")
         article_title = lines[0].strip() if lines else title
-        if article_title.startswith("#"):
-            article_title = article_title[1:].strip()
+        # 剥掉任意层级的 Markdown 标题前缀（#、##、### ...）
+        article_title = re.sub(r"^#+\s*", "", article_title).strip()
         if not article_title:
             article_title = title
 
-        body = "\n".join(lines[1:]) if len(lines) > 1 else content
+        # body 里如果紧跟一行纯 Markdown 标题，也顺手剥掉
+        body_lines = lines[1:] if len(lines) > 1 else []
+        while body_lines and not body_lines[0].strip():
+            body_lines.pop(0)
+        if body_lines:
+            body_lines[0] = re.sub(r"^#+\s*", "", body_lines[0]).strip()
+
+        body = "\n".join(body_lines) if body_lines else content
 
         return {
             "title": article_title,

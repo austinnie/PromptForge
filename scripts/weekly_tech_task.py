@@ -35,8 +35,10 @@ if str(PROJECT_ROOT) not in sys.path:
 
 def build_markdown(article_json: dict, out_md: Path) -> str:
     """把 TechHotArticle 的 JSON 拼成带配图的 Markdown"""
+    import re
     article = article_json["article"]
-    title = article["title"]
+    # 防御：万一 title 还带 Markdown 标题前缀，剥干净
+    title = re.sub(r"^#+\s*", "", article["title"]).strip() or "未命名"
     body = article["body"]
 
     image_positions = {
