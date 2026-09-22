@@ -28,6 +28,12 @@ if str(PROJECT_ROOT) not in sys.path:
 
 logger = logging.getLogger(__name__)
 
+try:
+    import yandexsearcher
+    YANDEX_SEARCHER_AVAILABLE = True
+except ImportError:
+    YANDEX_SEARCHER_AVAILABLE = False
+    
 # 优先新包名 ddgs，回退旧包名 duckduckgo_search
 try:
     from ddgs import DDGS
@@ -39,7 +45,7 @@ except ImportError:
     except ImportError:
         DDGS_AVAILABLE = False
 
-
+    
 class SearchEngine:
     """匿名搜索引擎"""
 
@@ -86,6 +92,18 @@ class SearchEngine:
     # ------------------------------------------------------------
     def search(self, query: str, kind: str = "images",
                limit: int = 20) -> List[Dict[str, Any]]:
+        # 图片：百度 → Yandex → ddgs(Bing)
+        if kind == "images":
+            hits = self._search_baidu_images(query, limit)
+            if hits:
+                return hits
+            logger.warning("百度图片无结果，回退 Yandex")
+
+            hits = self._search_yandex_images(query, limit)
+            if hits:
+                return hits
+            logger.warning("Yandex 图片无结果，回退 ddgs（Bing）")
+            
         if not DDGS_AVAILABLE:
             return []
 
@@ -143,6 +161,144 @@ class SearchEngine:
         logger.info(f"搜索 '{query}' ({kind}) → {len(results)} 条")
         return results[:limit]
 
+
+
+    # ------------------------------------------------------------
+    # 百度图片搜索（无 Key 直连）
+    # ------------------------------------------------------------
+    def _search_baidu_images(self, query: str, limit: int = 20) -> List[Dict[str, Any]]:
+        """调百度图片 JSON 接口，无需 API Key"""
+        import json as _json
+
+        url = "https://image.baidu.com/search/acjson"
+        params = {
+            "tn":       "resultjson_com",
+            "ipn":      "rj",
+            "ct":       "201326592",
+            "fp":       "result",
+            "queryWord": query,
+            "cl":       "2",
+            "lm":       "-1",
+            "ie":       "utf-8",
+            "oe":       "utf-8",
+            "st":       "-1",
+            "word":     query,
+            "face":     "0",
+            "istype":   "2",
+            "nc":       "1",
+            "pn":       "0",
+            "rn":       str(min(max(limit, 30), 60)),   # 接口最少 30
+        }
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/122.0.0.0 Safari/537.36"
+            ),
+            "Referer": "https://image.baidu.com/",
+            "Accept":  "application/json, text/plain, */*",
+        }
+
+        try:
+            r = requests.get(url, params=params, headers=headers, timeout=15)
+            r.raise_for_status()
+            import json as _json
+
+            text = r.text
+            # 百度返回的 JSON 里 URL 带非法反斜杠转义（\p, \x 等），
+            # 先把「非合法转义的反斜杠」变成「双反斜杠」
+            text = re.sub(r'\\(?!["\\/bfnrtu])', r'\\\\', text)
+
+            data = _json.loads(text, strict=False)
+        except Exception as e:
+            logger.error(f"百度图片搜索失败: {e}")
+            return []
+
+        results: List[Dict[str, Any]] = []
+        for item in (data.get("data") or []):
+            if not item:
+                continue
+            # 原图 URL：replaceUrl[0].ObjURL 是明文的
+            img_url = ""
+            replace = item.get("replaceUrl") or []
+            if replace and isinstance(replace, list):
+                img_url = replace[0].get("ObjURL", "") or ""
+            if not img_url:
+                img_url = item.get("middleURL") or item.get("thumbURL") or ""
+            if not img_url:
+                continue
+
+            results.append({
+                "kind":      "image",
+                "title":     item.get("fromPageTitleEnc", "") or "",
+                "url":       img_url,
+                "thumbnail": item.get("thumbURL", "") or "",
+                "source":    item.get("fromURLHost", "") or "",
+                "page":      item.get("fromURL", "") or "",
+                "width":     item.get("width", 0),
+                "height":    item.get("height", 0),
+                "engine":    "baidu",
+            })
+            if len(results) >= limit:
+                break
+
+        logger.info(f"百度图片 '{query}' → {len(results)} 条")
+        return results
+        
+
+    # ------------------------------------------------------------
+    # Yandex 图片搜索（yandex-searcher 库）
+    # ------------------------------------------------------------
+    def _search_yandex_images(self, query: str, limit: int = 20) -> List[Dict[str, Any]]:
+        """用 yandex-searcher 搜图片。
+
+        注意：该库底层启动 Selenium/Chrome，单次调用 5~10 秒；
+        返回的 URL 是 Yandex 缩略图（-images-thumbs），分辨率较小。
+        """
+        if not YANDEX_SEARCHER_AVAILABLE:
+            return []
+
+        try:
+            raw = yandexsearcher.get_picture_urls(query)
+        except Exception as e:
+            logger.error(f"Yandex 图片搜索失败: {e}")
+            return []
+
+        if not raw:
+            return []
+
+        results: List[Dict[str, Any]] = []
+        for url in raw:
+            if not isinstance(url, str):
+                continue
+            if not url.startswith(("http://", "https://")):
+                continue
+
+            # 过滤黑名单
+            host = urlparse(url).netloc.lower()
+            if any(b in host for b in self._BLOCKED_HOSTS):
+                continue
+
+            # 尝试把缩略图 URL 换成更大尺寸（Yandex 内部约定）
+            # 原图 URL 通常移除 "-thumbs" 或调大 n 参数
+
+            results.append({
+                "kind":      "image",
+                "title":     "",
+                "url":       url,          # 优先大图
+                "thumbnail": url,              # 缩略图留底
+                "source":    "",
+                "page":      "",
+                "width":     0,
+                "height":    0,
+                "engine":    "yandex",
+            })
+            if len(results) >= limit:
+                break
+
+        logger.info(f"Yandex 图片 '{query}' → {len(results)} 条")
+        return results
+        
     # ------------------------------------------------------------
     # 下载
     # ------------------------------------------------------------
