@@ -71,6 +71,7 @@ class VideoPlayer:
         "bilibili": "bilisearch",
         "youtube":  "ytsearch",
         "niconico": "nicosearch",
+        "soundcloud": "scsearch",
     }
 
     _MPV_WIN_PATHS = [
@@ -179,13 +180,21 @@ class VideoPlayer:
             return []
 
         if source == "all":
-            sources = ["bilibili", "youtube"]
+            sources = ["bilibili", "youtube", "soundcloud"]
+        elif source == "dailymotion":
+            sources = ["dailymotion"]            
         elif source in self.SEARCH_PREFIX:
             sources = [source]
         else:
             sources = ["bilibili"]
 
         results: List[Dict[str, Any]] = []
+
+        # Dailymotion 无官方搜索前缀，单独走 HTML 抓取
+        if "dailymotion" in sources:
+            results.extend(self._search_dailymotion_html(query, limit))
+            sources = [s for s in sources if s != "dailymotion"]
+            
         for src in sources:
             try:
                 prefix = self.SEARCH_PREFIX[src]
@@ -230,6 +239,46 @@ class VideoPlayer:
 
         return results[:limit]
 
+    def _search_dailymotion_html(self, query: str,
+                                 limit: int = 15) -> List[Dict[str, Any]]:
+        """抓 Dailymotion 搜索页 HTML，抽视频 id"""
+        import requests
+        from urllib.parse import quote_plus
+
+        search_url = f"https://www.dailymotion.com/search/{quote_plus(query)}/videos"
+        try:
+            r = requests.get(
+                search_url,
+                headers={"User-Agent": "Mozilla/5.0"},
+                timeout=20,
+            )
+            r.raise_for_status()
+            html = r.text
+        except Exception as e:
+            logger.error(f"Dailymotion 搜索失败: {e}")
+            return []
+
+        seen = set()
+        results: List[Dict[str, Any]] = []
+        for m in re.finditer(r'/video/(x[a-z0-9]{5,})', html):
+            vid = m.group(1)
+            if vid in seen:
+                continue
+            seen.add(vid)
+            results.append({
+                "title":        f"dailymotion {vid}",
+                "url":          f"https://www.dailymotion.com/video/{vid}",
+                "uploader":     "",
+                "duration":     0,
+                "duration_str": "",
+                "source":       "dailymotion",
+            })
+            if len(results) >= limit:
+                break
+
+        logger.info(f"Dailymotion 搜索 '{query}' → {len(results)} 条")
+        return results
+        
     # ------------------------------------------------------------
     # 播放
     # ------------------------------------------------------------

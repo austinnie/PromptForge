@@ -1645,6 +1645,7 @@ class ChatApp:
         source_label = self._ask_choice(
             "📺 视频播放器", "选择来源：",
             ["🇨🇳 B站（bilibili）", "🌐 YouTube", "🇯🇵 ニコニコ",
+             "🎵 SoundCloud", "📺 Dailymotion",
              "🌍 全部", "🔗 直接输入地址"],
             default="🇨🇳 B站（bilibili）",
         )
@@ -1660,6 +1661,8 @@ class ChatApp:
             "🇨🇳 B站（bilibili）": "bilibili",
             "🌐 YouTube":          "youtube",
             "🇯🇵 ニコニコ":         "niconico",
+            "🎵 SoundCloud":       "soundcloud",   # ← 新增
+            "📺 Dailymotion":      "dailymotion",  # ← 新增
             "🌍 全部":             "all",
         }
         source = source_map[source_label]
@@ -1769,11 +1772,32 @@ class ChatApp:
     def _show_sniffer_result(self, data):
         """把嗅探结果喂给 _show_video_search_results 复用选单逻辑"""
         items = data.get("items", [])
+        kind = data.get("kind", "")
+        url = data.get("url", "")
+
+        # 单视频场景：问用户要不要额外抓"相关视频"
+        if kind == "single" and len(items) == 1:
+            ask = messagebox.askyesno(
+                "🔍 网页视频提取",
+                "这是单个视频。\n\n是否额外抓取页面上的「相关视频」列表？",
+                parent=self.root,
+            )
+            if ask:
+                self._append_message("system", f"🔍 抓取相关视频：{url} ...")
+
+                def worker():
+                    return self._get_video_sniffer().execute(
+                        action="related", url=url, max_count=30,
+                    )
+
+                self._run_skill("🔍 抓取相关视频", worker,
+                                on_success=self._show_sniffer_result)
+                return
+
         if not items:
             self._append_message("assistant", "❌ 未发现可下载的视频")
             return
 
-        kind = data.get("kind", "single")
         title = data.get("title", "")
         total = data.get("total", len(items))
 
@@ -1794,8 +1818,8 @@ class ChatApp:
             "source":       it["source"],
         } for it in items]
 
-        self._show_video_search_results(hits, title or data.get("url", ""), "sniffer")
-        
+        self._show_video_search_results(hits, title or url, "sniffer")
+    
     # ============================================================
     # 视频搜索结果：保存 / 展示 / 重开
     # ============================================================
