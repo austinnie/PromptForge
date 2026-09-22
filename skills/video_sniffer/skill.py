@@ -170,14 +170,7 @@ class VideoSniffer:
         try:
             r = requests.get(
                 page_url,
-                headers={
-                    "User-Agent": (
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                        "AppleWebKit/537.36 (KHTML, like Gecko) "
-                        "Chrome/122.0.0.0 Safari/537.36"
-                    ),
-                    "Referer": page_url,
-                },
+                headers={"User-Agent": "Mozilla/5.0"},
                 timeout=20,
             )
             r.raise_for_status()
@@ -255,6 +248,123 @@ class VideoSniffer:
             },
         }
         
+
+    # ------------------------------------------------------------
+    # 相关视频提取（从单视频页 HTML 抽推荐列表）
+    # ------------------------------------------------------------
+    def extract_related(self, page_url: str,
+                        max_count: int = 30) -> Dict[str, Any]:
+        """从视频页 HTML 里提取"相关视频"链接"""
+        import re
+        import requests
+        from urllib.parse import urlparse, urlunparse
+
+        try:
+            r = requests.get(
+                page_url,
+                headers={"User-Agent": "Mozilla/5.0"},
+                timeout=20,
+            )
+            r.raise_for_status()
+            html = r.text
+        except Exception as e:
+            return {"status": "error", "error": f"抓取失败: {e}"}
+
+        base = urlparse(page_url)
+        self_path = urlunparse((base.scheme, base.netloc, base.path, "", "", ""))
+        found: set = set()
+
+        # 0) 最宽松：直接抽所有 /video/xXXXXX
+        for m in re.finditer(r'/video/(x[a-z0-9]{5,})', html):
+            vid = m.group(1)
+            u = f"{base.scheme}://{base.netloc}/video/{vid}"
+            if u == self_path:
+                continue
+            found.add(u)
+
+        # 1) <a href="...">
+        for m in re.finditer(r'<a[^>]+href=["\']([^"\']+)["\']', html):
+            u = self._normalize_url(m.group(1), base)
+            if not u:
+                continue
+            p = urlparse(u)
+            if p.netloc != base.netloc:
+                continue
+            if not any(k in u for k in ("/video/", "/play/")):
+                continue
+            u = urlunparse((p.scheme, p.netloc, p.path, "", "", ""))
+            if u == self_path:
+                continue
+            found.add(u)
+
+        # 2) 绝对 URL
+        for m in re.finditer(
+            r'https?://(?:www\.)?' + re.escape(base.netloc) +
+            r'/video/(x[a-z0-9]+)',
+            html,
+        ):
+            u = f"{base.scheme}://{base.netloc}/video/{m.group(1)}"
+            if u == self_path:
+                continue
+            found.add(u)
+
+        # 3) JSON 字段
+        for m in re.finditer(
+            r'"(?:url|videoUrl|video_url|href)"\s*:\s*"([^"]+)"', html,
+        ):
+            u = self._normalize_url(m.group(1), base)
+            if not u:
+                continue
+            if "/video/" not in u and "/play/" not in u:
+                continue
+            if urlparse(u).netloc != base.netloc:
+                continue
+            if u == self_path:
+                continue
+            found.add(u)
+
+        items = []
+        for u in sorted(found)[:max_count]:
+            vid = u.rstrip("/").split("/")[-1]
+            items.append({
+                "title":        f"视频 {vid}",
+                "url":          u,
+                "id":           vid,
+                "duration":     0,
+                "duration_str": "",
+                "uploader":     "",
+                "thumbnail":    "",
+                "source":       "related",
+                "description":  "",
+            })
+
+        logger.info(f"相关视频 {page_url} → {len(items)} 条")
+        return {
+            "status": "success",
+            "result": {
+                "url":   page_url,
+                "kind":  "related",
+                "title": f"相关视频（{len(items)} 条）",
+                "count": len(items),
+                "total": len(items),
+                "items": items,
+            },
+        }
+        
+    @staticmethod
+    def _normalize_url(u: str, base) -> str:
+        """把相对 URL 补全为绝对 URL，失败返回空串"""
+        if not u:
+            return ""
+        u = u.replace("\\/", "/").strip()
+        if u.startswith("//"):
+            return base.scheme + ":" + u
+        if u.startswith("/"):
+            return f"{base.scheme}://{base.netloc}{u}"
+        if u.startswith(("http://", "https://")):
+            return u
+        return ""
+        
     # ------------------------------------------------------------
     # execute
     # ------------------------------------------------------------
@@ -278,7 +388,12 @@ class VideoSniffer:
                 if not items:
                     return {"status": "error", "error": "未发现视频"}
                 return {"status": "success", "result": items[0]}
+            if action == "related":
+                return self.extract_related(
+                    url, kwargs.get("max_count", 30),
+                )
             return {"status": "error", "error": f"未知 action: {action}"}
+            
         except Exception as e:
             logger.error(f"执行失败: {e}")
             import traceback
