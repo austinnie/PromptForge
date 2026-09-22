@@ -4,7 +4,7 @@ PromptForge 是一个基于 Stable Diffusion 与多家 AI API 的智能对话式
 
 交互方式上，PromptForge 提供 CLI 与整体框架调用，GUI 上预设多种生图提示词集合，选择后点击发送即可生图；也可以自己写提示词，纯会话直接触发生图、生视频意图。此外还预设了新闻热点、科技信息，一键获取。
 
-技能系统上，项目集成了多种 SKILLS，每个技能既能独立执行，也能组合使用。图片生成后，支持图片鉴赏并形成图文混排的文章，输出 md / word / pdf / html 等多种格式；还能对生成的文章进行排版，适配微信公众号直接发布。另外集成了多平台分发 SKILL，执行 multi_publish.py 即可一键分发到多个平台。
+技能系统上，项目集成了多种 SKILLS，每个技能既能独立执行，也能组合使用。图片生成后，支持图片鉴赏并形成图文混排的文章，输出 md / word / pdf / html 等多种格式；还能对生成的文章进行排版，适配微信公众号直接发布。另外集成了多平台分发 SKILL，执行 multi_publish.py 即可一键分发到多个平台。内置匿名搜索引擎（无需 API Key），支持图片 / 视频 / 网页三类检索与一键下载；同时集成视频播放器（B站 / YouTube / ニコニコ，支持边播边存、断点重播）、音乐播放器（本地扫描 + 在线搜索 + 下载）、网络广播播放器（6 大分类电台库）。媒体播放支持统一暂停 / 继续 / 停止 / 重播。
 
 简单总结要点有：
 - **图像生成**：本地 Stable Diffusion + 云端多引擎（HuggingFace / 通义万相 / 文心一格 / 腾讯混元 / Pollinations / Agnes / Replicate / Stability AI），支持文生图、图生图、双人 / 多人合成
@@ -15,6 +15,9 @@ PromptForge 是一个基于 Stable Diffusion 与多家 AI API 的智能对话式
 - **多媒体成片**：小说 → 场景拆分 → 视频 → 配音 → 音乐 → 字幕 → 一键合成
 - **排版发布**：Markdown 一键排版为微信公众号 HTML（33 主题），支持 md / word / pdf / html 多格式导出
 - **多平台分发**：通过 social_auto_upload 技能推送至小红书、抖音、快手、B站、视频号、百家号、支付宝生活号、微博、虎扑、YouTube 等 10+ 平台
+- **匿名搜索**：DuckDuckGo + 百度 + Yandex 三源聚合，无需 API Key；支持图片 / 视频 / 网页，一键下载
+- **媒体播放**：视频（B站 / YouTube / ニコニコ，支持边播边存）、音乐（本地 + 在线 + 下载）、网络广播（6 大分类电台），统一暂停 / 继续 / 停止 / 重播
+- **每日 / 每周自动化**：一键生图 → 鉴赏 → 排版 → 推送草稿箱；每周技术热点文章自动生成
 
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -29,7 +32,10 @@ PromptForge 是一个基于 Stable Diffusion 与多家 AI API 的智能对话式
 - **丰富的 API 支持**：Pollinations（免费）、Agnes AI（免费）、Free API、通义万相、文心一格、腾讯混元、HuggingFace、Replicate、Stability AI
 - **智能意图分析**：自动识别文生图、图生图、双人/多人合成、视频生成、多媒体创作、普通对话
 - **LLM 增强**：可选 Ollama 本地大模型优化提示词、生成小说、生成技术文章
-- **技能系统**：内置 `image_generator`、`video_generator`、`music_generator`、`image_curator`、`wechat_formatter`、`news_aggregator`、`novel_writer`、`tech_hot_article`、`voice_assistant`
+- **技能系统**：内置 `image_generator`、`video_generator`、`music_generator`、`image_curator`、`wechat_formatter`、`news_aggregator`、`novel_writer`、`tech_hot_article`、`voice_assistant`、`search_engine`、`video_player`、`music_player`、`radio_player`、`daily_pipeline`
+- **匿名搜索**：DuckDuckGo / 百度 / Yandex 三源聚合，图片 / 视频 / 网页三类检索，一键下载（含防盗链绕过、webp 自动转 png）
+- **媒体播放**：视频播放器（B站 / YouTube / ニコニコ，边播边存、搜索列表保存、直接 URL 播放）、音乐播放器（本地扫描 + 在线搜索 + 下载）、网络广播（6 大分类）
+- **定时任务**：每日生图管线（生图 → 鉴赏 → 排版 → 推草稿箱）、每周技术热点文章
 - **安全过滤**：内置内容安全检查器，支持安全开关与敏感词清理
 - **轻量级 GUI**：基于 Tkinter 的简洁图形界面，支持图片缩略图预览、双击查看大图
 
@@ -78,6 +84,25 @@ PromptForge 是一个基于 Stable Diffusion 与多家 AI API 的智能对话式
 - **智能意图分析**：自动识别 7 种意图（文生图、图生图、双人合成、多人合成、对话、视频、多媒体）
 - **LLM 增强**：可选 Ollama 本地大模型优化提示词
 - **安全过滤**：内置内容安全检查，独立开关控制
+
+### 🔍 匿名搜索
+- **三源聚合**：DuckDuckGo（文字）+ 百度（图片，原图直链）+ Yandex（图片兜底）
+- **三类检索**：图片 / 视频 / 网页，无需 API Key
+- **图片下载**：Referer + 浏览器 UA 绕过防盗链，PIL 探测真实格式，webp 自动转 png
+- **视频下载**：直接复用到 `video_player`，B站 / YouTube / ニコニコ 都能搜能下
+- **黑名单过滤**：已知拒绝下载的图床（699pic / zhimg 等）自动跳过
+
+### 📺 媒体播放
+- **视频播放器**：B站 / YouTube / ニコニコ 搜索 + 直接 URL 播放（yt-dlp 全站点），mpv `--stream-record` 边播边存，搜索列表可保存/重开
+- **音乐播放器**：本地扫描（带缓存）+ yt-dlp 在线搜索 + 下载，mpv / VLC 可控进程
+- **网络广播**：内置 6 大分类（日本 / 中国 / 韩国 / 国际 / 音乐 / 网页）电台库，支持收藏
+- **统一控制**：暂停 / 继续（psutil 进程挂起）、停止（taskkill /F）、重播上一次
+- **观看历史**：视频播放器记录历史，音乐播放器支持本地歌单
+
+### 🤖 自动化任务
+- **每日任务**：一键执行「生图 → 鉴赏 → 排版 → 推送草稿箱」，日志实时转发到聊天区
+- **每周技术热点**：调 `scripts/weekly_tech_task.py`，技术热点 → 文章 → 排版 → 封面 → 推草稿箱
+- **发布类型**：支持 `news`（文章）/ `newspic`（贴图）/ `both`（文章 + 贴图，共用同一批图）
 
 ### 🖥️ 界面与体验
 - **双模式切换**：本地 / 云端一键切换
@@ -385,7 +410,13 @@ PromptForge/
 │   ├── news_aggregator/          # 新闻聚合 + AI 摘要
 │   ├── novel_writer/             # 小说生成（多语言）
 │   ├── tech_hot_article/         # 技术热点文章 + 配图 + Word
-│   └── voice_assistant/          # 语音合成 / 识别
+│   ├── voice_assistant/          # 语音合成 / 识别
+│   ├── search_engine/            # 匿名搜索（DDG + 百度 + Yandex）
+│   ├── video_player/             # 视频播放（B站/YouTube/ニコニコ + URL 直通）
+│   ├── music_player/             # 音乐播放（本地 + 在线 + 下载）
+│   ├── radio_player/             # 网络广播（6 大分类）
+│   ├── daily_pipeline/           # 每日自动化（生图→鉴赏→排版→推送）
+│   └── social_auto_upload/       # 多平台分发
 ├── multimedia/                   # 多媒体工作流
 │   ├── workflow.py               # 全自动创作主流程
 │   ├── assembler.py              # 视频合成
@@ -431,6 +462,11 @@ PromptForge/
 - `novel_writer`：小说生成技能，使用本地 Ollama 大模型自动写小说，支持多语言与断点续写
 - `tech_hot_article`：技术热点文章生成器，基于实时热点生成文章，自动配图并输出 Word 文档
 - `voice_assistant`：语音合成（TTS）与语音识别（STT）助手，支持多语言与长文本分段
+- `search_engine`：匿名搜索引擎，DuckDuckGo + 百度 + Yandex 三源聚合，图片 / 视频 / 网页三类检索与下载
+- `video_player`：视频播放器，B站 / YouTube / ニコニコ 搜索 + 直接 URL 播放 + mpv 边播边存 + 搜索列表保存
+- `music_player`：音乐播放器，本地扫描 + 在线搜索 + 下载 + 情绪歌单
+- `radio_player`：网络广播播放器，6 大分类电台库 + 收藏持久化
+- `daily_pipeline`：每日自动化任务，生图 → 鉴赏 → 排版 → 推送草稿箱（支持 news / newspic / both）
 
 ### image_generator 单独使用举例
 ```text
@@ -681,6 +717,145 @@ python skills/tech_hot_article/tech_hot_article_cli.py --style "深度技术型"
 ```
 写作风格：专业分析型, 通俗科普型, 深度技术型, 行业观察型, 趋势预测型
 
+## search_engine 单独使用举例
+
+```python
+from skills.search_engine import SearchEngine
+
+se = SearchEngine()
+
+# 搜索图片（自动 百度 → Yandex → ddgs 三级兜底）
+r = se.execute(action="search", query="樱花", kind="images", limit=10)
+for h in r["result"]["results"]:
+    print(h["engine"], h["title"][:40], h["url"][:80])
+
+# 下载单张
+se.execute(action="download_image", url="https://...", referer="https://...")
+
+# 批量下载（items 带 referer）
+se.execute(action="download_batch_items", items=[
+    {"url": "https://...", "referer": "https://..."},
+    # ...
+])
+```
+
+**图片源优先级**：百度（原图直链）→ Yandex（缩略图）→ ddgs (Bing)
+**视频源优先级**：`video_player`（B站 / YouTube / ニコニコ）→ ddgs (Bing)
+**图片下载**：自动过滤黑名单图床，webp 自动转 png，PIL 探测真实格式
+
+## video_player 单独使用举例
+
+```python
+from skills.video_player import VideoPlayer
+
+vp = VideoPlayer()
+
+# 搜索（bilibili / youtube / niconico / all）
+r = vp.execute(action="search", query="仙逆 动画", source="all", limit=10)
+for h in r["result"]["results"]:
+    print(h["source"], h["title"][:40], h["url"][:60])
+
+# 播放（record=False 只播不存；record=True 边播边存）
+vp.execute(action="play", url="https://www.bilibili.com/video/BV...", record=True)
+
+# 控制
+vp.execute(action="pause")
+vp.execute(action="resume")
+vp.execute(action="stop")
+vp.execute(action="replay")   # 重播上一个
+vp.execute(action="status")
+```
+
+**直接 URL**：`play(url=...)` 支持 yt-dlp 能解析的所有站点（1000+，包括 Vimeo / Dailymotion / 腾讯视频 / 微博视频等）。
+**边播边存**：需要装 mpv（`--stream-record`），只有 VLC 时会降级为"下载后播放"。
+
+## music_player 单独使用举例
+
+```python
+from skills.music_player import MusicPlayer
+
+mp = MusicPlayer()
+
+# 本地扫描（带缓存）
+r = mp.execute(action="scan")
+print(f"本地共 {r['result']['total']} 首")
+
+# 在线搜索（yt-dlp）
+r = mp.execute(action="search", query="稻香")
+for h in r["result"]["online"]:
+    print(h["title"], h["artist"])
+
+# 播放 / 下载
+mp.execute(action="play", query="稻香")
+mp.execute(action="download", query="稻香")
+
+# 情绪歌单
+r = mp.execute(action="playlist", mood="relax", count=10)
+
+# 控制
+mp.execute(action="pause")
+mp.execute(action="resume")
+mp.execute(action="stop")
+mp.execute(action="replay")
+```
+
+**下载格式**：装 ffmpeg 时自动转 mp3，否则保留原格式（webm / m4a）。
+
+## radio_player 单独使用举例
+
+```python
+from skills.radio_player import RadioPlayer
+
+rp = RadioPlayer()
+
+# 列出分类
+print(rp.get_categories())   # japan / china / korea / international / music / web
+
+# 列出某分类电台
+print(rp.get_stations("china"))
+
+# 播放
+rp.execute(action="play", station="中国之声", category="china")
+
+# 收藏
+rp.execute(action="favorite", station="Jazz FM")
+print(rp.get_favorites())
+
+# 控制
+rp.execute(action="pause")
+rp.execute(action="resume")
+rp.execute(action="stop")
+rp.execute(action="replay")
+```
+
+**播放器**：优先 mpv / ffplay / vlc（可停可控），都没有时回退系统默认程序。
+**网页电台**（radiko / J-WAVE 等）自动走浏览器打开。
+
+## daily_pipeline 单独使用举例
+
+```python
+from skills.daily_pipeline import DailyPipeline
+
+pipe = DailyPipeline({"output_root": "output/daily"})
+
+# 每天：生 6 张图 → 鉴赏 → 排版 → 推草稿箱
+r = pipe.execute(topic="月下松林", count=6, article_type="news")
+
+# 文章 + 贴图，共用同一批图
+r = pipe.execute(topic="月下松林", count=6, article_type="both")
+
+# 复用现有图片目录，只发贴图
+r = pipe.execute(article_type="newspic",
+                 skip_generate=True,
+                 image_dir="output/daily/20260922_220323_images")
+
+# CLI
+# python -m skills.daily_pipeline.skill --topic "月下松林" --count 6 --type both
+```
+
+**article_type**：`news`（只发文章）/ `newspic`（只发贴图）/ `both`（文章 + 贴图）。
+
+
 ## voice_assistant 单独使用举例
 ```text
 # 文本转语音（TTS）
@@ -775,6 +950,11 @@ print(result["result"]["audio_path"])
 | `novel_writer` | 仅 Python 调用 | 小说生成（多语言） |
 | `tech_hot_article` | `tech_hot_article_cli.py` | 技术文章生成 + 配图 |
 | `voice_assistant` | `skill.py --action` | TTS / STT |
+| `search_engine` | 仅 Python 调用 | 匿名搜索（图片/视频/网页）+ 下载 |
+| `video_player` | 仅 Python 调用 | 视频播放（B站/YouTube/ニコニコ + URL 直通） |
+| `music_player` | 仅 Python 调用 | 音乐播放（本地 + 在线 + 下载） |
+| `radio_player` | 仅 Python 调用 | 网络广播（6 大分类） |
+| `daily_pipeline` | `skill.py` / `scripts/daily_task.py` | 每日生图管线（生图→鉴赏→排版→推送） |
 
 ## 完整调用路径对照
 
@@ -789,6 +969,11 @@ print(result["result"]["audio_path"])
 | `novel_writer` | Python 调用 `from skills.novel_writer.skill import NovelWriterOllama` |
 | `tech_hot_article` | `python skills/tech_hot_article/tech_hot_article_cli.py` |
 | `voice_assistant` | `python skills/voice_assistant/skill.py --action tts` |
+| `search_engine` | Python 调用 `from skills.search_engine import SearchEngine` |
+| `video_player` | Python 调用 `from skills.video_player import VideoPlayer` |
+| `music_player` | Python 调用 `from skills.music_player import MusicPlayer` |
+| `radio_player` | Python 调用 `from skills.radio_player import RadioPlayer` |
+| `daily_pipeline` | `python -m skills.daily_pipeline.skill --type both` 或 `python scripts/daily_task.py` |
 
 ### 外部工具依赖
 
