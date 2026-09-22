@@ -1642,7 +1642,7 @@ class ChatApp:
 
         source_label = self._ask_choice(
             "📺 视频播放器", "选择来源：",
-            ["🇨🇳 B站（bilibili）", "🌐 YouTube", "🌍 全部"],
+            ["🇨🇳 B站（bilibili）", "🌐 YouTube", "🇯🇵 ニコニコ", "🌍 全部"],
             default="🇨🇳 B站（bilibili）",
         )
         if not source_label:
@@ -1650,6 +1650,7 @@ class ChatApp:
         source_map = {
             "🇨🇳 B站（bilibili）": "bilibili",
             "🌐 YouTube":          "youtube",
+            "🇯🇵 ニコニコ":         "niconico",
             "🌍 全部":             "all",
         }
         source = source_map[source_label]

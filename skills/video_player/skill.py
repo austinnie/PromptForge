@@ -70,6 +70,7 @@ class VideoPlayer:
     SEARCH_PREFIX = {
         "bilibili": "bilisearch",
         "youtube":  "ytsearch",
+        "niconico": "nicosearch",
     }
 
     _MPV_WIN_PATHS = [
