@@ -552,33 +552,56 @@ class ChatApp:
         )
 
     def _ask_choice(self, title, prompt, options, default=None):
-        """下拉选择对话框。取消返回 None。"""
-        from tkinter import simpledialog
+        """下拉选择对话框。取消返回 None。
+
+        修复：不再固定 geometry，用 minsize + 自动适配，
+        长标题/长选项不会再挤掉确认按钮。
+        """
         top = tk.Toplevel(self.root)
         top.title(title)
         top.transient(self.root)
         top.grab_set()
-        top.geometry("360x130")
+        top.minsize(420, 200)        # 最小尺寸，够放下按钮
 
-        ttk.Label(top, text=prompt, wraplength=330).pack(padx=15, pady=(15, 8), anchor="w")
+        # 标题（长文本自动换行，宽度按容器走）
+        ttk.Label(
+            top, text=prompt, wraplength=400, justify="left",
+        ).pack(padx=15, pady=(15, 8), anchor="w", fill=tk.X)
+
         var = tk.StringVar(value=default or (options[0] if options else ""))
-        combo = ttk.Combobox(top, textvariable=var, values=options, state="readonly", width=40)
-        combo.pack(padx=15, fill=tk.X)
+        combo = ttk.Combobox(
+            top, textvariable=var, values=options,
+            state="readonly", width=50,
+        )
+        combo.pack(padx=15, pady=(0, 8), fill=tk.X)
 
         result = {"value": None}
-        def on_ok():
+
+        def on_ok(event=None):
             result["value"] = var.get()
             top.destroy()
-        def on_cancel():
+
+        def on_cancel(event=None):
             top.destroy()
 
+        # 按钮固定放在底部，不被挤
         btn = ttk.Frame(top)
-        btn.pack(pady=12)
-        ttk.Button(btn, text="确定", command=on_ok).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn, text="取消", command=on_cancel).pack(side=tk.LEFT, padx=5)
+        btn.pack(side=tk.BOTTOM, pady=12)
+        ttk.Button(btn, text="✔️ 确定", command=on_ok, width=10).pack(side=tk.LEFT, padx=6)
+        ttk.Button(btn, text="✖️ 取消", command=on_cancel, width=10).pack(side=tk.LEFT, padx=6)
+
+        # 回车 = 确定，Esc = 取消
+        top.bind("<Return>", on_ok)
+        top.bind("<Escape>", on_cancel)
+
+        # 让 tkinter 自动算出合适尺寸
+        top.update_idletasks()
+        top.geometry("")            # 清空 geometry，让 tkinter 按内容自适应
+
+        combo.focus_set()
         top.wait_window()
         return result["value"]
-
+        
     # ============================================================
     # ✅ 第一批：图片鉴赏文章
     # ============================================================
