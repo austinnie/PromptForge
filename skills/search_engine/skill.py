@@ -344,12 +344,30 @@ class SearchEngine:
             return {"status": "error", "error": str(e)}
 
         # 用 PIL 读 header 判断真实格式（不解码整图，很快）
+        # 用 PIL 读 header 判断真实格式
         real_fmt = ""
         try:
             img = Image.open(io.BytesIO(raw))
             real_fmt = (img.format or "").lower()   # 'jpeg'/'png'/'webp'/'gif'
         except Exception:
             real_fmt = ""
+
+        # webp → png（统一格式，避免 Windows 预览问题）
+        if real_fmt == "webp":
+            try:
+                img = Image.open(io.BytesIO(raw))
+                # 有透明通道保留 RGBA，否则 RGB
+                if img.mode in ("RGBA", "LA", "P"):
+                    img = img.convert("RGBA")
+                else:
+                    img = img.convert("RGB")
+                buf = io.BytesIO()
+                img.save(buf, format="PNG", optimize=True)
+                raw = buf.getvalue()
+                real_fmt = "png"
+                logger.debug("webp 已转 png")
+            except Exception as e:
+                logger.warning(f"webp 转 png 失败，保留原格式: {e}")
 
         ext_map = {
             "jpeg": ".jpg", "jpg": ".jpg",
