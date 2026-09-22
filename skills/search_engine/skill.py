@@ -103,6 +103,14 @@ class SearchEngine:
             if hits:
                 return hits
             logger.warning("Yandex 图片无结果，回退 ddgs（Bing）")
+
+
+        # 视频：优先走 video_player（B站 + YouTube），失败回退 ddgs
+        if kind == "videos":
+            hits = self._search_videos_via_vp(query, limit)
+            if hits:
+                return hits
+            logger.warning("video_player 视频无结果，回退 ddgs")
             
         if not DDGS_AVAILABLE:
             return []
@@ -298,7 +306,42 @@ class SearchEngine:
 
         logger.info(f"Yandex 图片 '{query}' → {len(results)} 条")
         return results
-        
+
+
+    def _search_videos_via_vp(self, query, limit=20):
+        """复用 video_player 的 B站 + YouTube 搜索"""
+        try:
+            from skills.video_player import VideoPlayer
+            vp = VideoPlayer()
+            r = vp.execute(action="search", query=query,
+                           source="all", limit=limit)
+            if r.get("status") != "success":
+                return []
+            raw = r["result"].get("results", [])
+            # 转换成 search_engine 的标准格式
+            results = []
+            for v in raw:
+                title = (v.get("title") or "").strip()
+                # yt-dlp flat 模式下 B站标题可能为空，用 URL 尾段兜底
+                if not title or title == "未知":
+                    tail = (v.get("url") or "").rstrip("/").split("/")[-1]
+                    title = f"B站视频 {tail}" if tail else "未知视频"            
+                results.append({
+                    "kind":        "video",
+                    "title":       title,
+                    "url":         v.get("url", ""),
+                    "thumbnail":   "",
+                    "duration":    v.get("duration_str", ""),
+                    "publisher":   v.get("uploader", ""),
+                    "description": "",
+                    "engine":      v.get("source", "video_player"),
+                })
+            logger.info(f"video_player 视频 '{query}' → {len(results)} 条")
+            return results
+        except Exception as e:
+            logger.error(f"video_player 搜索失败: {e}")
+            return []
+            
     # ------------------------------------------------------------
     # 下载
     # ------------------------------------------------------------

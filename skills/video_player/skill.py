@@ -211,8 +211,13 @@ class VideoPlayer:
                     if not url:
                         continue
                     dur = e.get("duration") or 0
+                    title = e.get("title") or e.get("alt_title") or ""
+                    if not title:
+                        tail = url.rstrip("/").split("/")[-1]
+                        title = f"{src} {tail}" if tail else "未知"
+                  
                     results.append({
-                        "title":        e.get("title", "未知"),
+                        "title":        title,
                         "url":          url,
                         "uploader":     e.get("uploader") or e.get("channel") or "",
                         "duration":     dur,
