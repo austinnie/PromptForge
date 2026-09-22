@@ -53,6 +53,8 @@ class VideoSniffer:
             "max_entries": 50,      # playlist 最多展开多少条
             "timeout": 30,          # socket 超时
             "flat_mode": True,      # True=快，部分字段空；False=慢，字段全
+            "cookies_from_browser": None,   # ← 新增，可填 "chrome"/"edge"/"firefox"
+            "cookies_file": None, 
         }
         for k, v in defaults.items():
             self.config.setdefault(k, v)
@@ -74,10 +76,21 @@ class VideoSniffer:
             "socket_timeout": self.config["timeout"],
             "extract_flat": "in_playlist" if self.config["flat_mode"] else False,
         }
+        
+        # cookie 支持（优先级：cookies_file > cookies_from_browser）
+        if self.config.get("cookies_file"):
+            opts["cookiefile"] = self.config["cookies_file"]
+        elif self.config.get("cookies_from_browser"):
+            opts["cookiesfrombrowser"] = (self.config["cookies_from_browser"],)
+
 
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(url, download=False)
+        except yt_dlp.utils.UnsupportedError as e:
+            # yt-dlp 不支持的站点，走 HTML 嗅探兜底
+            logger.warning(f"yt-dlp 不支持，尝试 HTML 嗅探: {e}")
+            return self._html_fallback(url)
         except Exception as e:
             logger.error(f"分析失败: {e}")
             return {"status": "error", "error": str(e)}
@@ -143,6 +156,105 @@ class VideoSniffer:
             "description":  (entry.get("description") or "")[:200],
         }
 
+    # ------------------------------------------------------------
+    # HTML 嗅探兜底（yt-dlp 不支持的站点）
+    # ------------------------------------------------------------
+    # ------------------------------------------------------------
+    # HTML 嗅探兜底（yt-dlp 不支持的站点）
+    # ------------------------------------------------------------
+    def _html_fallback(self, page_url: str) -> Dict[str, Any]:
+        """从页面 HTML 里嗅探 <video> / <source> / m3u8 / mp4 直链"""
+        import re
+        import requests
+
+        try:
+            r = requests.get(
+                page_url,
+                headers={
+                    "User-Agent": (
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/122.0.0.0 Safari/537.36"
+                    ),
+                    "Referer": page_url,
+                },
+                timeout=20,
+            )
+            r.raise_for_status()
+            html = r.text
+        except Exception as e:
+            return {"status": "error",
+                    "error": f"yt-dlp 不支持且 HTML 抓取失败: {e}"}
+
+        urls = set()
+
+        # <video src="...">
+        for m in re.finditer(r'<video[^>]+src=["\']([^"\']+)["\']', html):
+            urls.add(m.group(1))
+
+        # <source src="...">
+        for m in re.finditer(r'<source[^>]+src=["\']([^"\']+)["\']', html):
+            urls.add(m.group(1))
+
+        # 裸 m3u8 / mp4
+        for pattern in (
+            r'https?://[^\s"\'\\<>]+\.m3u8[^\s"\'\\<>]*',
+            r'https?://[^\s"\'\\<>]+\.mp4[^\s"\'\\<>]*',
+        ):
+            for m in re.finditer(pattern, html):
+                urls.add(m.group(0))
+
+        # JSON 字段 "url": "..." / "playUrl": "..."
+        for m in re.finditer(
+            r'"(?:url|src|videoUrl|video_url|playUrl|play_url|source)"\s*:\s*"([^"]+)"',
+            html,
+        ):
+            u = m.group(1).replace("\\/", "/")
+            if ".m3u8" in u or ".mp4" in u:
+                urls.add(u)
+
+        # 清理
+        clean = []
+        for u in urls:
+            u = u.replace("\\/", "/").strip()
+            if u.startswith("//"):
+                u = "https:" + u
+            if not u.startswith(("http://", "https://")):
+                continue
+            if u in clean:
+                continue
+            clean.append(u)
+
+        if not clean:
+            return {"status": "error",
+                    "error": "yt-dlp 不支持该站点，且 HTML 里未发现可下载视频"
+                             "（可能是 JS 动态加载）"}
+
+        items = [{
+            "title":        f"视频 {i+1}",
+            "url":          u,
+            "id":           "",
+            "duration":     0,
+            "duration_str": "",
+            "uploader":     "",
+            "thumbnail":    "",
+            "source":       "html_sniffer",
+            "description":  "",
+        } for i, u in enumerate(clean)]
+
+        logger.info(f"HTML 嗅探 {page_url} → {len(items)} 条")
+        return {
+            "status": "success",
+            "result": {
+                "url":   page_url,
+                "kind":  "html",
+                "title": page_url.rstrip("/").split("/")[-1] or "网页视频",
+                "count": len(items),
+                "total": len(items),
+                "items": items,
+            },
+        }
+        
     # ------------------------------------------------------------
     # execute
     # ------------------------------------------------------------
