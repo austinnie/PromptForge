@@ -454,6 +454,8 @@ class ChatApp:
         media_menu = tk.Menu(menubar, tearoff=0)
         media_menu.add_command(label="📺 视频播放器", command=self._run_video_player)
         media_menu.add_command(label="📂 打开视频搜索列表", command=self._open_video_search_lists)
+        
+        media_menu.add_command(label="🔍 网页视频提取", command=self._run_video_sniffer)  # ← 新增        
         media_menu.add_command(label="🎵 音乐播放器", command=self._run_music_player)         
         media_menu.add_command(label="📻 网络广播", command=self._run_radio_player)
 
@@ -1733,7 +1735,67 @@ class ChatApp:
             webbrowser.open(url)
             self._append_message("assistant", f"🌐 已在浏览器打开：{url}")
             
+    # ============================================================
+    # 网页视频嗅探
+    # ============================================================
+    def _get_video_sniffer(self):
+        if not hasattr(self, "_video_sniffer") or self._video_sniffer is None:
+            from skills.video_sniffer import VideoSniffer
+            self._video_sniffer = VideoSniffer()
+        return self._video_sniffer
 
+    def _run_video_sniffer(self):
+        """🔍 输入网页 URL → 解析出所有可下载的视频"""
+        url = self._ask_string(
+            "🔍 网页视频提取",
+            "输入网页 URL（B站合集 / YouTube playlist / 视频详情页 等）：",
+            "",
+        )
+        if not url:
+            return
+        url = url.strip()
+        if not url.startswith(("http://", "https://")):
+            self._append_message("system", "⚠️ 请输入以 http:// 或 https:// 开头的地址")
+            return
+
+        self._append_message("system", f"🔍 分析网页：{url} ...")
+
+        def worker():
+            return self._get_video_sniffer().execute(action="analyze", url=url)
+
+        self._run_skill("🔍 网页视频提取", worker,
+                        on_success=self._show_sniffer_result)
+
+    def _show_sniffer_result(self, data):
+        """把嗅探结果喂给 _show_video_search_results 复用选单逻辑"""
+        items = data.get("items", [])
+        if not items:
+            self._append_message("assistant", "❌ 未发现可下载的视频")
+            return
+
+        kind = data.get("kind", "single")
+        title = data.get("title", "")
+        total = data.get("total", len(items))
+
+        summary = [
+            f"✅ 发现 {len(items)} 个视频（类型：{kind}）",
+            f"📄 {title}",
+        ]
+        if total > len(items):
+            summary.append(f"   （共 {total} 条，已截取前 {len(items)} 条）")
+        self._append_message("assistant", "\n".join(summary))
+
+        # 转成 _show_video_search_results 期望的字段
+        hits = [{
+            "title":        it["title"],
+            "url":          it["url"],
+            "duration_str": it["duration_str"],
+            "uploader":     it["uploader"],
+            "source":       it["source"],
+        } for it in items]
+
+        self._show_video_search_results(hits, title or data.get("url", ""), "sniffer")
+        
     # ============================================================
     # 视频搜索结果：保存 / 展示 / 重开
     # ============================================================

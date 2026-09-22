@@ -17,6 +17,7 @@ from .search_engine import SearchEngine
 from .video_player import VideoPlayer
 from .music_player import MusicPlayer
 from .radio_player import RadioPlayer
+from .video_sniffer import VideoSniffer
 
 __all__ = [
     'NewsAggregator',
@@ -35,4 +36,5 @@ __all__ = [
     'VideoPlayer',
     'MusicPlayer',
     'RadioPlayer',    
+    'VideoSniffer',
 ]
