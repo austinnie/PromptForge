@@ -150,22 +150,17 @@ class SearchEngine:
                        save_dir: Optional[str] = None,
                        filename: Optional[str] = None,
                        referer: Optional[str] = None) -> Dict[str, Any]:
+        import io
+        from PIL import Image
+
         save_dir_path = Path(save_dir or self.config["image_dir"])
         save_dir_path.mkdir(parents=True, exist_ok=True)
 
+        # 域名黑名单：已知拒绝下载的图床
         host = urlparse(url).netloc.lower()
         if any(b in host for b in self._BLOCKED_HOSTS):
             return {"status": "error",
                     "error": f"该来源（{host}）禁止下载，请换一张"}
-                    
-        if not filename:
-            ext = Path(urlparse(url).path).suffix.lower()
-            if ext not in self.IMAGE_EXTS:
-                ext = ".jpg"
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:19]
-            filename = f"img_{ts}{ext}"
-        filename = re.sub(r'[<>:"/\\|?*]', "_", filename)
-        target = save_dir_path / filename
 
         # 从图片 URL 推断 Referer（多数图床校验同域名）
         if not referer:
@@ -183,18 +178,63 @@ class SearchEngine:
             "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
         }
 
+        # 先把整个内容读进内存，才能用 PIL 探格式
         try:
-            r = requests.get(url, headers=headers, timeout=30, stream=True)
+            r = requests.get(url, headers=headers, timeout=30)
             r.raise_for_status()
-            with open(target, "wb") as f:
-                for chunk in r.iter_content(8192):
-                    if chunk:
-                        f.write(chunk)
-            size = target.stat().st_size
-            logger.info(f"下载: {target.name} ({size / 1024:.1f} KB)")
-            return {"status": "success", "path": str(target), "size": size}
+            raw = r.content
         except Exception as e:
             logger.error(f"下载失败: {e}")
+            return {"status": "error", "error": str(e)}
+
+        # 用 PIL 读 header 判断真实格式（不解码整图，很快）
+        real_fmt = ""
+        try:
+            img = Image.open(io.BytesIO(raw))
+            real_fmt = (img.format or "").lower()   # 'jpeg'/'png'/'webp'/'gif'
+        except Exception:
+            real_fmt = ""
+
+        ext_map = {
+            "jpeg": ".jpg", "jpg": ".jpg",
+            "png":  ".png",  "gif": ".gif",
+            "webp": ".webp", "bmp": ".bmp",
+            "tiff": ".tiff", "avif": ".avif",
+        }
+
+        # 决定最终扩展名：PIL 探测优先，探测失败退回 URL 后缀
+        if real_fmt and real_fmt in ext_map:
+            ext = ext_map[real_fmt]
+        else:
+            ext = Path(urlparse(url).path).suffix.lower()
+            if ext not in self.IMAGE_EXTS:
+                ext = ".jpg"
+
+        # 生成文件名
+        if not filename:
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:19]
+            filename = f"img_{ts}{ext}"
+        else:
+            # 用户给定名字：只替换扩展名为真实格式，保留 stem
+            base = Path(filename).stem
+            filename = f"{base}{ext}"
+        filename = re.sub(r'[<>:"/\\|?*]', "_", filename)
+        target = save_dir_path / filename
+
+        try:
+            target.write_bytes(raw)
+            size = target.stat().st_size
+            logger.info(
+                f"下载: {target.name} ({size / 1024:.1f} KB, {real_fmt or '未知格式'})"
+            )
+            return {
+                "status": "success",
+                "path":   str(target),
+                "size":   size,
+                "format": real_fmt,
+            }
+        except Exception as e:
+            logger.error(f"写入失败: {e}")
             return {"status": "error", "error": str(e)}
             
     def download_batch_items(self, items: List[Dict[str, str]]) -> Dict[str, Any]:
