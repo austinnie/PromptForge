@@ -1642,11 +1642,18 @@ class ChatApp:
 
         source_label = self._ask_choice(
             "📺 视频播放器", "选择来源：",
-            ["🇨🇳 B站（bilibili）", "🌐 YouTube", "🇯🇵 ニコニコ", "🌍 全部"],
+            ["🇨🇳 B站（bilibili）", "🌐 YouTube", "🇯🇵 ニコニコ",
+             "🌍 全部", "🔗 直接输入地址"],
             default="🇨🇳 B站（bilibili）",
         )
         if not source_label:
             return
+
+        # 走 URL 直通路径，跳过关键词搜索
+        if source_label == "🔗 直接输入地址":
+            self._run_video_url_direct()
+            return
+            
         source_map = {
             "🇨🇳 B站（bilibili）": "bilibili",
             "🌐 YouTube":          "youtube",
@@ -1683,7 +1690,49 @@ class ChatApp:
 
         self._run_skill("📺 搜索视频", worker_search, on_success=show_search)
 
+    def _run_video_url_direct(self):
+        """🔗 直接粘贴 URL 播放（支持 yt-dlp 能解析的所有站点）"""
+        url = self._ask_string(
+            "🔗 输入视频地址",
+            "粘贴任意视频 URL（Vimeo / Dailymotion / 腾讯视频 / 微博视频…）：",
+            "",
+        )
+        if not url:
+            return
+        url = url.strip()
+        if not url.startswith(("http://", "https://")):
+            self._append_message("system", "⚠️ 请输入以 http:// 或 https:// 开头的地址")
+            return
 
+        action = self._ask_choice(
+            "🔗 视频地址",
+            f"对「{url[:60]}...」：",
+            ["▶️ 播放",
+             "💾 播放并保存到本地",
+             "🌐 浏览器打开"],
+            default="▶️ 播放",
+        )
+        if not action:
+            return
+
+        player = self._get_video_player()
+
+        if action.startswith("▶️"):
+            self._append_message("system", f"▶️ 播放（不保存）：{url}")
+            r = player.execute(action="play", url=url, record=False)
+            self._show_video_play_result(r, {"title": url})
+
+        elif action.startswith("💾"):
+            self._append_message("system",
+                f"💾 播放并保存：{url}\n"
+                f"   保存位置：{player.config['download_dir']}")
+            r = player.execute(action="play", url=url, record=True)
+            self._show_video_play_result(r, {"title": url})
+
+        else:
+            webbrowser.open(url)
+            self._append_message("assistant", f"🌐 已在浏览器打开：{url}")
+            
 
     # ============================================================
     # 视频搜索结果：保存 / 展示 / 重开
