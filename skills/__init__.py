@@ -13,6 +13,11 @@ from .video_generator import VideoGenerator
 from .social_auto_upload import SocialAutoUpload
 from .daily_pipeline import DailyPipeline
 
+from .search_engine import SearchEngine
+from .video_player import VideoPlayer
+from .music_player import MusicPlayer
+from .radio_player import RadioPlayer
+
 __all__ = [
     'NewsAggregator',
     'NovelWriterOllama',
@@ -25,4 +30,9 @@ __all__ = [
     'VideoGenerator',
     'SocialAutoUpload',   
     'DailyPipeline',     
+    # ✅ 新增
+    'SearchEngine',
+    'VideoPlayer',
+    'MusicPlayer',
+    'RadioPlayer',    
 ]
