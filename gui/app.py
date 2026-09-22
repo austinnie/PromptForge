@@ -452,7 +452,8 @@ class ChatApp:
 
         # ── 媒体 ──
         media_menu = tk.Menu(menubar, tearoff=0)
-        media_menu.add_command(label="📺 视频播放器", command=self._run_video_player)         
+        media_menu.add_command(label="📺 视频播放器", command=self._run_video_player)
+        media_menu.add_command(label="📂 打开视频搜索列表", command=self._open_video_search_lists)
         media_menu.add_command(label="🎵 音乐播放器", command=self._run_music_player)         
         media_menu.add_command(label="📻 网络广播", command=self._run_radio_player)
 
@@ -1602,7 +1603,7 @@ class ChatApp:
         return self._video_player
 
     def _run_video_player(self):
-        """📺 视频播放器：搜索 → 播放（边播边存）/ 下载 / 浏览器打开"""
+        """📺 视频播放器：搜索 → 默认播放（不保存）/ 按需保存 / 浏览器打开"""
         player = self._get_video_player()
 
         query = self._ask_string(
@@ -1642,61 +1643,168 @@ class ChatApp:
                 self._append_message("assistant", f"❌ 未找到：{query}")
                 return
 
-            labels = []
-            for i, t in enumerate(hits, 1):
-                dur = f"  [{t['duration_str']}]" if t.get("duration_str") else ""
-                labels.append(f"{i}. {t['title']}{dur}")
-
-            choice = self._ask_choice(
-                "📺 搜索结果",
-                f"找到 {len(hits)} 条，选择一条：",
-                labels,
-                default=labels[0],
-            )
-            if not choice:
-                return
-            idx = int(choice.split(".", 1)[0]) - 1
-            track = hits[idx]
-
-            action = self._ask_choice(
+            # 询问是否保存列表
+            save = messagebox.askyesno(
                 "📺 视频播放器",
-                f"对「{track['title']}」：",
-                ["▶️ 播放（边播边存）", "🌊 流播（不录制）",
-                 "⬇️ 下载到本地", "🌐 浏览器打开"],
-                default="▶️ 播放（边播边存）",
+                f"找到 {len(hits)} 条。\n\n是否保存这个列表，以便以后继续选？",
+                parent=self.root,
             )
-            if not action:
-                return
+            if save:
+                path = self._save_video_search_list(hits, query, source)
+                if path:
+                    self._append_message("system", f"💾 列表已保存：{path}")
 
-            if action.startswith("▶️"):
-                self._append_message("system",
-                    f"▶️ 启动播放（边播边存）：{track['title']}")
-                r = player.execute(action="play", url=track["url"], record=True)
-                self._show_video_play_result(r, track)
-
-            elif action.startswith("🌊"):
-                self._append_message("system",
-                    f"🌊 流播（不录制）：{track['title']}")
-                r = player.execute(action="play", url=track["url"], record=False)
-                self._show_video_play_result(r, track)
-
-            elif action.startswith("⬇️"):
-                self._append_message("system",
-                    f"⬇️ 下载中（可能几分钟）：{track['title']}")
-                def worker_dl():
-                    return player.execute(action="play",
-                                          url=track["url"], record=True)
-                self._run_skill("⬇️ 下载视频", worker_dl,
-                                on_success=lambda d: self._show_video_play_result(
-                                    {"status": "success", "result": d}, track))
-
-            else:
-                webbrowser.open(track["url"])
-                self._append_message("assistant",
-                    f"🌐 已在浏览器打开：{track['title']}")
+            # 展示选单
+            self._show_video_search_results(hits, query, source)
 
         self._run_skill("📺 搜索视频", worker_search, on_success=show_search)
 
+
+
+    # ============================================================
+    # 视频搜索结果：保存 / 展示 / 重开
+    # ============================================================
+    def _save_video_search_list(self, hits, query, source):
+        """把一次视频搜索结果保存到 JSON，供以后继续选"""
+        try:
+            import json as _json
+            from datetime import datetime as _dt
+
+            save_dir = Path("output") / "video_player" / "search_lists"
+            save_dir.mkdir(parents=True, exist_ok=True)
+
+            ts = _dt.now().strftime("%Y%m%d_%H%M%S")
+            safe_q = re.sub(r'[<>:"/\\|?*]', "_", query)[:30] or "search"
+            filename = f"{ts}_{safe_q}.json"
+            path = save_dir / filename
+
+            data = {
+                "query":    query,
+                "source":   source,
+                "saved_at": _dt.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "count":    len(hits),
+                "results":  hits,
+            }
+            path.write_text(
+                _json.dumps(data, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            return str(path)
+        except Exception as e:
+            self._append_message("system", f"⚠️ 保存列表失败：{e}")
+            return None
+
+    def _show_video_search_results(self, hits, query, source):
+        """展示视频搜索结果选单，让用户选一条并执行动作。
+
+        默认动作是「播放（不保存）」，用户想存再单独点「播放并保存」。
+        """
+        labels = []
+        for i, t in enumerate(hits, 1):
+            dur = f"  [{t['duration_str']}]" if t.get("duration_str") else ""
+            labels.append(f"{i}. {t['title']}{dur}")
+
+        choice = self._ask_choice(
+            "📺 搜索结果",
+            f"共 {len(hits)} 条，选择一条：",
+            labels,
+            default=labels[0],
+        )
+        if not choice:
+            return
+        idx = int(choice.split(".", 1)[0]) - 1
+        track = hits[idx]
+
+        action = self._ask_choice(
+            "📺 视频播放器",
+            f"对「{track['title']}」：",
+            ["▶️ 播放",
+             "💾 播放并保存到本地",
+             "🌐 浏览器打开"],
+            default="▶️ 播放",
+        )
+        if not action:
+            return
+
+        player = self._get_video_player()
+
+        if action.startswith("▶️"):
+            # 默认：只播放，不录制
+            self._append_message("system",
+                f"▶️ 播放（不保存）：{track['title']}")
+            r = player.execute(action="play", url=track["url"], record=False)
+            self._show_video_play_result(r, track)
+
+        elif action.startswith("💾"):
+            # 播放 + 同时录到本地
+            self._append_message("system",
+                f"💾 播放并保存：{track['title']}\n"
+                f"   保存位置：{player.config['download_dir']}")
+            r = player.execute(action="play", url=track["url"], record=True)
+            self._show_video_play_result(r, track)
+
+        else:
+            webbrowser.open(track["url"])
+            self._append_message("assistant",
+                f"🌐 已在浏览器打开：{track['title']}")
+
+    def _open_video_search_lists(self):
+        """列出已保存的视频搜索列表，选一个重新展示选单"""
+        import json as _json
+
+        save_dir = Path("output") / "video_player" / "search_lists"
+        if not save_dir.exists():
+            self._append_message("system", "📂 还没有保存的搜索列表")
+            return
+
+        files = sorted(save_dir.glob("*.json"), reverse=True)  # 最新在前
+        if not files:
+            self._append_message("system", "📂 还没有保存的搜索列表")
+            return
+
+        labels = []
+        for f in files[:30]:
+            try:
+                data = _json.loads(f.read_text(encoding="utf-8"))
+                q = data.get("query", "?")
+                n = data.get("count", 0)
+                t = data.get("saved_at", "")
+                labels.append(f"{f.name}  |  {q}  ({n} 条)  {t}")
+            except Exception:
+                labels.append(f.name)
+
+        choice = self._ask_choice(
+            "📂 打开搜索列表",
+            f"共 {len(files)} 个列表，选择：",
+            labels,
+            default=labels[0],
+        )
+        if not choice:
+            return
+
+        fname = choice.split("  |  ")[0].strip()
+        path = save_dir / fname
+        if not path.exists():
+            self._append_message("system", f"⚠️ 文件不存在：{fname}")
+            return
+
+        try:
+            data = _json.loads(path.read_text(encoding="utf-8"))
+        except Exception as e:
+            self._append_message("system", f"⚠️ 读取失败：{e}")
+            return
+
+        hits = data.get("results", [])
+        query = data.get("query", "")
+        source = data.get("source", "")
+        if not hits:
+            self._append_message("system", "⚠️ 列表为空")
+            return
+
+        self._append_message("system",
+            f"📂 已加载列表「{query}」（{len(hits)} 条）")
+        self._show_video_search_results(hits, query, source)
+        
     def _show_video_play_result(self, r, track):
         """视频播放/下载结果汇总"""
         if r.get("status") != "success":
