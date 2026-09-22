@@ -150,7 +150,29 @@ class IntentAnalyzer:
                 # 清理后为空，返回 chat
                 return self._safe_fallback(text)
             
-        # 2. ✅ 图生图优先（有图片时优先判断）
+        # 2. ✅ 视频意图优先（无论有无图，先判视频，避免被图生图截胡）
+        if self._is_video_intent(text):
+            if has_image:
+                # 有图 → 图生视频
+                return IntentResult(
+                    type="video",
+                    prompt=text,
+                    original_text=text,
+                    confidence=0.9,
+                    params={"mode": "image_to_video",
+                            "image_count": image_count},
+                    system_hint="🎬 图生视频模式（保留原图内容生成动态）",
+                )
+            # 无图 → 文生视频
+            return IntentResult(
+                type="video",
+                prompt=text,
+                original_text=text,
+                confidence=0.9,
+                system_hint="⚠️ 视频生成受 API 政策限制，请合理使用内容",
+            )
+
+        # 3. 图生图（有图片时优先判断）
         if has_image:
             # 2.1 显式修改关键词
             if any(k in text_lower for k in self.EDIT_KEYWORDS):
@@ -187,15 +209,15 @@ class IntentAnalyzer:
                 confidence=0.9
             )
 
-        # 5. 视频意图检测（移到后面，条件更严格）
-        if self._is_video_intent(text):
-            return IntentResult(
-                type="video",
-                prompt=text,
-                original_text=text,
-                confidence=0.9,
-                system_hint="⚠️ 视频生成受 API 政策限制，请合理使用内容"
-            )
+        ## 5. 视频意图检测（移到后面，条件更严格）
+        #if self._is_video_intent(text):
+        #    return IntentResult(
+        #        type="video",
+        #        prompt=text,
+        #        original_text=text,
+        #        confidence=0.9,
+        #        system_hint="⚠️ 视频生成受 API 政策限制，请合理使用内容"
+        #    )
         
         # 6. 全自动视频创作
         if any(k in text_lower for k in ['创作视频', '全自动', '生成故事', '自动生成']):

@@ -645,7 +645,11 @@ class AgnesEngine:
         if callback_url:
             data["callback_url"] = callback_url
 
-        print(f"🔍 [Agnes API] 发送数据: {data}")
+        
+        _disp = dict(data)
+        if isinstance(_disp.get("images"), list):
+            _disp["images"] = [f"<base64:{len(s)}chars>" for s in _disp["images"]]
+        print(f"🔍 [Agnes API] 发送数据: {_disp}")        
 
         # 6. 发送请求
         result = self._request("videos", data, timeout=300)

@@ -32,6 +32,8 @@ def main():
     parser.add_argument("--width", "-W", type=int, default=768, help="宽度（默认 768）")
     parser.add_argument("--height", "-H", type=int, default=768, help="高度（默认 768）")
     parser.add_argument("--engine", "-e", type=str, default="agnes", help="引擎名称")
+    parser.add_argument("--image", "-i", type=str, default=None,
+                        help="参考图路径（图生视频）")    
     parser.add_argument("--open", action="store_true", help="生成后打开视频")
 
     args = parser.parse_args()
@@ -51,11 +53,22 @@ def main():
         "video_height": args.height,
     })
 
+    # 加载参考图（图生视频）
+    ref_img = None
+    if args.image:
+        from PIL import Image
+        try:
+            ref_img = Image.open(args.image).convert("RGB")
+            print(f"🖼️  使用参考图: {args.image}")
+        except Exception as e:
+            print(f"⚠️ 参考图加载失败: {e}")
+            
     result = generator.generate(
         prompt=args.prompt,
         duration=args.duration,
         width=args.width,
         height=args.height,
+        reference_image=ref_img,
     )
 
     if result["status"] == "success":
