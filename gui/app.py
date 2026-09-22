@@ -443,6 +443,12 @@ class ChatApp:
         pub_menu.add_command(label="🔑 平台登录", command=self._run_platform_login)
         menubar.add_cascade(label="发布", menu=pub_menu)
 
+        # ── 搜索 ──
+        search_menu = tk.Menu(menubar, tearoff=0)
+        search_menu.add_command(label="🖼️ 图片搜索", command=self._run_search_images)
+        search_menu.add_command(label="🎬 视频搜索", command=self._run_search_videos)
+        search_menu.add_command(label="📰 网页搜索", command=self._run_search_text)
+        menubar.add_cascade(label="搜索", menu=search_menu)
 
         # ── 媒体 ──
         media_menu = tk.Menu(menubar, tearoff=0)
@@ -1238,6 +1244,211 @@ class ChatApp:
         self._append_message("assistant", "\n".join(lines))
 
 
+    # ============================================================
+    # 匿名搜索（DuckDuckGo）
+    # ============================================================
+    def _get_search_engine(self):
+        if not hasattr(self, "_search_engine") or self._search_engine is None:
+            from skills.search_engine import SearchEngine
+            self._search_engine = SearchEngine()
+        return self._search_engine
+
+    def _run_search_images(self):
+        self._run_search("images")
+
+    def _run_search_videos(self):
+        self._run_search("videos")
+
+    def _run_search_text(self):
+        self._run_search("text")
+
+    def _run_search(self, kind: str):
+        se = self._get_search_engine()
+        label = {"images": "图片", "videos": "视频", "text": "网页"}[kind]
+
+        query = self._ask_string(f"🔍 {label}搜索（匿名）", "关键词：", "")
+        if not query:
+            return
+        query = query.strip()
+        if not query:
+            return
+
+        limit = self._ask_int(f"🔍 {label}搜索",
+                              "结果数量（5-50）：", 20, 5, 50)
+        if limit is None:
+            return
+
+        self._append_message("system", f"🔍 匿名搜索「{query}」（{label}）...")
+
+        def worker():
+            return se.execute(action="search", query=query,
+                              kind=kind, limit=limit)
+
+        self._run_skill(
+            f"🔍 {label}搜索", worker,
+            on_success=lambda d, k=kind: self._show_search_result(d, k),
+        )
+
+    def _show_search_result(self, data, kind: str):
+        hits = data.get("results", [])
+        if not hits:
+            self._append_message("assistant", "❌ 没有找到结果")
+            return
+
+        # 摘要
+        lines = [f"✅ 找到 {len(hits)} 条结果（匿名，未记录）", ""]
+        for h in hits[:5]:
+            lines.append(f"  • {(h.get('title') or '')[:70]}")
+        if len(hits) > 5:
+            lines.append(f"  ... 共 {len(hits)} 条")
+        self._append_message("assistant", "\n".join(lines))
+
+        labels = []
+        for i, h in enumerate(hits, 1):
+            title = (h.get("title") or "无标题")[:55]
+            if kind == "images":
+                w, hh = h.get("width", 0), h.get("height", 0)
+                extra = f"  [{w}×{hh}]" if w and hh else ""
+            elif kind == "videos":
+                extra = f"  [{h.get('duration','')}]" if h.get("duration") else ""
+            else:
+                extra = ""
+            labels.append(f"{i}. {title}{extra}")
+
+        choice = self._ask_choice(
+            "🔍 选择一条",
+            f"共 {len(hits)} 条，选择：",
+            labels,
+            default=labels[0],
+        )
+        if not choice:
+            return
+        idx = int(choice.split(".", 1)[0]) - 1
+        item = hits[idx]
+
+        if kind == "images":
+            self._handle_image_item(item, hits)
+        elif kind == "videos":
+            self._handle_video_item(item)
+        else:
+            url = item.get("url", "")
+            if url:
+                webbrowser.open(url)
+                self._append_message("assistant", f"🌐 已打开：{url}")
+
+    def _handle_image_item(self, item, all_hits):
+        action = self._ask_choice(
+            "🖼️ 图片操作",
+            f"「{(item.get('title') or '')[:50]}」",
+            ["⬇️ 下载这一张",
+             "📦 下载前 10 张",
+             "🌐 浏览器打开原图",
+             "📄 打开来源页面"],
+            default="⬇️ 下载这一张",
+        )
+        if not action:
+            return
+
+        se = self._get_search_engine()
+
+        if action.startswith("⬇️"):
+            def w():
+                return se.execute(
+                    action="download_image",
+                    url=item["url"],
+                    referer=item.get("source") or item.get("page"),
+                )
+            self._run_skill("⬇️ 下载图片", w,
+                            on_success=self._show_download_result)
+
+        elif action.startswith("📦"):
+            items = [
+                {"url": h["url"], "referer": h.get("source") or h.get("page")}
+                for h in all_hits[:10] if h.get("url")
+            ]
+            if not items:
+                self._append_message("system", "⚠️ 没有可下载的图片")
+                return
+            def w():
+                return se.execute(action="download_batch_items", items=items)
+            self._run_skill(f"📦 批量下载 {len(items)} 张", w,
+                            on_success=self._show_batch_download_result)
+
+        elif action.startswith("🌐"):
+            webbrowser.open(item.get("url", ""))
+            self._append_message("assistant", "🌐 已打开原图")
+
+        else:
+            webbrowser.open(item.get("page", ""))
+            self._append_message("assistant", "📄 已打开来源页")
+
+    def _handle_video_item(self, item):
+        action = self._ask_choice(
+            "🎬 视频操作",
+            f"「{(item.get('title') or '')[:50]}」",
+            ["▶️ 播放（边播边存）",
+             "🌊 流播（不录制）",
+             "🌐 浏览器打开"],
+            default="▶️ 播放（边播边存）",
+        )
+        if not action:
+            return
+
+        vp = self._get_video_player()
+        url = item.get("url", "")
+        if not url:
+            self._append_message("system", "⚠️ 该结果没有可播放的链接")
+            return
+
+        if action.startswith("▶️"):
+            self._append_message("system", f"▶️ 播放：{item.get('title', '')}")
+            def w():
+                return vp.execute(action="play", url=url, record=True)
+            self._run_skill("▶️ 播放视频", w,
+                            on_success=lambda d: self._show_video_play_result(
+                                {"status": "success", "result": d}, item))
+
+        elif action.startswith("🌊"):
+            self._append_message("system", f"🌊 流播：{item.get('title', '')}")
+            def w():
+                return vp.execute(action="play", url=url, record=False)
+            self._run_skill("🌊 流播视频", w,
+                            on_success=lambda d: self._show_video_play_result(
+                                {"status": "success", "result": d}, item))
+
+        else:
+            webbrowser.open(url)
+            self._append_message("assistant", f"🌐 已打开：{url}")
+
+    def _show_download_result(self, data):
+        if data.get("status") != "success":
+            self._append_message("assistant",
+                f"❌ 下载失败：{data.get('error', '未知')}")
+            return
+        size_kb = data.get("size", 0) / 1024
+        self._append_message("assistant",
+            f"✅ 下载完成\n"
+            f"📁 {data.get('path', '')}\n"
+            f"📊 {size_kb:.1f} KB")
+
+    def _show_batch_download_result(self, data):
+        ok = data.get("downloaded", [])
+        fail = data.get("failed", [])
+        lines = [f"✅ 批量下载完成：{len(ok)} 成功 / {len(fail)} 失败", ""]
+        for p in ok[:5]:
+            lines.append(f"  📁 {Path(p).name}")
+        if len(ok) > 5:
+            lines.append(f"  ... 共 {len(ok)} 张")
+        if fail:
+            lines.append(f"\n⚠️ {len(fail)} 张失败：")
+            # 归类错误原因
+            reasons = {}
+            for f in fail[:20]:
+                err = (f.get("error") or "未知")[:50]
+                reasons[err] = reasons.get(err, 0) + 1
+            for reason, cnt in list(reasons.items())[:3]:
+                lines.append(f"   • {reason} × {cnt}")
+        self._append_message("assistant", "\n".join(lines))
 
     # ============================================================
     # 音乐播放器
