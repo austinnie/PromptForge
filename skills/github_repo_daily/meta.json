@@ -1,0 +1,24 @@
+{
+  "name": "github_repo_daily",
+  "version": "1.0.0",
+  "description": "每天从 GitHub Trending 选一个仓库，获取 README，用 Ollama 生成介绍文章，并发布到微信公众号草稿箱",
+  "author": "PromptForge",
+  "inputs": {
+    "no_publish": "是否不发布（可选）",
+    "theme": "微信排版主题（可选）",
+    "model": "Ollama 模型（可选）"
+  },
+  "outputs": {
+    "repo": "推荐的仓库全名",
+    "repo_url": "仓库链接",
+    "article_path": "文章 Markdown 路径",
+    "published": "是否发布成功"
+  },
+  "engines": ["ollama", "wechat_formatter"],
+  "depends_on": ["wechat_formatter"],
+  "class_name": "GitHubRepoDaily",
+  "examples": [
+    "python skills/github_repo_daily/github_repo_daily_cli.py",
+    "python skills/github_repo_daily/github_repo_daily_cli.py --no-publish"
+  ]
+}

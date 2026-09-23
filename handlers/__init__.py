@@ -9,6 +9,7 @@ from .multi_person_handler import MultiPersonHandler
 from .chat_handler import ChatHandler
 from .video_handler import VideoHandler  # ✅ 新增
 from .preset_handler import PresetHandler
+from .github_daily_handler import GitHubDailyHandler   # ✅ 新增
 
 __all__ = [
     'BaseHandler',
@@ -19,5 +20,6 @@ __all__ = [
     'ChatHandler',
     'VideoHandler',  # ✅ 新增
     'PresetHandler',
+    'GitHubDailyHandler',   # ✅ 新增
 
 ]

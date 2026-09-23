@@ -119,6 +119,13 @@ class IntentAnalyzer:
         'cartoon', 'realistic', 'watercolor', 'oil painting', 'anime',
     ]
     
+    # ✅ 新增：GitHub 每日推荐触发词
+    GITHUB_DAILY_KEYWORDS = [
+        "github推荐", "github仓库", "github项目", "github trending",
+        "每日仓库", "推荐仓库", "推荐项目", "仓库推荐", "项目推荐",
+        "github 日报", "github日报", "开源项目推荐",
+    ]
+    
     def __init__(self):
         self._safety = None
     
@@ -149,7 +156,17 @@ class IntentAnalyzer:
             else:
                 # 清理后为空，返回 chat
                 return self._safe_fallback(text)
-            
+
+        # ✅ 新增：GitHub 每日推荐（优先于视频/图生图）
+        if self._is_github_daily_intent(text_lower):
+            return IntentResult(
+                type="github_daily",
+                prompt=text,
+                original_text=text,
+                confidence=0.95,
+                system_hint="🐙 正在抓取今日 GitHub 推荐仓库...",
+            )
+        
         # 2. ✅ 视频意图优先（无论有无图，先判视频，避免被图生图截胡）
         if self._is_video_intent(text):
             if has_image:
@@ -250,6 +267,12 @@ class IntentAnalyzer:
             confidence=0.3
         )
 
+    def _is_github_daily_intent(self, text: str) -> bool:
+        """判断是否触发 GitHub 每日推荐"""
+        text_lower = text.lower()
+        return any(k in text_lower for k in self.GITHUB_DAILY_KEYWORDS)
+
+        
     def _is_preset_intent(self, text: str) -> bool:
         text_lower = text.lower()
         # 有"预设"字样，或同时提到预设名 + 生成意图

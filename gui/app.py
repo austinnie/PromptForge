@@ -16,7 +16,7 @@ from config.settings import settings
 from core.intent_analyzer import IntentAnalyzer
 from core.context_manager import ContextManager
 from services.llm_service import LLMService
-from handlers import TextToImageHandler, ImageToImageHandler, CoupleHandler,ChatHandler, VideoHandler,PresetHandler
+from handlers import TextToImageHandler, ImageToImageHandler, CoupleHandler,ChatHandler, VideoHandler,PresetHandler,GitHubDailyHandler
 
 class _DailyLogHandler(logging.Handler):
     """把 DailyPipeline 的日志转发到聊天区。
@@ -246,6 +246,13 @@ class ChatApp:
             text="📆 每周任务",
             command=self._run_weekly_tech_task
         ).pack(side=tk.LEFT, padx=2)
+
+        # ✅ 新增：GitHub 日报
+        ttk.Button(
+            toolbar_row2,
+            text="🐙 GitHub",
+            command=self._run_github_daily
+        ).pack(side=tk.LEFT, padx=2)
         
         ttk.Separator(toolbar_row2, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
         
@@ -474,6 +481,7 @@ class ChatApp:
         auto_menu.add_command(label="🔥 每周技术热点", command=self._run_weekly_tech_task)
         auto_menu.add_command(label="📰 新闻简报", command=self._fetch_news)
         auto_menu.add_command(label="📄 技术文章", command=self._generate_tech_article)
+        auto_menu.add_command(label="🐙 GitHub 日报", command=self._run_github_daily)
         menubar.add_cascade(label="自动化", menu=auto_menu)
 
         self.root.config(menu=menubar)
@@ -2455,6 +2463,7 @@ class ChatApp:
                 MultiPersonHandler,  # ✅ 新增
                 ChatHandler, 
                 VideoHandler,
+                GitHubDailyHandler,   # ✅ 新增
             )
             
             handlers = {
@@ -2465,6 +2474,7 @@ class ChatApp:
                 "chat": ChatHandler(self),
                 "video": VideoHandler(self),  # ✅ 新增
                 "preset_image": PresetHandler(self), 
+                "github_daily": GitHubDailyHandler(self),   # ✅ 加这一行
             }
             
             handler = handlers.get(intent.type)
@@ -2922,6 +2932,66 @@ class ChatApp:
                         pass
                 break
                 
+
+    # ============================================================
+    # 🐙 GitHub 日报：抓 Trending → 生成文章 → 排版 → 推草稿箱
+    # ============================================================
+    def _run_github_daily(self, force_publish=None):
+        """🐙 GitHub 日报：抓 Trending → 生成文章 → 排版 → 推草稿箱。
+
+        参数：
+          - force_publish:
+              None  = 读工具栏「📤 自动推公众号草稿箱」复选框（菜单/按钮触发用）
+              False = 强制不推公众号（聊天框输入"不发布"时用）
+              True  = 强制推公众号
+          - 主题 / 预设 / 排版风格：全部由 skill 内部随机
+        """
+        # 决定是否推送
+        if force_publish is None:
+            publish = bool(self.publish_wechat_var.get())
+            publish_src = "（跟随工具栏复选框）"
+        else:
+            publish = bool(force_publish)
+            publish_src = "（用户显式指定）"
+
+        self._append_message(
+            "system",
+            f"🐙 开始抓取今日 GitHub Trending...\n"
+            f"   流程：抓榜 → 选仓库 → 拉 README → Ollama 生成文章 → 排版 → "
+            f"{'推公众号草稿箱' if publish else '仅本地生成'}{publish_src}"
+        )
+
+        def worker():
+            from skills.github_repo_daily import GitHubRepoDaily
+            skill = GitHubRepoDaily({
+                "wechat_publish": publish,
+                "wechat_theme": "newspaper",
+            })
+            return skill.execute()
+
+        self._run_skill(
+            "🐙 GitHub 日报",
+            worker,
+            on_success=self._show_github_daily_result,
+        )
+
+    def _show_github_daily_result(self, data):
+        """GitHub 日报结果汇总。"""
+        lines = ["✅ GitHub 日报完成！", ""]
+        lines.append(f"🐙 仓库：{data.get('repo', '-')}")
+        lines.append(f"🔗 链接：{data.get('repo_url', '-')}")
+        lines.append(f"📄 文章：{data.get('article_path', '-')}")
+
+        if data.get("published"):
+            lines.append("📤 公众号草稿箱：✅ 已推送")
+        else:
+            lines.append("📤 公众号草稿箱：⚠️ 未推送（文章已生成到本地）")
+
+        if data.get("elapsed"):
+            lines.append(f"⏱️ 耗时：{data['elapsed']}")
+
+        self._append_message("assistant", "\n".join(lines))
+        
     # ============================================================
     # 消息添加（文本）
     # ============================================================
