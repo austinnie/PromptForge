@@ -25,7 +25,8 @@ from typing import Dict, Any, List, Optional
 logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-
+# ✅ 新增：LLM 后端优先级。CI 环境默认优先 agnes，本地可改回 ollama 优先
+DEFAULT_LLM_BACKENDS = ["agnes", "ollama"]
 
 class GitHubRepoDaily:
     name = "github_repo_daily"
@@ -61,12 +62,117 @@ class GitHubRepoDaily:
             "illustration_width": 1024,
             "illustration_height": 1024,
             "footer_image": "assets/qr/公众号结束处.png",
-            "footer_alt": "关注公众号",            
+            "footer_alt": "关注公众号", 
+            
+            # ✅ 新增：LLM 后端（CI 环境 Agnes 优先，本地可改成 "ollama"）
+            # 支持环境变量覆盖：GH_DAILY_LLM_BACKENDS=agnes,ollama
+            "llm_backends": [
+                b.strip()
+                for b in os.environ.get("GH_DAILY_LLM_BACKENDS", "agnes,ollama").split(",")
+                if b.strip()
+            ],
+            "llm_timeout": int(os.environ.get("GH_DAILY_LLM_TIMEOUT", "120")),
+            "llm_temperature": float(os.environ.get("GH_DAILY_LLM_TEMPERATURE", "0.7")),
+            "llm_max_tokens": int(os.environ.get("GH_DAILY_LLM_MAX_TOKENS", "2048")),
+            
         }
         for k, v in defaults.items():
             self.config.setdefault(k, v)
         Path(self.config["output_dir"]).mkdir(parents=True, exist_ok=True)
 
+
+    # ---------- LLM 统一入口 ----------
+
+    def _llm_generate(
+        self,
+        prompt: str,
+        *,
+        temperature: float = None,
+        max_tokens: int = None,
+        timeout: int = None,
+    ) -> str:
+        """统一的 LLM 调用入口。
+
+        按 config["llm_backends"] 顺序尝试，成功即返回；全部失败返回 ""。
+        """
+        temperature = temperature if temperature is not None else self.config["llm_temperature"]
+        max_tokens = max_tokens if max_tokens is not None else self.config["llm_max_tokens"]
+        timeout = timeout if timeout is not None else self.config["llm_timeout"]
+
+        backends = self.config.get("llm_backends") or DEFAULT_LLM_BACKENDS
+
+        for backend in backends:
+            try:
+                if backend == "agnes":
+                    text = self._llm_agnes(prompt, temperature, max_tokens, timeout)
+                elif backend == "ollama":
+                    text = self._llm_ollama(prompt, temperature, max_tokens, timeout)
+                else:
+                    logger.warning(f"未知 LLM 后端: {backend}")
+                    continue
+
+                if text:
+                    logger.info(f"✅ LLM 后端命中: {backend} ({len(text)} 字)")
+                    return text
+                logger.warning(f"⚠️ LLM 后端 {backend} 返回空，尝试下一个")
+            except Exception as e:
+                logger.warning(f"⚠️ LLM 后端 {backend} 失败: {e}，尝试下一个")
+
+        logger.error("❌ 所有 LLM 后端均失败")
+        return ""
+
+    def _llm_agnes(self, prompt: str, temperature: float,
+                   max_tokens: int, timeout: int) -> str:
+        """调用 Agnes 文本模型。"""
+        import sys as _sys
+        if str(PROJECT_ROOT) not in _sys.path:
+            _sys.path.insert(0, str(PROJECT_ROOT))
+
+        from api_engines import create_engine
+        from config.settings import settings
+
+        api_key = settings.agnes_api_key
+        if not api_key:
+            raise RuntimeError("未配置 AGNES_API_KEY")
+
+        engine = create_engine("agnes", {
+            "AGNES_API_KEY": api_key,
+            "AGNES_BASE_URL": settings.agnes_base_url,
+            "AGNES_IMAGE_MODEL": settings.agnes_image_model,
+            "AGNES_TEXT_MODEL": settings.agnes_text_model,
+        })
+
+        text = engine.chat(
+            messages=[{"role": "user", "content": prompt}],
+            temperature=temperature,
+            max_tokens=max_tokens,
+            stream=False,
+        )
+        return (text or "").strip()
+
+    def _llm_ollama(self, prompt: str, temperature: float,
+                    max_tokens: int, timeout: int) -> str:
+        """调用本地 Ollama。"""
+        try:
+            resp = requests.post(
+                f"{self.config['ollama_url']}/api/generate",
+                json={
+                    "model": self.config["ollama_model"],
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {
+                        "temperature": temperature,
+                        "num_predict": max_tokens,
+                    },
+                },
+                timeout=timeout,
+            )
+            if resp.status_code != 200:
+                raise RuntimeError(f"HTTP {resp.status_code}: {resp.text[:120]}")
+            return (resp.json().get("response") or "").strip()
+        except requests.exceptions.ConnectionError as e:
+            raise RuntimeError(f"无法连接 Ollama ({self.config['ollama_url']}): {e}")
+            
     # ---------- 历史记录 ----------
 
     def _load_history(self) -> List[str]:
@@ -235,13 +341,13 @@ class GitHubRepoDaily:
     # ---------- 文章生成 ----------
 
     def generate_article(self, repo_info: Dict[str, Any]) -> str:
-        """使用 Ollama 生成介绍文章"""
+        """生成介绍文章：优先 Agnes，兜底 Ollama，全失败用基础模板。"""
         full_name = repo_info.get("full_name", "未知仓库")
         description = repo_info.get("description", "")
         stars = repo_info.get("stars", 0)
         language = repo_info.get("language", "")
         topics = ", ".join(repo_info.get("topics", []))
-        readme = repo_info.get("readme", "")[:4000]  # 截断，避免太长
+        readme = repo_info.get("readme", "")[:4000]
 
         prompt = f"""你是一个技术博主，请根据以下 GitHub 仓库信息，写一篇介绍文章。
 要求：
@@ -251,6 +357,7 @@ class GitHubRepoDaily:
 4. 可以包含使用场景、技术栈等。
 5. 文章长度 800-1200 字。
 6. 输出 Markdown 格式，包含标题。
+7. 只输出文章正文，不要任何前言/解释/代码块围栏。
 
 仓库名称：{full_name}
 仓库描述：{description}
@@ -263,25 +370,16 @@ README 内容（节选）：
 
 请开始写文章："""
 
-        try:
-            resp = requests.post(
-                f"{self.config['ollama_url']}/api/generate",
-                json={
-                    "model": self.config["ollama_model"],
-                    "prompt": prompt,
-                    "stream": False,
-                    "options": {"temperature": 0.7, "num_predict": 2000},
-                },
-                timeout=120,
-            )
-            if resp.status_code == 200:
-                article = resp.json().get("response", "").strip()
-                if article:
-                    return article
-        except Exception as e:
-            logger.error(f"Ollama 生成失败: {e}")
+        article = self._llm_generate(prompt, temperature=0.7, max_tokens=2048)
 
-        # 兜底
+        if article:
+            # 有些 LLM 会裹 ```markdown ... ```，剥掉
+            article = re.sub(r"^```(?:markdown|md)?\s*\n", "", article)
+            article = re.sub(r"\n```\s*$", "", article)
+            return article.strip()
+
+        # 兜底模板
+        logger.warning("⚠️ 所有 LLM 均失败，使用基础模板")
         return f"""# {full_name}
 
 {description}
@@ -293,7 +391,6 @@ README 内容（节选）：
 更多详情请访问：{repo_info.get('html_url', '')}
 """
 
-
     # ---------- 插图 prompt 提炼 ----------
 
     def _generate_illustration_prompts(
@@ -302,16 +399,16 @@ README 内容（节选）：
         article: str,
         count: int = 3,
     ) -> List[str]:
-        """让 Ollama 从文章里提炼 N 个适合 AI 画图的英文 prompt。
 
-        要点：只画"概念场景"，不画代码/界面/文字（AI 画不好这些）。
-        """
+        if count <= 0:
+            logger.info("配图数量为 0，跳过 prompt 提炼")
+            return []
+            
+        """让 LLM 从文章里提炼 N 个适合 AI 画图的英文 prompt。"""
         full_name = repo_info.get("full_name", "")
         description = repo_info.get("description", "")
         language = repo_info.get("language", "")
         topics = ", ".join(repo_info.get("topics", []))
-
-        # 文章摘要取前 800 字
         article_excerpt = article[:800].replace("\n", " ")
 
         prompt = f"""You are an illustrator. Based on the following GitHub repository, write {count} English prompts for AI image generation (Midjourney / DALL-E style).
@@ -319,7 +416,7 @@ README 内容（节选）：
 Requirements:
 1. Each prompt <= 30 English words
 2. Describe a CONCRETE visual scene — do NOT include code, UI, text, logos
-3. Theme should relate to the repo's purpose, tech, or use case (abstract concepts are fine)
+3. Theme should relate to the repo's purpose, tech, or use case
 4. Style: techy, modern, clean, cinematic
 5. Output ONLY a JSON array, e.g.: ["prompt 1", "prompt 2", "prompt 3"]
 
@@ -331,38 +428,27 @@ Article excerpt: {article_excerpt}
 
 JSON array:"""
 
-        try:
-            resp = requests.post(
-                f"{self.config['ollama_url']}/api/generate",
-                json={
-                    "model": self.config["ollama_model"],
-                    "prompt": prompt,
-                    "stream": False,
-                    "options": {"temperature": 0.8, "num_predict": 500},
-                },
-                timeout=90,
-            )
-            if resp.status_code == 200:
-                raw = resp.json().get("response", "").strip()
-                # 从回复里抓 JSON 数组
-                m = re.search(r"\[.*\]", raw, re.DOTALL)
-                if m:
+        raw = self._llm_generate(prompt, temperature=0.8, max_tokens=500)
+
+        if raw:
+            m = re.search(r"\[.*\]", raw, re.DOTALL)
+            if m:
+                try:
                     arr = json.loads(m.group())
                     arr = [str(x).strip() for x in arr if str(x).strip()]
                     if arr:
-                        logger.info(f"✅ 提炼出 {len(arr)} 个配图 prompt")
-                        return arr[:count]
-        except Exception as e:
-            logger.warning(f"⚠️ 提炼配图 prompt 失败: {e}")
+                        picked = arr[:count]
+                        logger.info(f"✅ 提炼出 {len(picked)} 个配图 prompt（原始 {len(arr)}）")
+                        return picked
+                except json.JSONDecodeError as e:
+                    logger.warning(f"⚠️ 配图 prompt JSON 解析失败: {e}")
 
-        # 兜底：用仓库描述拼一个
-        fallback = [
-            f"abstract tech illustration inspired by {full_name}, "
-            f"modern minimal, cinematic lighting, digital art",
-        ]
+        # 兜底
         logger.warning("使用兜底配图 prompt")
-        return fallback
-        
+        return [
+            f"abstract tech illustration inspired by {full_name}, "
+            f"modern minimal, cinematic lighting, digital art"
+        ]
         
 
     # ---------- 插图生成 ----------

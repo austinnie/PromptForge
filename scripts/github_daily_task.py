@@ -115,8 +115,11 @@ def main() -> int:
     if r.get("illustrations"):
         print(f"🖼️  配图      : {len(r['illustrations'])} 张")
 
+    # 分渠道推送状态
     published = r.get("published")
-    if published is True:
+    if args.no_publish:
+        print("📤 推送      : ⏭️  已跳过（--no-publish）")
+    elif published is True:
         print("📤 推送      : ✅ 已推送到草稿箱")
     elif published is False:
         print("📤 推送      : ❌ 失败（详见日志）")
