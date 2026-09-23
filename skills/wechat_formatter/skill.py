@@ -267,19 +267,14 @@ class WechatFormatter:
         content: str = None,
         title: str = None,
     ) -> Dict[str, Any]:
-        """
-        推送文章或贴图到公众号草稿箱。
-
-        news 模式：需要 article_dir（排版输出目录），可选 cover_path
-        newspic 模式：需要 images（本地图片路径列表），可选 content / title；
-                     不需要 article_dir
-        """
+        """推送文章或贴图到公众号草稿箱。"""
         try:
             publish_script = Path(__file__).parent / "publisher" / "wechat_publish.py"
             if not publish_script.exists():
                 return {"status": "error", "error": f"未找到: {publish_script}"}
 
-            cmd = [sys.executable, str(publish_script)]
+            # ✅ 只拼一次基础命令
+            cmd = [sys.executable, str(publish_script), "--yes"]
 
             if article_type == "newspic":
                 if not images:
@@ -296,7 +291,7 @@ class WechatFormatter:
                 article_dir_path = Path(article_dir).resolve()
                 if not article_dir_path.exists():
                     return {"status": "error", "error": f"目录不存在: {article_dir_path}"}
-                cmd += ["--dir", str(article_dir_path)]
+                cmd += ["--dir", str(article_dir_path)]   # ✅ 只在这里拼一次
                 if cover_path:
                     cmd += ["--cover", str(cover_path)]
 

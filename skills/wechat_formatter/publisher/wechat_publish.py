@@ -416,6 +416,7 @@ def main():
     # newspic 模式两个都不需要，所以 required=False；news 模式在上面手动校验
     group = parser.add_mutually_exclusive_group(required=False)
     group.add_argument("--dir", "-d", help="format.py 的输出目录（news 模式使用）")
+    parser.add_argument("--yes", action="store_true",help="跳过交互确认（自动发布）")    
     group.add_argument("--input", "-i", help="Markdown 文件路径（news 模式使用）")
     
     parser.add_argument("--cover", "-c", help="封面图片路径")
@@ -585,7 +586,7 @@ def main():
             resp = input("  继续发布？(y/N) ").strip().lower()
             if resp != "y":
                 print("  已中止")
-                sys.exit(0)
+                sys.exit(2)
     else:
         print("\n无正文图片需上传")
 

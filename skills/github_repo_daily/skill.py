@@ -674,6 +674,7 @@ JSON array:"""
         article_md: str,
         repo_info: Optional[Dict[str, Any]] = None,
         cover_image: Optional[Path] = None,
+        work_dir: Optional[Path] = None,      # ✅ 新增
     ) -> bool:
         """调用 wechat_formatter 排版并发布。
 
@@ -685,21 +686,27 @@ JSON array:"""
         try:
             from skills.wechat_formatter import WechatFormatter
 
-            # ── 工作目录：隔离本次任务的所有产物 ──
-            work_dir = Path(self.config["output_dir"]) / "tmp" / datetime.now().strftime("%Y%m%d_%H%M%S")
+            # ✅ work_dir 由外部传入，不再自己造
+            if work_dir is None:
+                work_dir = Path(self.config["output_dir"]) / "tmp" \
+                           / datetime.now().strftime("%Y%m%d_%H%M%S")
+            work_dir = Path(work_dir)
             assets_dir = work_dir / "assets"
             assets_dir.mkdir(parents=True, exist_ok=True)
 
-            # 把插图从原位置复制到 assets/（md 里用相对路径 assets/xxx.png）
-            # 注意：插图已经写在 md 里用 assets/ 引用，所以只要文件名对上
+            # ✅ 如果 cover 是外部路径（如 GitHub OG 图），才复制
+            #    否则它已经在 assets_dir 里了
             if cover_image and cover_image.exists():
-                shutil.copy2(cover_image, assets_dir / cover_image.name)
+                target = assets_dir / cover_image.name
+                if cover_image != target and not target.exists():
+                    shutil.copy2(cover_image, target)
 
-            # 写 md
+            # 写 md（如果还没写）
             md_file = work_dir / "article.md"
-            md_file.write_text(article_md, encoding="utf-8")
+            if not md_file.exists():
+                md_file.write_text(article_md, encoding="utf-8")
 
-            # ── 处理封面 ──
+            # ── 处理封面（如果是 GitHub OG 图，下载后放 assets_dir）──
             cover_path = None
             if cover_image and cover_image.exists():
                 cover_path = cover_image
@@ -728,7 +735,6 @@ JSON array:"""
 
             # ── 推送 ──
             if self.config.get("wechat_publish", True):
-                # 如果封面还没进 article_dir/images/，复制进去
                 if cover_path and cover_path.exists():
                     images_dir = article_dir / "images"
                     images_dir.mkdir(parents=True, exist_ok=True)
@@ -776,6 +782,8 @@ JSON array:"""
         start_time = time.time()
         logger.info(f"执行技能: {self.name}")
 
+        work_dir: Optional[Path] = None   # ✅ 新增：提升作用域，方便 finally 清理
+
         try:
             # 1. 获取 trending 仓库
             repos = self.fetch_trending_repos()
@@ -801,48 +809,43 @@ JSON array:"""
             if not article:
                 return {"status": "error", "error": "文章生成失败"}
 
-            # 5. 提炼配图 prompt + 生成插图
+            # ✅ 提前创建 work_dir
+            work_dir = Path(self.config["output_dir"]) / "tmp" \
+                       / datetime.now().strftime("%Y%m%d_%H%M%S")
+            assets_dir = work_dir / "assets"
+            assets_dir.mkdir(parents=True, exist_ok=True)
+
+            # 5. 提炼 prompt + 生成插图
             illustration_paths: List[Path] = []
             try:
                 prompts = self._generate_illustration_prompts(
                     details, article, count=self.config["illustration_count"],
                 )
                 if prompts:
-                    work_dir = Path(self.config["output_dir"]) / "tmp" / "illustrations" \
-                               / datetime.now().strftime("%Y%m%d_%H%M%S")
-                    illustration_paths = self._generate_illustrations(prompts, work_dir)
+                    illustration_paths = self._generate_illustrations(prompts, assets_dir)
             except Exception as e:
                 logger.warning(f"⚠️ 插图流程失败，继续无图文章: {e}")
 
-            # 6. 插图插入文章（把图片复制到 article.md 同级的 assets/ 下）
+            # 6. 插图插入文章
             if illustration_paths:
-                # 统一放到 tmp/assets/，md 里引用 assets/xxx.png
-                article_work = Path(self.config["output_dir"]) / "tmp" \
-                               / datetime.now().strftime("%Y%m%d_%H%M%S")
-                assets_dir = article_work / "assets"
-                assets_dir.mkdir(parents=True, exist_ok=True)
+                article = self._insert_illustrations(article, illustration_paths)
 
-                # 复制插图
-                new_paths: List[Path] = []
-                for p in illustration_paths:
-                    target = assets_dir / p.name
-                    if p != target:
-                        shutil.copy2(p, target)
-                    new_paths.append(target)
+            # 7. 保存 md
+            md_file = work_dir / "article.md"
+            md_file.write_text(article, encoding="utf-8")
 
-                article = self._insert_illustrations(article, new_paths)
+            # ✅ 新增：提前把插图路径固化成字符串列表
+            #    避免 work_dir 清理后返回的是失效路径
+            illustration_str_paths = [str(p) for p in illustration_paths]
 
-            # 7. 保存文章（便于用户本地查看）
-            article_dir = Path(self.config["output_dir"]) / datetime.now().strftime("%Y%m%d")
-            article_dir.mkdir(parents=True, exist_ok=True)
-            safe_name = full_name.replace("/", "_")
-            md_path = article_dir / f"{safe_name}.md"
-            md_path.write_text(article, encoding="utf-8")
-            logger.info(f"文章已保存: {md_path}")
-
-            # 8. 发布到微信（插图第一张作为封面，否则用 GitHub OG 图）
+            # 8. 发布到微信
             cover = illustration_paths[0] if illustration_paths else None
-            published = self.publish_to_wechat(article, details, cover_image=cover)
+            published = self.publish_to_wechat(
+                article_md=article,
+                repo_info=details,
+                cover_image=cover,
+                work_dir=work_dir,
+            )
 
             # 9. 记录历史
             history = self._load_history()
@@ -852,12 +855,12 @@ JSON array:"""
 
             elapsed = time.time() - start_time
             return {
-                "status": "success",
+                "status": "success" if published else "partial_success",
                 "result": {
                     "repo": full_name,
                     "repo_url": details.get("html_url"),
-                    "article_path": str(md_path),
-                    "illustrations": [str(p) for p in illustration_paths],
+                    "article_path": str(md_file),   # ✅ 修正：md_path → md_file
+                    "illustrations": illustration_str_paths,   # ✅ 用固化后的路径
                     "published": published,
                     "elapsed": f"{elapsed:.2f}s",
                 },
@@ -869,4 +872,14 @@ JSON array:"""
             import traceback
             traceback.print_exc()
             return {"status": "error", "error": str(e), "skill": self.name}
-            
+
+        finally:
+            # ✅ 新增：无论成功失败，都清理临时目录
+            if work_dir is not None:
+                try:
+                    if work_dir.exists():
+                        shutil.rmtree(work_dir, ignore_errors=True)
+                        logger.info(f"🧹 已清理临时目录: {work_dir}")
+                except Exception as e:
+                    logger.warning(f"⚠️ 清理临时目录失败: {e}")
+                    
