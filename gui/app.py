@@ -16,7 +16,7 @@ from config.settings import settings
 from core.intent_analyzer import IntentAnalyzer
 from core.context_manager import ContextManager
 from services.llm_service import LLMService
-from handlers import TextToImageHandler, ImageToImageHandler, CoupleHandler,ChatHandler, VideoHandler,PresetHandler,GitHubDailyHandler
+from handlers import TextToImageHandler, ImageToImageHandler, CoupleHandler,ChatHandler, VideoHandler,PresetHandler
 from handlers.skill_handler import SkillHandler
 
 class _DailyLogHandler(logging.Handler):
@@ -2464,7 +2464,7 @@ class ChatApp:
                 MultiPersonHandler,  # ✅ 新增
                 ChatHandler, 
                 VideoHandler,
-                GitHubDailyHandler,   # ✅ 新增
+                SkillHandler,   # ✅ 新增
             )
             
             handlers = {
@@ -2474,9 +2474,8 @@ class ChatApp:
                 "multi_person": MultiPersonHandler(self),   # ✅ 新增
                 "chat": ChatHandler(self),
                 "video": VideoHandler(self),  # ✅ 新增
-                "preset_image": PresetHandler(self), 
-                "github_daily": GitHubDailyHandler(self),   # ✅ 加这一行
-                "skill": SkillHandler,
+                "preset_image": PresetHandler(self),                 
+                "skill": SkillHandler(self),  
             }
             
             handler = handlers.get(intent.type)

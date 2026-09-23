@@ -18,9 +18,7 @@ from .video_player import VideoPlayer
 from .music_player import MusicPlayer
 from .radio_player import RadioPlayer
 from .video_sniffer import VideoSniffer
-
 from .github_repo_daily import GitHubRepoDaily
-
 __all__ = [
     'NewsAggregator',
     'NovelWriterOllama',

@@ -7,9 +7,9 @@ from .image_to_image import ImageToImageHandler
 from .couple_handler import CoupleHandler
 from .multi_person_handler import MultiPersonHandler
 from .chat_handler import ChatHandler
-from .video_handler import VideoHandler  # ✅ 新增
+from .video_handler import VideoHandler
 from .preset_handler import PresetHandler
-from .github_daily_handler import GitHubDailyHandler   # ✅ 新增
+from .skill_handler import SkillHandler
 
 __all__ = [
     'BaseHandler',
@@ -18,8 +18,7 @@ __all__ = [
     'CoupleHandler',
     'MultiPersonHandler',
     'ChatHandler',
-    'VideoHandler',  # ✅ 新增
+    'VideoHandler',
     'PresetHandler',
-    'GitHubDailyHandler',   # ✅ 新增
-
+    'SkillHandler',
 ]

@@ -119,14 +119,8 @@ class IntentAnalyzer:
         'animal', 'bird', 'cat', 'dog', 'horse', 'flower',
         'slow motion', 'time-lapse', 'timelapse', 'special effect',
         'cartoon', 'realistic', 'watercolor', 'oil painting', 'anime',
-    ]
-    
-    # ✅ 新增：GitHub 每日推荐触发词
-    GITHUB_DAILY_KEYWORDS = [
-        "github推荐", "github仓库", "github项目", "github trending",
-        "每日仓库", "推荐仓库", "推荐项目", "仓库推荐", "项目推荐",
-        "github 日报", "github日报", "开源项目推荐",
-    ]
+    ]    
+
     
     def __init__(self):
         self._safety = None
@@ -159,34 +153,24 @@ class IntentAnalyzer:
                 # 清理后为空，返回 chat
                 return self._safe_fallback(text)
 
-        # ✅ 新增：GitHub 每日推荐（优先于视频/图生图）
-        if self._is_github_daily_intent(text_lower):
-            return IntentResult(
-                type="github_daily",
-                prompt=text,
-                original_text=text,
-                confidence=0.95,
-                system_hint="🐙 正在抓取今日 GitHub 推荐仓库...",
-            )
 
-        # core/intent_analyzer.py  (在 analyze 里插入)
-
-
-
-        # ✅ 新增：通用 Skill 意图（GitHub 已单独处理，跳过）
+        # ✅ 通用 Skill 意图（优先于视频/图生图/chat）
         hit = match_skill(text)
         if hit:
             skill_name, kw = hit
-            # github_daily 已有专门分支，这里跳过避免冲突
-            if skill_name != "github_repo_daily":
-                return IntentResult(
-                    type="skill",
-                    prompt=text,
-                    original_text=text,
-                    confidence=0.85,
-                    params={"skill": skill_name, "keyword": kw},
-                    system_hint=SKILL_ROUTES[skill_name].get("system_hint", ""),
-                )
+            cfg = SKILL_ROUTES[skill_name]
+            return IntentResult(
+                type="skill",
+                prompt=text,
+                original_text=text,
+                confidence=0.9,
+                params={
+                    "skill": skill_name,
+                    "keyword": kw,
+                    "config_overrides": cfg.get("config_overrides", {}),
+                },
+                system_hint=cfg.get("system_hint", ""),
+            )
         
         # 2. ✅ 视频意图优先（无论有无图，先判视频，避免被图生图截胡）
         if self._is_video_intent(text):
@@ -287,11 +271,6 @@ class IntentAnalyzer:
             original_text=text,
             confidence=0.3
         )
-
-    def _is_github_daily_intent(self, text: str) -> bool:
-        """判断是否触发 GitHub 每日推荐"""
-        text_lower = text.lower()
-        return any(k in text_lower for k in self.GITHUB_DAILY_KEYWORDS)
 
         
     def _is_preset_intent(self, text: str) -> bool:
