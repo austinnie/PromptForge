@@ -335,22 +335,19 @@ class MultimediaWorkflow:
         return params
 
     def _call_ollama(self, prompt: str, temperature: float = 0.7) -> str:
-        import requests
-        url = self.app.settings.ollama_url + "/api/generate"
-        payload = {
-            "model": self.app.settings.ollama_model,
-            "prompt": prompt,
-            "stream": False,
-            "options": {"temperature": temperature}
-        }
+        """兼容旧名，内部走统一的 LLMClient（Agnes 优先，Ollama 兜底）。"""
         try:
-            resp = requests.post(url, json=payload, timeout=60)
-            if resp.status_code == 200:
-                return resp.json().get('response', '')
+            from core.llm_client import get_default_client
+            llm = get_default_client(
+                temperature=temperature,
+                max_tokens=2048,
+                timeout=120,
+            )
+            return llm.generate(prompt)
         except Exception as e:
-            print(f"Ollama 调用失败: {e}")
-        return ""
-
+            print(f"LLM 调用失败: {e}")
+            return ""
+        
     def _novel_to_scenes(self, novel_data: dict) -> List[dict]:
         """将小说拆分为场景列表，优先解析【场景】标记"""
         import re

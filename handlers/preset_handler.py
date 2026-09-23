@@ -215,58 +215,44 @@ class PresetHandler(BaseHandler):
         return subject
 
     def _translate_with_ollama(self, subject: str) -> str:
-        """用 Ollama 翻译（不可用则返回 None）"""
+        """用 LLM 翻译中文主体为英文。失败返回 None。
+
+        优先 Agnes，Ollama 兜底（LLM_BACKENDS 环境变量可覆盖）。
+        """
+        if not subject:
+            return None
         try:
-            import requests
-            from config.settings import settings
+            from core.llm_client import get_default_client
 
-            # 先探活
-            try:
-                r = requests.get(f"{settings.ollama_url}/api/tags", timeout=3)
-                if r.status_code != 200:
-                    return None
-            except Exception:
-                return None
-
-            resp = requests.post(
-                f"{settings.ollama_url}/api/generate",
-                json={
-                    "model": settings.ollama_model,
-                    "prompt": (
-                        "Translate the following Chinese phrase into concise English "
-                        "for use in a Stable Diffusion prompt. "
-                        "Output ONLY the English translation, no quotes, no explanation, "
-                        "no period at the end.\n\n"
-                        f"Chinese: {subject}\nEnglish:"
-                    ),
-                    "stream": False,
-                    "options": {"temperature": 0.2, "num_predict": 60},
-                },
+            llm = get_default_client(
+                temperature=0.2,
+                max_tokens=60,
                 timeout=20,
             )
-            if resp.status_code != 200:
+            prompt = (
+                "Translate the following Chinese phrase into concise English "
+                "for use in a Stable Diffusion prompt. "
+                "Output ONLY the English translation, no quotes, no explanation, "
+                "no period at the end.\n\n"
+                f"Chinese: {subject}\nEnglish:"
+            )
+            text = llm.generate(prompt)
+            if not text:
                 return None
 
-            text = resp.json().get("response", "").strip()
-            # 清理：引号、前缀、换行
-            text = text.splitlines()[0].strip() if text else ""
-            text = text.strip('"\'').strip()
+            text = text.splitlines()[0].strip().strip('"\'')
             text = re.sub(r'^(English|Translation)[：:]\s*', '', text, flags=re.IGNORECASE)
             text = text.rstrip('.,;:')
 
-            # 必须包含英文字母，且不能太长（防止 LLM 胡说）
-            if not text:
-                return None
             if not re.search(r'[a-zA-Z]', text):
                 return None
             if len(text) > 80:
                 return None
-
             return text
         except Exception as e:
-            print(f"⚠️ Ollama 翻译失败: {e}")
+            print(f"⚠️ LLM 翻译失败: {e}")
             return None
-
+        
     def _translate_with_dict(self, subject: str) -> str:
         """用内置词典翻译（按最长匹配优先，词间补空格）"""
         keys = sorted(self.ZH_EN_DICT.keys(), key=len, reverse=True)

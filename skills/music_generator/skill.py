@@ -445,35 +445,19 @@ class MusicMaestro:
         )
     
     def _call_ollama(self, prompt: str, timeout: int = 20) -> str:
-        """调用 Ollama 生成歌词"""
+        """兼容旧名。实际走 LLMClient。"""
         try:
-            import requests
-            ollama_host = self.config.get("ollama_host", "http://localhost:11434")
-            ollama_model = self.config.get("ollama_model", "qwen2.5:7b")
-            
-            # 快速健康检查
-            try:
-                health_check = requests.get(f"{ollama_host}/api/tags", timeout=3)
-                if health_check.status_code != 200:
-                    return ""
-            except:
-                return ""
-            
-            response = requests.post(
-                f"{ollama_host}/api/generate",
-                json={
-                    "model": ollama_model,
-                    "prompt": prompt,
-                    "stream": False,
-                    "options": {"temperature": 0.8, "num_predict": 512}
-                },
-                timeout=timeout
+            from core.llm_client import get_default_client
+            llm = get_default_client(
+                temperature=0.8,
+                max_tokens=512,
+                timeout=timeout,
             )
-            response.raise_for_status()
-            return response.json().get("response", "")
-        except:
+            return llm.generate(prompt)
+        except Exception as e:
+            logger.warning(f"LLM 调用失败: {e}")
             return ""
-    
+        
     def generate_lyrics(self, topic: str, language: str, emotion: str) -> Dict[str, Any]:
         """生成歌词"""
         logger.info(f"✍️ 正在创作歌词... 主题: {topic}, 语言: {language}")

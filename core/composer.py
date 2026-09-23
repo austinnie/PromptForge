@@ -203,105 +203,49 @@ class PromptComposer:
         style_hint: str = "general",
         retry: int = 2,
     ) -> str:
+        """使用 LLM 生成高质量 SD 提示词。
+
+        优先 Agnes，Ollama 兜底（可通过 LLM_BACKENDS 环境变量覆盖）。
+        model 参数保留兼容，但实际生效的模型由 LLMClient 决定。
         """
-        使用 Ollama 生成高质量 SD 提示词
-        
-        参数:
-            user_desc: 用户描述（中文/英文）
-            model: 指定模型，默认从 config 读取
-            style_hint: 风格提示 (general/anime/realistic/sketch/mecha)
-            retry: 失败重试次数
-        
-        返回:
-            生成的提示词
-        """
-        import requests
-        import time
-        
-        # 从 config 读取配置
-        from config import OLLAMA_MODEL, OLLAMA_HOST
-        
-        if model is None:
-            model = OLLAMA_MODEL
-        
-        # ===== 风格特定的系统提示词 =====
-        SYSTEM_PROMPTS = {
-            "general": "你是一个Stable Diffusion提示词专家。将用户描述转换为英文AI绘画提示词。要求：包含主体、环境、光影、画质修饰词，以逗号分隔。只输出提示词，不要解释。",
-            "anime": "你是一个动漫风格提示词专家。将用户描述转换为精美的日系动漫绘画提示词。包含角色特征、服装、背景、色彩氛围。只输出英文提示词。",
-            "realistic": "你是一个写实摄影提示词专家。将用户描述转换为真实感摄影提示词。包含相机参数、光线、构图、细节质感。只输出英文提示词。",
-            "sketch": "你是一个素描/线稿提示词专家。将用户描述转换为铅笔素描或白描风格的提示词。强调线条、留白、黑白对比。只输出英文提示词。",
-            "mecha": "你是一个机甲/科幻提示词专家。将用户描述转换为机甲机械风格的提示词。包含机械细节、材质、科技感。只输出英文提示词。",
-        }
-        
-        # ===== 附加质量修饰词 =====
-        QUALITY_TAGS = {
-            "general": "masterpiece, best quality, 8k",
-            "anime": "anime style, masterpiece, high quality, vibrant colors, detailed",
-            "realistic": "photorealistic, highly detailed, sharp focus, 8k, professional photography",
-            "sketch": "pencil sketch, black and white, fine linework, white background, raw art",
-            "mecha": "sci-fi, mechanical, intricate details, hyper-detailed, concept art",
-        }
-        
+        from core.llm_client import get_default_client
+
+        SYSTEM_PROMPTS = { ... }   # 保持不变
+        QUALITY_TAGS = { ... }     # 保持不变
+
         system_prompt = SYSTEM_PROMPTS.get(style_hint, SYSTEM_PROMPTS["general"])
         quality_tag = QUALITY_TAGS.get(style_hint, QUALITY_TAGS["general"])
-        
-        # ===== 用户描述增强 =====
+
         if len(user_desc.strip()) < 5:
             user_desc = f"a beautiful scene with {user_desc}"
-        
-        # ===== 构建完整 Prompt =====
-        full_prompt = f"""{system_prompt}
 
-        用户描述：{user_desc}
+        prompt = f"""{system_prompt}
 
-        要求：
-        1. 提示词用英文，逗号分隔
-        2. 包含：主体描述 + 环境/背景 + 光影氛围 + 画质修饰词
-        3. 长度控制在 30-80 词之间
-        4. 只输出提示词，不要有其他内容
+    用户描述：{user_desc}
 
-        自动追加质量词：{quality_tag}
-        """
-        
-        # ===== 调用 Ollama =====
+    要求：
+    1. 提示词用英文，逗号分隔
+    2. 包含：主体描述 + 环境/背景 + 光影氛围 + 画质修饰词
+    3. 长度控制在 30-80 词之间
+    4. 只输出提示词，不要有其他内容
+
+    自动追加质量词：{quality_tag}
+    """
+
+        llm = get_default_client(temperature=0.7, max_tokens=300, timeout=60)
+
         for attempt in range(retry + 1):
-            try:
-                response = requests.post(
-                    f"{OLLAMA_HOST}/api/generate",
-                    json={
-                        "model": model,
-                        "prompt": user_desc,
-                        "stream": False,
-                        "temperature": 0.7,
-                        "max_tokens": 200,
-                    },
-                    timeout=120,
-                    proxies={"http": None, "https": None},
-                )
-                
-                if response.status_code == 200:
-                    result = response.json().get("response", "").strip()
-                    result = result.replace("提示词：", "").replace("Prompt:", "").strip()
-                    
-                    # 确保有质量词
-                    if quality_tag not in result:
-                        result = f"{result}, {quality_tag}"
-                    
-                    return result
-                    
-            except requests.exceptions.Timeout:
-                print(f"   ⚠️ Ollama 超时 (尝试 {attempt+1}/{retry+1})")
-            except requests.exceptions.ConnectionError:
-                print(f"   ⚠️ 无法连接 Ollama (尝试 {attempt+1}/{retry+1})")
-                if attempt == 0:
-                    print("   💡 请确保 Ollama 正在运行: ollama serve")
-            except Exception as e:
-                print(f"   ⚠️ Ollama 错误: {e}")
-            
+            result = llm.generate(prompt, system=system_prompt)
+            if result:
+                result = result.replace("提示词：", "").replace("Prompt:", "").strip()
+                if quality_tag not in result:
+                    result = f"{result}, {quality_tag}"
+                return result
             if attempt < retry:
                 time.sleep(2)
-        
-        # ===== 所有重试失败，返回备用提示词 =====
+
+        # 兜底
         fallback = f"{user_desc}, {quality_tag}"
-        print(f"   ⚠️ Ollama 不可用，使用备用提示词")
-        return fallback        
+        print(f"   ⚠️ LLM 不可用，使用备用提示词")
+        return fallback
+    

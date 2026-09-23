@@ -395,19 +395,17 @@ class NewsAggregator:
         return unique
     
     def _generate_ai_summary(self, articles: List[Dict]) -> str:
-        """使用 Ollama 生成 AI 摘要"""
+        """生成 AI 摘要。优先 Agnes，Ollama 兜底。"""
         if not articles:
             return "暂无新闻"
-        
+
         try:
-            import requests
-            
+            from core.llm_client import get_default_client
+
             max_articles = self.config.get("ai_summary_max_articles", 50)
             temperature = self.config.get("ai_temperature", 0.3)
             timeout = self.config.get("ai_timeout", 120)
-            model = self.config.get("ai_model", "qwen2.5:3b")
-            ollama_url = self.config.get("ollama_url", "http://localhost:11434")
-            
+
             news_text = ""
             for i, article in enumerate(articles[:max_articles]):
                 summary = article.get("summary", "")
@@ -416,41 +414,39 @@ class NewsAggregator:
                 news_text += f"{i+1}. {article['title']}\n"
                 news_text += f"   {summary}\n"
                 news_text += f"   来源: {article['source']}\n\n"
-            
+
             prompt = f"""请根据以下新闻内容，生成一份每日新闻简报摘要。
 
-要求：
-1. 按主题/类别整理
-2. 列出最重要的新闻
-3. 每条新闻用一句话概括核心内容
-4. 格式简洁清晰
+    要求：
+    1. 按主题/类别整理
+    2. 列出最重要的新闻
+    3. 每条新闻用一句话概括核心内容
+    4. 格式简洁清晰
 
-新闻列表：
-{news_text}
+    新闻列表：
+    {news_text}
 
-请生成每日新闻简报摘要："""
-            
-            response = requests.post(
-                f"{ollama_url}/api/generate",
-                json={
-                    "model": model,
-                    "prompt": prompt,
-                    "stream": False,
-                    "options": {"temperature": temperature}
-                },
-                timeout=timeout
+    请生成每日新闻简报摘要："""
+
+            # 允许该 skill 独立配置后端（NEWS_LLM_BACKENDS），否则用全局
+            backends_env = os.environ.get("NEWS_LLM_BACKENDS", "").strip()
+            overrides = dict(
+                temperature=temperature,
+                max_tokens=2048,
+                timeout=timeout,
             )
-            
-            if response.status_code == 200:
-                data = response.json()
-                return data.get("response", "生成摘要失败")
-            else:
-                return f"AI 服务异常: {response.status_code}"
-                
+            if backends_env:
+                overrides["backends"] = [b.strip() for b in backends_env.split(",") if b.strip()]
+
+            llm = get_default_client(**overrides)
+            result = llm.generate(prompt)
+            if result:
+                return result
+            return "AI 摘要生成失败：所有后端均不可用"
         except Exception as e:
             logger.warning(f"AI 摘要生成失败: {e}")
             return f"AI 摘要生成失败: {str(e)}"
-    
+        
     def _generate_report(self, articles: List[Dict], category: str = None, full: bool = True) -> str:
         """生成新闻报告"""
         sep_len = self.config.get("report_separator_length", 60)

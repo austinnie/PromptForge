@@ -414,32 +414,30 @@ class NovelWriterOllama:
             return False
         return False
 
-    def _call_ollama(self, ollama_url: str, model: str, prompt: str, temperature: float = 0.85) -> str:
-        """调用 Ollama API"""
-        url = f"{ollama_url}/api/generate"
+    def _call_ollama(
+        self,
+        ollama_url: str,
+        model: str,
+        prompt: str,
+        temperature: float = 0.85,
+    ) -> str:
+        """兼容旧签名。实际走 LLMClient（Agnes 优先，Ollama 兜底）。
 
-        payload = {
-            "model": model,
-            "prompt": prompt,
-            "stream": False,
-            "options": {
-                "temperature": temperature,
-                "num_predict": 2048
-            }
-        }
-
+        ollama_url / model 参数保留是为了不破坏调用方，实际生效的是
+        LLMClient 从环境变量/配置里读到的后端。
+        """
         try:
-            response = requests.post(url, json=payload, timeout=300)
-            response.raise_for_status()
-            data = response.json()
-            return data.get('response', '').strip()
-        except requests.exceptions.Timeout:
-            logger.error("Ollama 请求超时")
-            return ""
+            from core.llm_client import get_default_client
+            llm = get_default_client(
+                temperature=temperature,
+                max_tokens=2048,
+                timeout=300,
+            )
+            return llm.generate(prompt)
         except Exception as e:
-            logger.error(f"Ollama API 调用失败: {e}")
+            logger.error(f"LLM 调用失败: {e}")
             return ""
-
+        
     def _load_existing_novel(self, filepath: str) -> Dict:
         """加载已有小说内容"""
         path = Path(filepath)
