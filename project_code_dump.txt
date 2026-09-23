@@ -1,5 +1,5 @@
 项目代码汇总 (扫描于 E:\SD_OpenVINO\PromptForge)
-包含文件数: 320
+包含文件数: 339
 ================================================================================
 
 === 文件: .gitattributes ===
@@ -4219,6 +4219,13 @@ class IntentAnalyzer:
         'cartoon', 'realistic', 'watercolor', 'oil painting', 'anime',
     ]
     
+    # ✅ 新增：GitHub 每日推荐触发词
+    GITHUB_DAILY_KEYWORDS = [
+        "github推荐", "github仓库", "github项目", "github trending",
+        "每日仓库", "推荐仓库", "推荐项目", "仓库推荐", "项目推荐",
+        "github 日报", "github日报", "开源项目推荐",
+    ]
+    
     def __init__(self):
         self._safety = None
     
@@ -4249,7 +4256,17 @@ class IntentAnalyzer:
             else:
                 # 清理后为空，返回 chat
                 return self._safe_fallback(text)
-            
+
+        # ✅ 新增：GitHub 每日推荐（优先于视频/图生图）
+        if self._is_github_daily_intent(text_lower):
+            return IntentResult(
+                type="github_daily",
+                prompt=text,
+                original_text=text,
+                confidence=0.95,
+                system_hint="🐙 正在抓取今日 GitHub 推荐仓库...",
+            )
+        
         # 2. ✅ 视频意图优先（无论有无图，先判视频，避免被图生图截胡）
         if self._is_video_intent(text):
             if has_image:
@@ -4350,6 +4367,12 @@ class IntentAnalyzer:
             confidence=0.3
         )
 
+    def _is_github_daily_intent(self, text: str) -> bool:
+        """判断是否触发 GitHub 每日推荐"""
+        text_lower = text.lower()
+        return any(k in text_lower for k in self.GITHUB_DAILY_KEYWORDS)
+
+        
     def _is_preset_intent(self, text: str) -> bool:
         text_lower = text.lower()
         # 有"预设"字样，或同时提到预设名 + 生成意图
@@ -5093,6 +5116,7 @@ from .multi_person_handler import MultiPersonHandler
 from .chat_handler import ChatHandler
 from .video_handler import VideoHandler  # ✅ 新增
 from .preset_handler import PresetHandler
+from .github_daily_handler import GitHubDailyHandler   # ✅ 新增
 
 __all__ = [
     'BaseHandler',
@@ -5103,6 +5127,7 @@ __all__ = [
     'ChatHandler',
     'VideoHandler',  # ✅ 新增
     'PresetHandler',
+    'GitHubDailyHandler',   # ✅ 新增
 
 ]
 
@@ -5544,6 +5569,74 @@ class CoupleHandler(BaseHandler):
     def cancel(self):
         self.cancel_flag = True
         self.is_generating = False
+
+----------------------------------------
+
+=== 文件: handlers\github_daily_handler.py ===
+# handlers/github_daily_handler.py
+"""GitHub 每日仓库推荐处理器"""
+
+import os
+from typing import Dict, Any
+from .base import BaseHandler
+
+
+class GitHubDailyHandler(BaseHandler):
+    """调用 github_repo_daily skill"""
+
+    def handle(self, intent: Dict[str, Any]) -> None:
+        text = intent.get("original_text", "")
+
+        # ✅ 与 _run_skill 共用并发标志，避免和菜单/工具栏同时跑
+        if getattr(self.app, "_skill_running", False):
+            current = getattr(self.app, "_skill_current", "另一个任务")
+            self._reply(
+                f"⏳ 有任务正在执行（当前：{current}）\n"
+                f"   请等完成后再试——本次请求未入队。"
+            )
+            return
+
+        self.app._skill_running = True
+        self.app._skill_current = "🐙 GitHub 日报"
+
+        # 简单识别"不发布""只生成"等开关
+        no_publish = any(k in text for k in ["不发布", "不推送", "只生成", "本地"])
+        self._reply("🐙 正在抓取今日 GitHub Trending...")
+        self._update_status("🐙 获取仓库列表...")
+
+        try:
+            from skills.github_repo_daily import GitHubRepoDaily
+
+            skill = GitHubRepoDaily({
+                "wechat_publish": not no_publish,
+                "wechat_theme": "newspaper",
+            })
+            result = skill.execute()
+
+            if result.get("status") != "success":
+                self._reply(f"❌ 执行失败: {result.get('error')}")
+                self._update_status("❌ 失败")
+                return
+
+            r = result["result"]
+            self._reply(f"✅ 今日推荐仓库：**{r['repo']}**")
+            self._reply(f"🔗 仓库链接：{r['repo_url']}")
+            self._reply(f"📄 文章已生成：{os.path.basename(r['article_path'])}")
+            if r.get("published"):
+                self._reply("📤 已推送到微信公众号草稿箱")
+            else:
+                self._reply("📄 未推送（已生成到本地）")
+            self._update_status(f"✅ 完成 ({r['elapsed']})")
+
+        except Exception as e:
+            self._reply(f"❌ 执行异常: {e}")
+            self._update_status("❌ 异常")
+            import traceback
+            traceback.print_exc()
+        finally:
+            # ✅ 一定要释放，否则后续菜单/按钮会被永久锁住
+            self.app._skill_running = False
+            self.app._skill_current = None
 
 ----------------------------------------
 
@@ -10968,6 +11061,263 @@ async function copyAll() {
     }
   ]
 }
+
+----------------------------------------
+
+=== 文件: output\github_repo_daily\20260923\DeusData_codebase-memory-mcp.md ===
+# Codebase Memory-MCP: The Fastest and Most Efficient Code Intelligence Engine
+
+![illustration](assets/illustration_01.png)
+
+
+
+![illustration](assets/illustration_02.png)
+
+## 介绍
+
+如果你是AI编程的爱好者，那么你一定听说过代码智能引擎（Code Intelligence Engine, CIE）。这些工具能帮助开发者提高编程效率，减少出错的可能性，甚至在一定程度上提高代码质量。而在这个领域中，有一个名为Codebase Memory-MCP的项目，它以其高效、精准和全面的特点吸引了众多开发者和研究者的目光。
+
+
+![illustration](assets/illustration_03.png)
+
+## 仓库功能与用途
+
+### 主要功能
+
+Codebase Memory-MCP是一个高性能的代码智能引擎，它能够将代码库索引到一个持久的知识图谱中。这使得它能够快速查找和理解复杂的代码结构，是编程领域中极其重要的工具。它不仅适用于个人开发者，也适用于企业级的代码智能引擎。
+
+### 用途
+
+Codebase Memory-MCP的主要用途包括：
+
+- **代码优化**：帮助开发者提高代码的可读性和可维护性，减少代码的冗余和错误。
+- **错误定位**：快速定位到代码中的问题，提高代码的可靠性。
+- **知识积累**：帮助开发者积累和整合代码知识，提高代码质量和代码的可理解性。
+
+### 亮点
+
+- **高效索引**：平均代码库索引速度在毫秒级别，处理大规模代码库（如Linux内核）只需3分钟。
+- **低资源消耗**：使用纯C语言实现，零依赖于外部库，仅需一个可执行文件和少量的静态二进制文件。
+- **高性能**：在高性能计算领域有着极高的性能表现。
+- **零依赖**：不需要依赖任何API、服务或语言运行时，只需一个静态二进制文件，即可部署和运行。
+
+### 使用场景
+
+Codebase Memory-MCP适用于以下场景：
+
+- **开发者**：提高代码质量和效率，减少出错率。
+- **企业级项目**：提供强大的代码智能引擎，提升代码质量和开发效率。
+- **科研领域**：研究代码智能引擎的性能和效果，为未来的开发提供参考。
+
+## 结语
+
+Codebase Memory-MCP是一个高性能的代码智能引擎，它的出现为开发者和研究者提供了一种全新的方式来提高代码质量和开发效率。如果你对代码智能引擎有浓厚的兴趣，不妨关注一下这个项目，也许你会从中获得灵感，或者找到新的研究方向。
+
+----------------------------------------
+
+=== 文件: output\github_repo_daily\20260923\harry7557558_spirula-studio.md ===
+# Spirula Studio: Cross-Vendor 3D Gaussian Splatting Trainer for Video and Mesh Generation
+
+## 介绍
+
+Spirula Studio 是一个用于训练 3D Gaussian Splatting 模型的自包含二进制工具，从原始照片/视频到 Splat 到网格，只需一串视频。它不依赖于 Python/PyTorch，也不需要安装单独的 COLMAP。Spirula Studio 通过 Vulkan 交叉支持 NVIDIA、AMD、Intel 和 Apple GPU，训练 100,000,000 个全 SH 粉砂，占用 8GB VRAM，并有自然光校正和白平衡校正的定制 Bilateral 网格和 PPISP，以及改进的照明快照和快速的结构从运动（SfM）功能。
+
+## 关键特性
+
+- **跨厂商支持**：通过 Vulkan 计算机，Spirula Studio 适用于**NVIDIA, AMD, Intel 和 Apple** GPU。
+- **融合最佳实践**：结合了 MCMC/IGS+/MRNF 的优点，以获得更清晰的结果，更少的浮点误差，从物体到大规模场景。
+- **VRAM 效率**：通过量化训练，8GB VRAM 能力可训练 100,000,000 个 SH3 粉砂。
+- **360° 相机和 equirectangular 支持**：只需加载数据集并进行训练，不需要畸变校正。
+- **改进的 Bilateral 网格和 PPISP**：使用改进的 Bilateral 网格和 PPISP，以提高质量而不引入不想要的颜色偏差或暗淡。
+- **高速 SfM**：内置 SfM 功能，无需等待 COLMAP 或运行单独的脚本，即可实现。
+- **深度/法线、网格、天空盒、线性颜色…更多**：其他功能包括。
+- **新闻更新**：
+  - **2026 年 9 月 10 日：** 该数据集创建模块现在使用在常见视频和图像格式中回收的时域和元数据来恢复计量尺度和方向，以解决重建结果过大/过小或倾斜的问题。
+  - **2026 年 9 月 3 日：** SfM 模块现在支持 [LoMa](https://github.com/davnords/LoMa) 的特征检测和匹配，适用于困难数据集。
+  - **2026 年 8 月 14 日：** 培训现在在 macOS/Apple Silicon 上得到验证。您可以从 [Releases 页面](https://github.com/harry7557558/spirula-studio/releases/) 下载并从那里下载，或者从 [GitHub 上的 Releases 页面](https://github.com/harry7557558/spirula-studio/releases/) 下载。
+  - **2026 年 8 月 8 日：** 支持 3 种语言：英语、日语、简体中文、繁体中文、韩语、德语、法语、西班牙语、葡萄牙语、意大利语、荷兰语、俄语、土耳其语。
+  - **2026 年 8 月 8 日：** Vulkan 后端已添加组件，包括从视频中提取帧、AI 遮罩、原生 SfM、网格生成和批量处理，可在 GUI 和 CLI 中访问。
+  - **2026 年 7 月 22 日：** 添加了 Vulkan 后端，适用于 NVIDIA, AMD 和 Intel GPU。
+
+## 下载
+
+Spirula Studio 的二进制文件可以从 [Releases 页面](https://github.com/harry7557558/spirula-studio/releases/) 下载。选择适合您的平台（Windows、Linux 或 macOS）的版本，下载并解压，然后双击打开 GUI。
+
+如果您正在远程/云端 GPU 上训练，可以使用 CLI：运行 `spirula --help` 获取详细信息。默认情况下，`spirula train` 命令将为您服务，并在 HTTP 端口上运行一个查看器，您可以通过 SSH 进行转发并在您的 web 浏览器中查看训练进度。
+
+## 从源代码构建
+
+Spirula Studio 提供了两个后端：
+
+- **Vulkan (推荐)**：跨平台和
+
+请注意，本文档是基于 GitHub 仓库的节选内容编写，如果你需要完整的介绍，建议直接访问 GitHub 仓库进行阅读。
+
+----------------------------------------
+
+=== 文件: output\github_repo_daily\20260923\strands-agents_harness-sdk.md ===
+## 破解 AI 虚拟助手的终极密码：Strands Agents SDK
+
+### 引言
+
+在当今数字化时代，AI 虚拟助手已经成为我们日常生活中不可或缺的一部分。从智能家居设备到智能客服机器人，它们都在不断进步，为我们的生活带来更多的便利和效率。但是，开发和维护一个高效的 AI 虚拟助手却是一项相当复杂的工作，需要大量的时间和精力。为了解决这一问题，我们有 Strands Agents SDK，一个开源的 Python 和 TypeScript SDK，可以帮助你快速构建和运行 AI 虚拟助手，无需担心复杂的技术难题。
+
+### 仓库简介
+
+Strands Agents SDK 是一个开放源码的 Python 和 TypeScript SDK，专注于为生产中的 AI 代理提供解决方案。Strands Agents SDK 适用于任何模型，任何云环境。无论你是初学者还是有经验的开发者，只需几行代码，就能轻松构建自己的 AI 虚拟助手。它提供了一系列生命周期控制、工具、结构化输出、MCP（Model Control Plane）、多代理模式、内存管理、会话管理和模型迁移等功能，让 AI 虚拟助手的开发变得更加简单快捷。
+
+### 使用场景
+
+无论你是企业级客户、科技公司，还是个人开发者，Strands Agents SDK 都可以帮你解决各种需求。例如，如果你正在开发一个智能家居系统，Strands Agents SDK 可以帮助你自动化家庭设备的控制。如果你正在开发一个客户服务机器人，Strands Agents SDK 可以帮助你提供快速、准确的回答。无论你是在构建新的 AI 项目，还是在现有系统中进行改进，Strands Agents SDK 都是你的理想选择。
+
+### 技术栈
+
+Strands Agents SDK 是一个多语言的开发环境，支持 Python 和 TypeScript。无论是使用 Python 还是 TypeScript，你都可以轻松地开始使用 Strands Agents SDK。此外，Strands Agents SDK 还包含一个文档网站、示例项目和一个支持的插件，让你的开发过程更加顺畅。
+
+### 社区与支持
+
+Strands Agents SDK 还有一个活跃的社区和丰富的支持资源。如果你在使用过程中遇到任何问题，社区内的开发者和用户可以为你提供帮助。此外，Strands Agents SDK 还有一个 Discord 频道，你可以在这里找到更多关于项目使用的详细信息和社区支持。
+
+### 总结
+
+Strands Agents SDK 是一个简单、高效、功能齐全的 AI 虚拟助手开发工具包。无论你是初学者还是有经验的开发者，都可以轻松使用 Strands Agents SDK 来构建自己的 AI 虚拟助手。如果你正在寻找一个解决方案来解决复杂的技术难题，Strands Agents SDK 是你最好的选择。快来加入 Strands Agents 的社区，一起探索 AI 虚拟助手的无限可能吧！
+
+---
+
+希望这篇文章能够帮助你了解 Strands Agents SDK 的功能和用途，以及如何使用它来构建自己的 AI 虚拟助手。如果你有任何问题或需要更多帮助，请随时联系我们的社区。
+
+----------------------------------------
+
+=== 文件: output\github_repo_daily\history.json ===
+[
+  "harry7557558/spirula-studio",
+  "strands-agents/harness-sdk",
+  "DeusData/codebase-memory-mcp"
+]
+
+----------------------------------------
+
+=== 文件: output\github_repo_daily\tmp\20260923_231056.md ===
+# Spirula Studio: Cross-Vendor 3D Gaussian Splatting Trainer for Video and Mesh Generation
+
+## 介绍
+
+Spirula Studio 是一个用于训练 3D Gaussian Splatting 模型的自包含二进制工具，从原始照片/视频到 Splat 到网格，只需一串视频。它不依赖于 Python/PyTorch，也不需要安装单独的 COLMAP。Spirula Studio 通过 Vulkan 交叉支持 NVIDIA、AMD、Intel 和 Apple GPU，训练 100,000,000 个全 SH 粉砂，占用 8GB VRAM，并有自然光校正和白平衡校正的定制 Bilateral 网格和 PPISP，以及改进的照明快照和快速的结构从运动（SfM）功能。
+
+## 关键特性
+
+- **跨厂商支持**：通过 Vulkan 计算机，Spirula Studio 适用于**NVIDIA, AMD, Intel 和 Apple** GPU。
+- **融合最佳实践**：结合了 MCMC/IGS+/MRNF 的优点，以获得更清晰的结果，更少的浮点误差，从物体到大规模场景。
+- **VRAM 效率**：通过量化训练，8GB VRAM 能力可训练 100,000,000 个 SH3 粉砂。
+- **360° 相机和 equirectangular 支持**：只需加载数据集并进行训练，不需要畸变校正。
+- **改进的 Bilateral 网格和 PPISP**：使用改进的 Bilateral 网格和 PPISP，以提高质量而不引入不想要的颜色偏差或暗淡。
+- **高速 SfM**：内置 SfM 功能，无需等待 COLMAP 或运行单独的脚本，即可实现。
+- **深度/法线、网格、天空盒、线性颜色…更多**：其他功能包括。
+- **新闻更新**：
+  - **2026 年 9 月 10 日：** 该数据集创建模块现在使用在常见视频和图像格式中回收的时域和元数据来恢复计量尺度和方向，以解决重建结果过大/过小或倾斜的问题。
+  - **2026 年 9 月 3 日：** SfM 模块现在支持 [LoMa](https://github.com/davnords/LoMa) 的特征检测和匹配，适用于困难数据集。
+  - **2026 年 8 月 14 日：** 培训现在在 macOS/Apple Silicon 上得到验证。您可以从 [Releases 页面](https://github.com/harry7557558/spirula-studio/releases/) 下载并从那里下载，或者从 [GitHub 上的 Releases 页面](https://github.com/harry7557558/spirula-studio/releases/) 下载。
+  - **2026 年 8 月 8 日：** 支持 3 种语言：英语、日语、简体中文、繁体中文、韩语、德语、法语、西班牙语、葡萄牙语、意大利语、荷兰语、俄语、土耳其语。
+  - **2026 年 8 月 8 日：** Vulkan 后端已添加组件，包括从视频中提取帧、AI 遮罩、原生 SfM、网格生成和批量处理，可在 GUI 和 CLI 中访问。
+  - **2026 年 7 月 22 日：** 添加了 Vulkan 后端，适用于 NVIDIA, AMD 和 Intel GPU。
+
+## 下载
+
+Spirula Studio 的二进制文件可以从 [Releases 页面](https://github.com/harry7557558/spirula-studio/releases/) 下载。选择适合您的平台（Windows、Linux 或 macOS）的版本，下载并解压，然后双击打开 GUI。
+
+如果您正在远程/云端 GPU 上训练，可以使用 CLI：运行 `spirula --help` 获取详细信息。默认情况下，`spirula train` 命令将为您服务，并在 HTTP 端口上运行一个查看器，您可以通过 SSH 进行转发并在您的 web 浏览器中查看训练进度。
+
+## 从源代码构建
+
+Spirula Studio 提供了两个后端：
+
+- **Vulkan (推荐)**：跨平台和
+
+请注意，本文档是基于 GitHub 仓库的节选内容编写，如果你需要完整的介绍，建议直接访问 GitHub 仓库进行阅读。
+
+----------------------------------------
+
+=== 文件: output\github_repo_daily\tmp\20260923_231436.md ===
+## 破解 AI 虚拟助手的终极密码：Strands Agents SDK
+
+### 引言
+
+在当今数字化时代，AI 虚拟助手已经成为我们日常生活中不可或缺的一部分。从智能家居设备到智能客服机器人，它们都在不断进步，为我们的生活带来更多的便利和效率。但是，开发和维护一个高效的 AI 虚拟助手却是一项相当复杂的工作，需要大量的时间和精力。为了解决这一问题，我们有 Strands Agents SDK，一个开源的 Python 和 TypeScript SDK，可以帮助你快速构建和运行 AI 虚拟助手，无需担心复杂的技术难题。
+
+### 仓库简介
+
+Strands Agents SDK 是一个开放源码的 Python 和 TypeScript SDK，专注于为生产中的 AI 代理提供解决方案。Strands Agents SDK 适用于任何模型，任何云环境。无论你是初学者还是有经验的开发者，只需几行代码，就能轻松构建自己的 AI 虚拟助手。它提供了一系列生命周期控制、工具、结构化输出、MCP（Model Control Plane）、多代理模式、内存管理、会话管理和模型迁移等功能，让 AI 虚拟助手的开发变得更加简单快捷。
+
+### 使用场景
+
+无论你是企业级客户、科技公司，还是个人开发者，Strands Agents SDK 都可以帮你解决各种需求。例如，如果你正在开发一个智能家居系统，Strands Agents SDK 可以帮助你自动化家庭设备的控制。如果你正在开发一个客户服务机器人，Strands Agents SDK 可以帮助你提供快速、准确的回答。无论你是在构建新的 AI 项目，还是在现有系统中进行改进，Strands Agents SDK 都是你的理想选择。
+
+### 技术栈
+
+Strands Agents SDK 是一个多语言的开发环境，支持 Python 和 TypeScript。无论是使用 Python 还是 TypeScript，你都可以轻松地开始使用 Strands Agents SDK。此外，Strands Agents SDK 还包含一个文档网站、示例项目和一个支持的插件，让你的开发过程更加顺畅。
+
+### 社区与支持
+
+Strands Agents SDK 还有一个活跃的社区和丰富的支持资源。如果你在使用过程中遇到任何问题，社区内的开发者和用户可以为你提供帮助。此外，Strands Agents SDK 还有一个 Discord 频道，你可以在这里找到更多关于项目使用的详细信息和社区支持。
+
+### 总结
+
+Strands Agents SDK 是一个简单、高效、功能齐全的 AI 虚拟助手开发工具包。无论你是初学者还是有经验的开发者，都可以轻松使用 Strands Agents SDK 来构建自己的 AI 虚拟助手。如果你正在寻找一个解决方案来解决复杂的技术难题，Strands Agents SDK 是你最好的选择。快来加入 Strands Agents 的社区，一起探索 AI 虚拟助手的无限可能吧！
+
+---
+
+希望这篇文章能够帮助你了解 Strands Agents SDK 的功能和用途，以及如何使用它来构建自己的 AI 虚拟助手。如果你有任何问题或需要更多帮助，请随时联系我们的社区。
+
+----------------------------------------
+
+=== 文件: output\github_repo_daily\tmp\20260923_232340\article.md ===
+# Codebase Memory-MCP: The Fastest and Most Efficient Code Intelligence Engine
+
+![illustration](assets/illustration_01.png)
+
+
+
+![illustration](assets/illustration_02.png)
+
+## 介绍
+
+如果你是AI编程的爱好者，那么你一定听说过代码智能引擎（Code Intelligence Engine, CIE）。这些工具能帮助开发者提高编程效率，减少出错的可能性，甚至在一定程度上提高代码质量。而在这个领域中，有一个名为Codebase Memory-MCP的项目，它以其高效、精准和全面的特点吸引了众多开发者和研究者的目光。
+
+
+![illustration](assets/illustration_03.png)
+
+## 仓库功能与用途
+
+### 主要功能
+
+Codebase Memory-MCP是一个高性能的代码智能引擎，它能够将代码库索引到一个持久的知识图谱中。这使得它能够快速查找和理解复杂的代码结构，是编程领域中极其重要的工具。它不仅适用于个人开发者，也适用于企业级的代码智能引擎。
+
+### 用途
+
+Codebase Memory-MCP的主要用途包括：
+
+- **代码优化**：帮助开发者提高代码的可读性和可维护性，减少代码的冗余和错误。
+- **错误定位**：快速定位到代码中的问题，提高代码的可靠性。
+- **知识积累**：帮助开发者积累和整合代码知识，提高代码质量和代码的可理解性。
+
+### 亮点
+
+- **高效索引**：平均代码库索引速度在毫秒级别，处理大规模代码库（如Linux内核）只需3分钟。
+- **低资源消耗**：使用纯C语言实现，零依赖于外部库，仅需一个可执行文件和少量的静态二进制文件。
+- **高性能**：在高性能计算领域有着极高的性能表现。
+- **零依赖**：不需要依赖任何API、服务或语言运行时，只需一个静态二进制文件，即可部署和运行。
+
+### 使用场景
+
+Codebase Memory-MCP适用于以下场景：
+
+- **开发者**：提高代码质量和效率，减少出错率。
+- **企业级项目**：提供强大的代码智能引擎，提升代码质量和开发效率。
+- **科研领域**：研究代码智能引擎的性能和效果，为未来的开发提供参考。
+
+## 结语
+
+Codebase Memory-MCP是一个高性能的代码智能引擎，它的出现为开发者和研究者提供了一种全新的方式来提高代码质量和开发效率。如果你对代码智能引擎有浓厚的兴趣，不妨关注一下这个项目，也许你会从中获得灵感，或者找到新的研究方向。
 
 ----------------------------------------
 
@@ -22147,6 +22497,999 @@ function copyToWechat() {
 
 ----------------------------------------
 
+=== 文件: output\wechat\20260923_231056_20260923_231056\article.html ===
+<section style="background-color:#ffffff;padding:16px" data-darkmode-bgcolor="#1a1712"><h1 style="font-size:29px;font-weight:700;color:#111111;line-height:1.3;letter-spacing:-0.015em;padding:10px 0 9px;border-top:2px solid #111111;border-bottom:1px solid #111111;text-align:left;margin-top:38px;margin-bottom:16px" data-darkmode-color="#e0dcd4">Spirula Studio: Cross-Vendor 3D Gaussian Splatting Trainer for Video and Mesh Generation</h1>
+<h2 style="font-size:19px;font-weight:700;color:#111111;line-height:1.5;text-transform:uppercase;letter-spacing:0.12em;text-align:center;padding:10px 0;border-top:1px solid rgba(17,17,17,0.85);border-bottom:1px solid rgba(17,17,17,0.85);margin-top:38px;margin-bottom:18px" data-darkmode-color="#e0dcd4">介绍</h2>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">Spirula Studio 是一个用于训练 3D Gaussian Splatting 模型的自包含二进制工具，从原始照片/视频到 Splat 到网格，只需一串视频。它不依赖于 Python/PyTorch，也不需要安装单独的 COLMAP。Spirula Studio 通过 Vulkan 交叉支持 NVIDIA、AMD、Intel 和 Apple GPU，训练 100,000,000 个全 SH 粉砂，占用 8GB VRAM，并有自然光校正和白平衡校正的定制 Bilateral 网格和 PPISP，以及改进的照明快照和快速的结构从运动（SfM）功能。</p>
+<h2 style="font-size:19px;font-weight:700;color:#111111;line-height:1.5;text-transform:uppercase;letter-spacing:0.12em;text-align:center;padding:10px 0;border-top:1px solid rgba(17,17,17,0.85);border-bottom:1px solid rgba(17,17,17,0.85);margin-top:38px;margin-bottom:18px" data-darkmode-color="#e0dcd4">关键特性</h2>
+<section style="margin-top:16px;margin-bottom:16px"><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">跨厂商支持</strong>：通过 Vulkan 计算机，Spirula Studio 适用于<strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">NVIDIA, AMD, Intel 和 Apple</strong> GPU。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">融合最佳实践</strong>：结合了 MCMC/IGS+/MRNF 的优点，以获得更清晰的结果，更少的浮点误差，从物体到大规模场景。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">VRAM 效率</strong>：通过量化训练，8GB VRAM 能力可训练 100,000,000 个 SH3 粉砂。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">360° 相机和 equirectangular 支持</strong>：只需加载数据集并进行训练，不需要畸变校正。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">改进的 Bilateral 网格和 PPISP</strong>：使用改进的 Bilateral 网格和 PPISP，以提高质量而不引入不想要的颜色偏差或暗淡。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">高速 SfM</strong>：内置 SfM 功能，无需等待 COLMAP 或运行单独的脚本，即可实现。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">深度/法线、网格、天空盒、线性颜色…更多</strong>：其他功能包括。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">新闻更新</strong>：</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">2026 年 9 月 10 日</strong>： 该数据集创建模块现在使用在常见视频和图像格式中回收的时域和元数据来恢复计量尺度和方向，以解决重建结果过大/过小或倾斜的问题。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">2026 年 9 月 3 日</strong>： SfM 模块现在支持 LoMa<sup style="font-size:12px;color:#326891;vertical-align:super;margin-left:2px">[1]</sup> 的特征检测和匹配，适用于困难数据集。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">2026 年 8 月 14 日</strong>： 培训现在在 macOS/Apple Silicon 上得到验证。您可以从 Releases 页面<sup style="font-size:12px;color:#326891;vertical-align:super;margin-left:2px">[2]</sup> 下载并从那里下载，或者从 GitHub 上的 Releases 页面<sup style="font-size:12px;color:#326891;vertical-align:super;margin-left:2px">[3]</sup> 下载。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">2026 年 8 月 8 日</strong>： 支持 3 种语言：英语、日语、简体中文、繁体中文、韩语、德语、法语、西班牙语、葡萄牙语、意大利语、荷兰语、俄语、土耳其语。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">2026 年 8 月 8 日</strong>： Vulkan 后端已添加组件，包括从视频中提取帧、AI 遮罩、原生 SfM、网格生成和批量处理，可在 GUI 和 CLI 中访问。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">2026 年 7 月 22 日</strong>： 添加了 Vulkan 后端，适用于 NVIDIA, AMD 和 Intel GPU。</span></section></section>
+<h2 style="font-size:19px;font-weight:700;color:#111111;line-height:1.5;text-transform:uppercase;letter-spacing:0.12em;text-align:center;padding:10px 0;border-top:1px solid rgba(17,17,17,0.85);border-bottom:1px solid rgba(17,17,17,0.85);margin-top:38px;margin-bottom:18px" data-darkmode-color="#e0dcd4">下载</h2>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">Spirula Studio 的二进制文件可以从 Releases 页面<sup style="font-size:12px;color:#326891;vertical-align:super;margin-left:2px">[4]</sup> 下载。选择适合您的平台（Windows、Linux 或 macOS）的版本，下载并解压，然后双击打开 GUI。</p>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">如果您正在远程/云端 GPU 上训练，可以使用 CLI：运行 <code style="background:#f0ede8;padding:3px 6px;border-radius:4px;font-size:12px;color:#326891;font-family:'SF Mono', Consolas, monospace" data-darkmode-bgcolor="#2a2720" data-darkmode-color="#7fa8c9">spirula --help</code> 获取详细信息。默认情况下，<code style="background:#f0ede8;padding:3px 6px;border-radius:4px;font-size:12px;color:#326891;font-family:'SF Mono', Consolas, monospace" data-darkmode-bgcolor="#2a2720" data-darkmode-color="#7fa8c9">spirula train</code> 命令将为您服务，并在 HTTP 端口上运行一个查看器，您可以通过 SSH 进行转发并在您的 web 浏览器中查看训练进度。</p>
+<h2 style="font-size:19px;font-weight:700;color:#111111;line-height:1.5;text-transform:uppercase;letter-spacing:0.12em;text-align:center;padding:10px 0;border-top:1px solid rgba(17,17,17,0.85);border-bottom:1px solid rgba(17,17,17,0.85);margin-top:38px;margin-bottom:18px" data-darkmode-color="#e0dcd4">从源代码构建</h2>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">Spirula Studio 提供了两个后端：</p>
+<section style="margin-top:16px;margin-bottom:16px"><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">Vulkan (推荐)</strong>：跨平台和</span></section></section>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">请注意，本文档是基于 GitHub 仓库的节选内容编写，如果你需要完整的介绍，建议直接访问 GitHub 仓库进行阅读。</p></section>
+<section style="margin-top:32px;padding-top:16px;border-top:1px solid #d5cfc5">
+<p style="font-size:14px;font-weight:bold;color:#999999;margin-bottom:12px" data-darkmode-color="#888888">参考链接</p>
+<p style="font-size:12px;color:#999999;margin-bottom:6px;line-height:1.6;word-break:break-all" data-darkmode-color="#888888">[1] LoMa: https://github.com/davnords/LoMa</p>
+<p style="font-size:12px;color:#999999;margin-bottom:6px;line-height:1.6;word-break:break-all" data-darkmode-color="#888888">[2] Releases 页面: https://github.com/harry7557558/spirula-studio/releases/</p>
+<p style="font-size:12px;color:#999999;margin-bottom:6px;line-height:1.6;word-break:break-all" data-darkmode-color="#888888">[3] GitHub 上的 Releases 页面: https://github.com/harry7557558/spirula-studio/releases/</p>
+<p style="font-size:12px;color:#999999;margin-bottom:6px;line-height:1.6;word-break:break-all" data-darkmode-color="#888888">[4] Releases 页面: https://github.com/harry7557558/spirula-studio/releases/</p>
+</section>
+
+----------------------------------------
+
+=== 文件: output\wechat\20260923_231056_20260923_231056\preview.html ===
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spirula Studio: Cross-Vendor 3D Gaussian Splatting Trainer for Video and Mesh Generation - 微信排版预览</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    font-family: -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    background: #f0f0f0;
+    min-height: 100vh;
+}
+.toolbar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    background: rgba(255,255,255,0.95);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid #e0e0e0;
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    z-index: 100;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+}
+.toolbar-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+.toolbar-info {
+    font-size: 13px;
+    color: #666;
+}
+.toolbar-info span {
+    margin-right: 12px;
+}
+.toolbar-info .theme-name {
+    background: #f5f5f5;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-weight: 500;
+    color: #333;
+}
+.copy-btn {
+    padding: 10px 24px;
+    background: #07c160;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 1px;
+}
+.copy-btn:hover { background: #06ae56; transform: translateY(-1px); }
+.copy-btn:active { transform: translateY(0); }
+.copy-btn.copied {
+    background: #34c759;
+}
+.phone-frame {
+    max-width: 415px;
+    margin: 76px auto 40px;
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.1);
+    overflow: hidden;
+}
+.phone-header {
+    background: #ededed;
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    color: #999;
+    border-bottom: 1px solid #e0e0e0;
+}
+.article-content {
+    padding: 20px;
+    font-family: -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+}
+/* 隐藏的纯微信 HTML，用于复制 */
+#wechatHtml {
+    position: absolute;
+    left: -9999px;
+    top: -9999px;
+}
+/* ── Font Size Selector ── */
+.font-size-selector {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin: 12px auto;
+    padding: 8px 0;
+    max-width: 415px;
+}
+.fs-label {
+    font-size: 13px;
+    color: #999;
+}
+.fs-btn {
+    padding: 4px 12px;
+    border: 1px solid #ddd;
+    border-radius: 16px;
+    background: #fff;
+    font-size: 13px;
+    color: #666;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+}
+.fs-btn:hover {
+    border-color: #07C160;
+    color: #07C160;
+}
+.fs-btn.active {
+    background: #07C160;
+    border-color: #07C160;
+    color: #fff;
+}
+@media (max-width: 480px) {
+    .phone-frame {
+        margin: 60px 0 20px;
+        border-radius: 0;
+        box-shadow: none;
+    }
+    .toolbar {
+        padding: 8px 12px;
+    }
+    .copy-btn {
+        padding: 8px 16px;
+        font-size: 13px;
+    }
+}
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+    <div class="toolbar-left">
+        <div class="toolbar-info">
+            <span class="theme-name">报纸</span>
+            <span>788 字</span>
+        </div>
+    </div>
+    <button class="copy-btn" onclick="copyToWechat()">复制到微信</button>
+</div>
+
+<div class="font-size-selector">
+    <span class="fs-label">字号</span>
+    <button class="fs-btn active" data-size="15" onclick="switchFontSize(15)">15px</button>
+    <button class="fs-btn" data-size="16" onclick="switchFontSize(16)">16px</button>
+</div>
+
+<div class="phone-frame">
+    <div class="phone-header">微信公众号预览</div>
+    <div class="article-content" id="articleContent">
+<section style="background-color:#ffffff;padding:16px" data-darkmode-bgcolor="#1a1712"><h1 style="font-size:29px;font-weight:700;color:#111111;line-height:1.3;letter-spacing:-0.015em;padding:10px 0 9px;border-top:2px solid #111111;border-bottom:1px solid #111111;text-align:left;margin-top:38px;margin-bottom:16px" data-darkmode-color="#e0dcd4">Spirula Studio: Cross-Vendor 3D Gaussian Splatting Trainer for Video and Mesh Generation</h1>
+<h2 style="font-size:19px;font-weight:700;color:#111111;line-height:1.5;text-transform:uppercase;letter-spacing:0.12em;text-align:center;padding:10px 0;border-top:1px solid rgba(17,17,17,0.85);border-bottom:1px solid rgba(17,17,17,0.85);margin-top:38px;margin-bottom:18px" data-darkmode-color="#e0dcd4">介绍</h2>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">Spirula Studio 是一个用于训练 3D Gaussian Splatting 模型的自包含二进制工具，从原始照片/视频到 Splat 到网格，只需一串视频。它不依赖于 Python/PyTorch，也不需要安装单独的 COLMAP。Spirula Studio 通过 Vulkan 交叉支持 NVIDIA、AMD、Intel 和 Apple GPU，训练 100,000,000 个全 SH 粉砂，占用 8GB VRAM，并有自然光校正和白平衡校正的定制 Bilateral 网格和 PPISP，以及改进的照明快照和快速的结构从运动（SfM）功能。</p>
+<h2 style="font-size:19px;font-weight:700;color:#111111;line-height:1.5;text-transform:uppercase;letter-spacing:0.12em;text-align:center;padding:10px 0;border-top:1px solid rgba(17,17,17,0.85);border-bottom:1px solid rgba(17,17,17,0.85);margin-top:38px;margin-bottom:18px" data-darkmode-color="#e0dcd4">关键特性</h2>
+<section style="margin-top:16px;margin-bottom:16px"><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">跨厂商支持</strong>：通过 Vulkan 计算机，Spirula Studio 适用于<strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">NVIDIA, AMD, Intel 和 Apple</strong> GPU。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">融合最佳实践</strong>：结合了 MCMC/IGS+/MRNF 的优点，以获得更清晰的结果，更少的浮点误差，从物体到大规模场景。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">VRAM 效率</strong>：通过量化训练，8GB VRAM 能力可训练 100,000,000 个 SH3 粉砂。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">360° 相机和 equirectangular 支持</strong>：只需加载数据集并进行训练，不需要畸变校正。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">改进的 Bilateral 网格和 PPISP</strong>：使用改进的 Bilateral 网格和 PPISP，以提高质量而不引入不想要的颜色偏差或暗淡。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">高速 SfM</strong>：内置 SfM 功能，无需等待 COLMAP 或运行单独的脚本，即可实现。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">深度/法线、网格、天空盒、线性颜色…更多</strong>：其他功能包括。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">新闻更新</strong>：</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">2026 年 9 月 10 日</strong>： 该数据集创建模块现在使用在常见视频和图像格式中回收的时域和元数据来恢复计量尺度和方向，以解决重建结果过大/过小或倾斜的问题。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">2026 年 9 月 3 日</strong>： SfM 模块现在支持 LoMa<sup style="font-size:12px;color:#326891;vertical-align:super;margin-left:2px">[1]</sup> 的特征检测和匹配，适用于困难数据集。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">2026 年 8 月 14 日</strong>： 培训现在在 macOS/Apple Silicon 上得到验证。您可以从 Releases 页面<sup style="font-size:12px;color:#326891;vertical-align:super;margin-left:2px">[2]</sup> 下载并从那里下载，或者从 GitHub 上的 Releases 页面<sup style="font-size:12px;color:#326891;vertical-align:super;margin-left:2px">[3]</sup> 下载。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">2026 年 8 月 8 日</strong>： 支持 3 种语言：英语、日语、简体中文、繁体中文、韩语、德语、法语、西班牙语、葡萄牙语、意大利语、荷兰语、俄语、土耳其语。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">2026 年 8 月 8 日</strong>： Vulkan 后端已添加组件，包括从视频中提取帧、AI 遮罩、原生 SfM、网格生成和批量处理，可在 GUI 和 CLI 中访问。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">2026 年 7 月 22 日</strong>： 添加了 Vulkan 后端，适用于 NVIDIA, AMD 和 Intel GPU。</span></section></section>
+<h2 style="font-size:19px;font-weight:700;color:#111111;line-height:1.5;text-transform:uppercase;letter-spacing:0.12em;text-align:center;padding:10px 0;border-top:1px solid rgba(17,17,17,0.85);border-bottom:1px solid rgba(17,17,17,0.85);margin-top:38px;margin-bottom:18px" data-darkmode-color="#e0dcd4">下载</h2>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">Spirula Studio 的二进制文件可以从 Releases 页面<sup style="font-size:12px;color:#326891;vertical-align:super;margin-left:2px">[4]</sup> 下载。选择适合您的平台（Windows、Linux 或 macOS）的版本，下载并解压，然后双击打开 GUI。</p>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">如果您正在远程/云端 GPU 上训练，可以使用 CLI：运行 <code style="background:#f0ede8;padding:3px 6px;border-radius:4px;font-size:12px;color:#326891;font-family:'SF Mono', Consolas, monospace" data-darkmode-bgcolor="#2a2720" data-darkmode-color="#7fa8c9">spirula --help</code> 获取详细信息。默认情况下，<code style="background:#f0ede8;padding:3px 6px;border-radius:4px;font-size:12px;color:#326891;font-family:'SF Mono', Consolas, monospace" data-darkmode-bgcolor="#2a2720" data-darkmode-color="#7fa8c9">spirula train</code> 命令将为您服务，并在 HTTP 端口上运行一个查看器，您可以通过 SSH 进行转发并在您的 web 浏览器中查看训练进度。</p>
+<h2 style="font-size:19px;font-weight:700;color:#111111;line-height:1.5;text-transform:uppercase;letter-spacing:0.12em;text-align:center;padding:10px 0;border-top:1px solid rgba(17,17,17,0.85);border-bottom:1px solid rgba(17,17,17,0.85);margin-top:38px;margin-bottom:18px" data-darkmode-color="#e0dcd4">从源代码构建</h2>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">Spirula Studio 提供了两个后端：</p>
+<section style="margin-top:16px;margin-bottom:16px"><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">Vulkan (推荐)</strong>：跨平台和</span></section></section>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">请注意，本文档是基于 GitHub 仓库的节选内容编写，如果你需要完整的介绍，建议直接访问 GitHub 仓库进行阅读。</p></section>
+<section style="margin-top:32px;padding-top:16px;border-top:1px solid #d5cfc5">
+<p style="font-size:14px;font-weight:bold;color:#999999;margin-bottom:12px" data-darkmode-color="#888888">参考链接</p>
+<p style="font-size:12px;color:#999999;margin-bottom:6px;line-height:1.6;word-break:break-all" data-darkmode-color="#888888">[1] LoMa: https://github.com/davnords/LoMa</p>
+<p style="font-size:12px;color:#999999;margin-bottom:6px;line-height:1.6;word-break:break-all" data-darkmode-color="#888888">[2] Releases 页面: https://github.com/harry7557558/spirula-studio/releases/</p>
+<p style="font-size:12px;color:#999999;margin-bottom:6px;line-height:1.6;word-break:break-all" data-darkmode-color="#888888">[3] GitHub 上的 Releases 页面: https://github.com/harry7557558/spirula-studio/releases/</p>
+<p style="font-size:12px;color:#999999;margin-bottom:6px;line-height:1.6;word-break:break-all" data-darkmode-color="#888888">[4] Releases 页面: https://github.com/harry7557558/spirula-studio/releases/</p>
+</section>
+    </div>
+</div>
+
+<!-- 隐藏区域：存放纯微信 HTML（不含预览壳样式），复制时用这个 -->
+<div id="wechatHtml">
+<section style="background-color:#ffffff;padding:16px" data-darkmode-bgcolor="#1a1712"><h1 style="font-size:29px;font-weight:700;color:#111111;line-height:1.3;letter-spacing:-0.015em;padding:10px 0 9px;border-top:2px solid #111111;border-bottom:1px solid #111111;text-align:left;margin-top:38px;margin-bottom:16px" data-darkmode-color="#e0dcd4">Spirula Studio: Cross-Vendor 3D Gaussian Splatting Trainer for Video and Mesh Generation</h1>
+<h2 style="font-size:19px;font-weight:700;color:#111111;line-height:1.5;text-transform:uppercase;letter-spacing:0.12em;text-align:center;padding:10px 0;border-top:1px solid rgba(17,17,17,0.85);border-bottom:1px solid rgba(17,17,17,0.85);margin-top:38px;margin-bottom:18px" data-darkmode-color="#e0dcd4">介绍</h2>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">Spirula Studio 是一个用于训练 3D Gaussian Splatting 模型的自包含二进制工具，从原始照片/视频到 Splat 到网格，只需一串视频。它不依赖于 Python/PyTorch，也不需要安装单独的 COLMAP。Spirula Studio 通过 Vulkan 交叉支持 NVIDIA、AMD、Intel 和 Apple GPU，训练 100,000,000 个全 SH 粉砂，占用 8GB VRAM，并有自然光校正和白平衡校正的定制 Bilateral 网格和 PPISP，以及改进的照明快照和快速的结构从运动（SfM）功能。</p>
+<h2 style="font-size:19px;font-weight:700;color:#111111;line-height:1.5;text-transform:uppercase;letter-spacing:0.12em;text-align:center;padding:10px 0;border-top:1px solid rgba(17,17,17,0.85);border-bottom:1px solid rgba(17,17,17,0.85);margin-top:38px;margin-bottom:18px" data-darkmode-color="#e0dcd4">关键特性</h2>
+<section style="margin-top:16px;margin-bottom:16px"><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">跨厂商支持</strong>：通过 Vulkan 计算机，Spirula Studio 适用于<strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">NVIDIA, AMD, Intel 和 Apple</strong> GPU。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">融合最佳实践</strong>：结合了 MCMC/IGS+/MRNF 的优点，以获得更清晰的结果，更少的浮点误差，从物体到大规模场景。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">VRAM 效率</strong>：通过量化训练，8GB VRAM 能力可训练 100,000,000 个 SH3 粉砂。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">360° 相机和 equirectangular 支持</strong>：只需加载数据集并进行训练，不需要畸变校正。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">改进的 Bilateral 网格和 PPISP</strong>：使用改进的 Bilateral 网格和 PPISP，以提高质量而不引入不想要的颜色偏差或暗淡。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">高速 SfM</strong>：内置 SfM 功能，无需等待 COLMAP 或运行单独的脚本，即可实现。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">深度/法线、网格、天空盒、线性颜色…更多</strong>：其他功能包括。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">新闻更新</strong>：</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">2026 年 9 月 10 日</strong>： 该数据集创建模块现在使用在常见视频和图像格式中回收的时域和元数据来恢复计量尺度和方向，以解决重建结果过大/过小或倾斜的问题。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">2026 年 9 月 3 日</strong>： SfM 模块现在支持 LoMa<sup style="font-size:12px;color:#326891;vertical-align:super;margin-left:2px">[1]</sup> 的特征检测和匹配，适用于困难数据集。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">2026 年 8 月 14 日</strong>： 培训现在在 macOS/Apple Silicon 上得到验证。您可以从 Releases 页面<sup style="font-size:12px;color:#326891;vertical-align:super;margin-left:2px">[2]</sup> 下载并从那里下载，或者从 GitHub 上的 Releases 页面<sup style="font-size:12px;color:#326891;vertical-align:super;margin-left:2px">[3]</sup> 下载。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">2026 年 8 月 8 日</strong>： 支持 3 种语言：英语、日语、简体中文、繁体中文、韩语、德语、法语、西班牙语、葡萄牙语、意大利语、荷兰语、俄语、土耳其语。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">2026 年 8 月 8 日</strong>： Vulkan 后端已添加组件，包括从视频中提取帧、AI 遮罩、原生 SfM、网格生成和批量处理，可在 GUI 和 CLI 中访问。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">2026 年 7 月 22 日</strong>： 添加了 Vulkan 后端，适用于 NVIDIA, AMD 和 Intel GPU。</span></section></section>
+<h2 style="font-size:19px;font-weight:700;color:#111111;line-height:1.5;text-transform:uppercase;letter-spacing:0.12em;text-align:center;padding:10px 0;border-top:1px solid rgba(17,17,17,0.85);border-bottom:1px solid rgba(17,17,17,0.85);margin-top:38px;margin-bottom:18px" data-darkmode-color="#e0dcd4">下载</h2>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">Spirula Studio 的二进制文件可以从 Releases 页面<sup style="font-size:12px;color:#326891;vertical-align:super;margin-left:2px">[4]</sup> 下载。选择适合您的平台（Windows、Linux 或 macOS）的版本，下载并解压，然后双击打开 GUI。</p>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">如果您正在远程/云端 GPU 上训练，可以使用 CLI：运行 <code style="background:#f0ede8;padding:3px 6px;border-radius:4px;font-size:12px;color:#326891;font-family:'SF Mono', Consolas, monospace" data-darkmode-bgcolor="#2a2720" data-darkmode-color="#7fa8c9">spirula --help</code> 获取详细信息。默认情况下，<code style="background:#f0ede8;padding:3px 6px;border-radius:4px;font-size:12px;color:#326891;font-family:'SF Mono', Consolas, monospace" data-darkmode-bgcolor="#2a2720" data-darkmode-color="#7fa8c9">spirula train</code> 命令将为您服务，并在 HTTP 端口上运行一个查看器，您可以通过 SSH 进行转发并在您的 web 浏览器中查看训练进度。</p>
+<h2 style="font-size:19px;font-weight:700;color:#111111;line-height:1.5;text-transform:uppercase;letter-spacing:0.12em;text-align:center;padding:10px 0;border-top:1px solid rgba(17,17,17,0.85);border-bottom:1px solid rgba(17,17,17,0.85);margin-top:38px;margin-bottom:18px" data-darkmode-color="#e0dcd4">从源代码构建</h2>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">Spirula Studio 提供了两个后端：</p>
+<section style="margin-top:16px;margin-bottom:16px"><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">Vulkan (推荐)</strong>：跨平台和</span></section></section>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">请注意，本文档是基于 GitHub 仓库的节选内容编写，如果你需要完整的介绍，建议直接访问 GitHub 仓库进行阅读。</p></section>
+<section style="margin-top:32px;padding-top:16px;border-top:1px solid #d5cfc5">
+<p style="font-size:14px;font-weight:bold;color:#999999;margin-bottom:12px" data-darkmode-color="#888888">参考链接</p>
+<p style="font-size:12px;color:#999999;margin-bottom:6px;line-height:1.6;word-break:break-all" data-darkmode-color="#888888">[1] LoMa: https://github.com/davnords/LoMa</p>
+<p style="font-size:12px;color:#999999;margin-bottom:6px;line-height:1.6;word-break:break-all" data-darkmode-color="#888888">[2] Releases 页面: https://github.com/harry7557558/spirula-studio/releases/</p>
+<p style="font-size:12px;color:#999999;margin-bottom:6px;line-height:1.6;word-break:break-all" data-darkmode-color="#888888">[3] GitHub 上的 Releases 页面: https://github.com/harry7557558/spirula-studio/releases/</p>
+<p style="font-size:12px;color:#999999;margin-bottom:6px;line-height:1.6;word-break:break-all" data-darkmode-color="#888888">[4] Releases 页面: https://github.com/harry7557558/spirula-studio/releases/</p>
+</section>
+</div>
+
+<script>
+function switchFontSize(size) {
+    // 更新按钮状态
+    document.querySelectorAll('.fs-btn').forEach(function(btn) {
+        if (parseInt(btn.dataset.size) === size) {
+            btn.classList.add('active');
+        } else {
+            btn.classList.remove('active');
+        }
+    });
+
+    // 修改可见预览区和隐藏复制区的 p 标签
+    ['articleContent', 'wechatHtml'].forEach(function(id) {
+        var container = document.getElementById(id);
+        if (!container) return;
+        container.querySelectorAll('p').forEach(function(p) {
+            var currentSize = parseInt(window.getComputedStyle(p).fontSize);
+            if (currentSize >= 14 && currentSize <= 16) {
+                p.style.fontSize = size + 'px';
+                p.style.lineHeight = size === 16 ? '1.75' : '1.8';
+            }
+        });
+        // 修改列表项文字
+        container.querySelectorAll('[style*="font-size:15px"]').forEach(function(el) {
+            if (el.tagName === 'SPAN' || el.tagName === 'SECTION') {
+                el.style.fontSize = size + 'px';
+            }
+        });
+    });
+
+    // 保存选择到 localStorage
+    localStorage.setItem('wechat-format-fontsize', size);
+}
+
+// 页面加载时恢复上次选择
+document.addEventListener('DOMContentLoaded', function() {
+    var saved = localStorage.getItem('wechat-format-fontsize');
+    if (saved && saved !== '15') {
+        switchFontSize(parseInt(saved));
+    }
+});
+
+function copyToWechat() {
+    const source = document.getElementById('wechatHtml');
+    const range = document.createRange();
+    range.selectNodeContents(source);
+
+    // 临时让元素可见（否则某些浏览器不允许复制隐藏元素）
+    source.style.position = 'fixed';
+    source.style.left = '0';
+    source.style.top = '0';
+    source.style.opacity = '0.01';
+    source.style.width = '375px';
+
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+
+    try {
+        document.execCommand('copy');
+        const btn = document.querySelector('.copy-btn');
+        btn.textContent = '已复制!';
+        btn.classList.add('copied');
+        setTimeout(() => {
+            btn.textContent = '复制到微信';
+            btn.classList.remove('copied');
+        }, 2500);
+    } catch(e) {
+        // fallback: 尝试 Clipboard API
+        const html = source.innerHTML;
+        const blob = new Blob([html], { type: 'text/html' });
+        const item = new ClipboardItem({ 'text/html': blob });
+        navigator.clipboard.write([item]).then(() => {
+            const btn = document.querySelector('.copy-btn');
+            btn.textContent = '已复制!';
+            btn.classList.add('copied');
+            setTimeout(() => {
+                btn.textContent = '复制到微信';
+                btn.classList.remove('copied');
+            }, 2500);
+        }).catch(() => {
+            alert('复制失败，请手动选中文章内容复制');
+        });
+    }
+
+    // 恢复隐藏
+    source.style.position = 'absolute';
+    source.style.left = '-9999px';
+    source.style.top = '-9999px';
+    source.style.opacity = '';
+    source.style.width = '';
+
+    sel.removeAllRanges();
+}
+</script>
+</body>
+</html>
+
+
+----------------------------------------
+
+=== 文件: output\wechat\20260923_231436_20260923_231436\article.html ===
+<section style="background-color:#ffffff;padding:16px" data-darkmode-bgcolor="#1a1712"><h2 style="font-size:19px;font-weight:700;color:#111111;line-height:1.5;text-transform:uppercase;letter-spacing:0.12em;text-align:center;padding:10px 0;border-top:1px solid rgba(17,17,17,0.85);border-bottom:1px solid rgba(17,17,17,0.85);margin-top:38px;margin-bottom:18px" data-darkmode-color="#e0dcd4">破解 AI 虚拟助手的终极密码：Strands Agents SDK</h2>
+<h3 style="font-size:17px;font-weight:700;color:#111111;line-height:1.45;letter-spacing:0.04em;padding-bottom:6px;margin-top:28px;margin-bottom:14px" data-darkmode-color="#d0d0d0">引言</h3>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">在当今数字化时代，AI 虚拟助手已经成为我们日常生活中不可或缺的一部分。从智能家居设备到智能客服机器人，它们都在不断进步，为我们的生活带来更多的便利和效率。但是，开发和维护一个高效的 AI 虚拟助手却是一项相当复杂的工作，需要大量的时间和精力。为了解决这一问题，我们有 Strands Agents SDK，一个开源的 Python 和 TypeScript SDK，可以帮助你快速构建和运行 AI 虚拟助手，无需担心复杂的技术难题。</p>
+<h3 style="font-size:17px;font-weight:700;color:#111111;line-height:1.45;letter-spacing:0.04em;padding-bottom:6px;margin-top:28px;margin-bottom:14px" data-darkmode-color="#d0d0d0">仓库简介</h3>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">Strands Agents SDK 是一个开放源码的 Python 和 TypeScript SDK，专注于为生产中的 AI 代理提供解决方案。Strands Agents SDK 适用于任何模型，任何云环境。无论你是初学者还是有经验的开发者，只需几行代码，就能轻松构建自己的 AI 虚拟助手。它提供了一系列生命周期控制、工具、结构化输出、MCP（Model Control Plane）、多代理模式、内存管理、会话管理和模型迁移等功能，让 AI 虚拟助手的开发变得更加简单快捷。</p>
+<h3 style="font-size:17px;font-weight:700;color:#111111;line-height:1.45;letter-spacing:0.04em;padding-bottom:6px;margin-top:28px;margin-bottom:14px" data-darkmode-color="#d0d0d0">使用场景</h3>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">无论你是企业级客户、科技公司，还是个人开发者，Strands Agents SDK 都可以帮你解决各种需求。例如，如果你正在开发一个智能家居系统，Strands Agents SDK 可以帮助你自动化家庭设备的控制。如果你正在开发一个客户服务机器人，Strands Agents SDK 可以帮助你提供快速、准确的回答。无论你是在构建新的 AI 项目，还是在现有系统中进行改进，Strands Agents SDK 都是你的理想选择。</p>
+<h3 style="font-size:17px;font-weight:700;color:#111111;line-height:1.45;letter-spacing:0.04em;padding-bottom:6px;margin-top:28px;margin-bottom:14px" data-darkmode-color="#d0d0d0">技术栈</h3>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">Strands Agents SDK 是一个多语言的开发环境，支持 Python 和 TypeScript。无论是使用 Python 还是 TypeScript，你都可以轻松地开始使用 Strands Agents SDK。此外，Strands Agents SDK 还包含一个文档网站、示例项目和一个支持的插件，让你的开发过程更加顺畅。</p>
+<h3 style="font-size:17px;font-weight:700;color:#111111;line-height:1.45;letter-spacing:0.04em;padding-bottom:6px;margin-top:28px;margin-bottom:14px" data-darkmode-color="#d0d0d0">社区与支持</h3>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">Strands Agents SDK 还有一个活跃的社区和丰富的支持资源。如果你在使用过程中遇到任何问题，社区内的开发者和用户可以为你提供帮助。此外，Strands Agents SDK 还有一个 Discord 频道，你可以在这里找到更多关于项目使用的详细信息和社区支持。</p>
+<h3 style="font-size:17px;font-weight:700;color:#111111;line-height:1.45;letter-spacing:0.04em;padding-bottom:6px;margin-top:28px;margin-bottom:14px" data-darkmode-color="#d0d0d0">总结</h3>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">Strands Agents SDK 是一个简单、高效、功能齐全的 AI 虚拟助手开发工具包。无论你是初学者还是有经验的开发者，都可以轻松使用 Strands Agents SDK 来构建自己的 AI 虚拟助手。如果你正在寻找一个解决方案来解决复杂的技术难题，Strands Agents SDK 是你最好的选择。快来加入 Strands Agents 的社区，一起探索 AI 虚拟助手的无限可能吧！</p>
+<hr style="margin-top:40px;margin-bottom:40px;height:1px;background:linear-gradient(90deg, rgba(213,207,197,0) 0%, rgba(17,17,17,0.9) 26%, rgba(17,17,17,0.9) 74%, rgba(213,207,197,0) 100%);border:none;width:38%;margin-left:auto;margin-right:auto">
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">希望这篇文章能够帮助你了解 Strands Agents SDK 的功能和用途，以及如何使用它来构建自己的 AI 虚拟助手。如果你有任何问题或需要更多帮助，请随时联系我们的社区。</p></section>
+
+----------------------------------------
+
+=== 文件: output\wechat\20260923_231436_20260923_231436\preview.html ===
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>20260923_231436 - 微信排版预览</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    font-family: -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    background: #f0f0f0;
+    min-height: 100vh;
+}
+.toolbar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    background: rgba(255,255,255,0.95);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid #e0e0e0;
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    z-index: 100;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+}
+.toolbar-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+.toolbar-info {
+    font-size: 13px;
+    color: #666;
+}
+.toolbar-info span {
+    margin-right: 12px;
+}
+.toolbar-info .theme-name {
+    background: #f5f5f5;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-weight: 500;
+    color: #333;
+}
+.copy-btn {
+    padding: 10px 24px;
+    background: #07c160;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 1px;
+}
+.copy-btn:hover { background: #06ae56; transform: translateY(-1px); }
+.copy-btn:active { transform: translateY(0); }
+.copy-btn.copied {
+    background: #34c759;
+}
+.phone-frame {
+    max-width: 415px;
+    margin: 76px auto 40px;
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.1);
+    overflow: hidden;
+}
+.phone-header {
+    background: #ededed;
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    color: #999;
+    border-bottom: 1px solid #e0e0e0;
+}
+.article-content {
+    padding: 20px;
+    font-family: -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+}
+/* 隐藏的纯微信 HTML，用于复制 */
+#wechatHtml {
+    position: absolute;
+    left: -9999px;
+    top: -9999px;
+}
+/* ── Font Size Selector ── */
+.font-size-selector {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin: 12px auto;
+    padding: 8px 0;
+    max-width: 415px;
+}
+.fs-label {
+    font-size: 13px;
+    color: #999;
+}
+.fs-btn {
+    padding: 4px 12px;
+    border: 1px solid #ddd;
+    border-radius: 16px;
+    background: #fff;
+    font-size: 13px;
+    color: #666;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+}
+.fs-btn:hover {
+    border-color: #07C160;
+    color: #07C160;
+}
+.fs-btn.active {
+    background: #07C160;
+    border-color: #07C160;
+    color: #fff;
+}
+@media (max-width: 480px) {
+    .phone-frame {
+        margin: 60px 0 20px;
+        border-radius: 0;
+        box-shadow: none;
+    }
+    .toolbar {
+        padding: 8px 12px;
+    }
+    .copy-btn {
+        padding: 8px 16px;
+        font-size: 13px;
+    }
+}
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+    <div class="toolbar-left">
+        <div class="toolbar-info">
+            <span class="theme-name">报纸</span>
+            <span>831 字</span>
+        </div>
+    </div>
+    <button class="copy-btn" onclick="copyToWechat()">复制到微信</button>
+</div>
+
+<div class="font-size-selector">
+    <span class="fs-label">字号</span>
+    <button class="fs-btn active" data-size="15" onclick="switchFontSize(15)">15px</button>
+    <button class="fs-btn" data-size="16" onclick="switchFontSize(16)">16px</button>
+</div>
+
+<div class="phone-frame">
+    <div class="phone-header">微信公众号预览</div>
+    <div class="article-content" id="articleContent">
+<section style="background-color:#ffffff;padding:16px" data-darkmode-bgcolor="#1a1712"><h2 style="font-size:19px;font-weight:700;color:#111111;line-height:1.5;text-transform:uppercase;letter-spacing:0.12em;text-align:center;padding:10px 0;border-top:1px solid rgba(17,17,17,0.85);border-bottom:1px solid rgba(17,17,17,0.85);margin-top:38px;margin-bottom:18px" data-darkmode-color="#e0dcd4">破解 AI 虚拟助手的终极密码：Strands Agents SDK</h2>
+<h3 style="font-size:17px;font-weight:700;color:#111111;line-height:1.45;letter-spacing:0.04em;padding-bottom:6px;margin-top:28px;margin-bottom:14px" data-darkmode-color="#d0d0d0">引言</h3>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">在当今数字化时代，AI 虚拟助手已经成为我们日常生活中不可或缺的一部分。从智能家居设备到智能客服机器人，它们都在不断进步，为我们的生活带来更多的便利和效率。但是，开发和维护一个高效的 AI 虚拟助手却是一项相当复杂的工作，需要大量的时间和精力。为了解决这一问题，我们有 Strands Agents SDK，一个开源的 Python 和 TypeScript SDK，可以帮助你快速构建和运行 AI 虚拟助手，无需担心复杂的技术难题。</p>
+<h3 style="font-size:17px;font-weight:700;color:#111111;line-height:1.45;letter-spacing:0.04em;padding-bottom:6px;margin-top:28px;margin-bottom:14px" data-darkmode-color="#d0d0d0">仓库简介</h3>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">Strands Agents SDK 是一个开放源码的 Python 和 TypeScript SDK，专注于为生产中的 AI 代理提供解决方案。Strands Agents SDK 适用于任何模型，任何云环境。无论你是初学者还是有经验的开发者，只需几行代码，就能轻松构建自己的 AI 虚拟助手。它提供了一系列生命周期控制、工具、结构化输出、MCP（Model Control Plane）、多代理模式、内存管理、会话管理和模型迁移等功能，让 AI 虚拟助手的开发变得更加简单快捷。</p>
+<h3 style="font-size:17px;font-weight:700;color:#111111;line-height:1.45;letter-spacing:0.04em;padding-bottom:6px;margin-top:28px;margin-bottom:14px" data-darkmode-color="#d0d0d0">使用场景</h3>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">无论你是企业级客户、科技公司，还是个人开发者，Strands Agents SDK 都可以帮你解决各种需求。例如，如果你正在开发一个智能家居系统，Strands Agents SDK 可以帮助你自动化家庭设备的控制。如果你正在开发一个客户服务机器人，Strands Agents SDK 可以帮助你提供快速、准确的回答。无论你是在构建新的 AI 项目，还是在现有系统中进行改进，Strands Agents SDK 都是你的理想选择。</p>
+<h3 style="font-size:17px;font-weight:700;color:#111111;line-height:1.45;letter-spacing:0.04em;padding-bottom:6px;margin-top:28px;margin-bottom:14px" data-darkmode-color="#d0d0d0">技术栈</h3>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">Strands Agents SDK 是一个多语言的开发环境，支持 Python 和 TypeScript。无论是使用 Python 还是 TypeScript，你都可以轻松地开始使用 Strands Agents SDK。此外，Strands Agents SDK 还包含一个文档网站、示例项目和一个支持的插件，让你的开发过程更加顺畅。</p>
+<h3 style="font-size:17px;font-weight:700;color:#111111;line-height:1.45;letter-spacing:0.04em;padding-bottom:6px;margin-top:28px;margin-bottom:14px" data-darkmode-color="#d0d0d0">社区与支持</h3>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">Strands Agents SDK 还有一个活跃的社区和丰富的支持资源。如果你在使用过程中遇到任何问题，社区内的开发者和用户可以为你提供帮助。此外，Strands Agents SDK 还有一个 Discord 频道，你可以在这里找到更多关于项目使用的详细信息和社区支持。</p>
+<h3 style="font-size:17px;font-weight:700;color:#111111;line-height:1.45;letter-spacing:0.04em;padding-bottom:6px;margin-top:28px;margin-bottom:14px" data-darkmode-color="#d0d0d0">总结</h3>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">Strands Agents SDK 是一个简单、高效、功能齐全的 AI 虚拟助手开发工具包。无论你是初学者还是有经验的开发者，都可以轻松使用 Strands Agents SDK 来构建自己的 AI 虚拟助手。如果你正在寻找一个解决方案来解决复杂的技术难题，Strands Agents SDK 是你最好的选择。快来加入 Strands Agents 的社区，一起探索 AI 虚拟助手的无限可能吧！</p>
+<hr style="margin-top:40px;margin-bottom:40px;height:1px;background:linear-gradient(90deg, rgba(213,207,197,0) 0%, rgba(17,17,17,0.9) 26%, rgba(17,17,17,0.9) 74%, rgba(213,207,197,0) 100%);border:none;width:38%;margin-left:auto;margin-right:auto">
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">希望这篇文章能够帮助你了解 Strands Agents SDK 的功能和用途，以及如何使用它来构建自己的 AI 虚拟助手。如果你有任何问题或需要更多帮助，请随时联系我们的社区。</p></section>
+    </div>
+</div>
+
+<!-- 隐藏区域：存放纯微信 HTML（不含预览壳样式），复制时用这个 -->
+<div id="wechatHtml">
+<section style="background-color:#ffffff;padding:16px" data-darkmode-bgcolor="#1a1712"><h2 style="font-size:19px;font-weight:700;color:#111111;line-height:1.5;text-transform:uppercase;letter-spacing:0.12em;text-align:center;padding:10px 0;border-top:1px solid rgba(17,17,17,0.85);border-bottom:1px solid rgba(17,17,17,0.85);margin-top:38px;margin-bottom:18px" data-darkmode-color="#e0dcd4">破解 AI 虚拟助手的终极密码：Strands Agents SDK</h2>
+<h3 style="font-size:17px;font-weight:700;color:#111111;line-height:1.45;letter-spacing:0.04em;padding-bottom:6px;margin-top:28px;margin-bottom:14px" data-darkmode-color="#d0d0d0">引言</h3>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">在当今数字化时代，AI 虚拟助手已经成为我们日常生活中不可或缺的一部分。从智能家居设备到智能客服机器人，它们都在不断进步，为我们的生活带来更多的便利和效率。但是，开发和维护一个高效的 AI 虚拟助手却是一项相当复杂的工作，需要大量的时间和精力。为了解决这一问题，我们有 Strands Agents SDK，一个开源的 Python 和 TypeScript SDK，可以帮助你快速构建和运行 AI 虚拟助手，无需担心复杂的技术难题。</p>
+<h3 style="font-size:17px;font-weight:700;color:#111111;line-height:1.45;letter-spacing:0.04em;padding-bottom:6px;margin-top:28px;margin-bottom:14px" data-darkmode-color="#d0d0d0">仓库简介</h3>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">Strands Agents SDK 是一个开放源码的 Python 和 TypeScript SDK，专注于为生产中的 AI 代理提供解决方案。Strands Agents SDK 适用于任何模型，任何云环境。无论你是初学者还是有经验的开发者，只需几行代码，就能轻松构建自己的 AI 虚拟助手。它提供了一系列生命周期控制、工具、结构化输出、MCP（Model Control Plane）、多代理模式、内存管理、会话管理和模型迁移等功能，让 AI 虚拟助手的开发变得更加简单快捷。</p>
+<h3 style="font-size:17px;font-weight:700;color:#111111;line-height:1.45;letter-spacing:0.04em;padding-bottom:6px;margin-top:28px;margin-bottom:14px" data-darkmode-color="#d0d0d0">使用场景</h3>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">无论你是企业级客户、科技公司，还是个人开发者，Strands Agents SDK 都可以帮你解决各种需求。例如，如果你正在开发一个智能家居系统，Strands Agents SDK 可以帮助你自动化家庭设备的控制。如果你正在开发一个客户服务机器人，Strands Agents SDK 可以帮助你提供快速、准确的回答。无论你是在构建新的 AI 项目，还是在现有系统中进行改进，Strands Agents SDK 都是你的理想选择。</p>
+<h3 style="font-size:17px;font-weight:700;color:#111111;line-height:1.45;letter-spacing:0.04em;padding-bottom:6px;margin-top:28px;margin-bottom:14px" data-darkmode-color="#d0d0d0">技术栈</h3>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">Strands Agents SDK 是一个多语言的开发环境，支持 Python 和 TypeScript。无论是使用 Python 还是 TypeScript，你都可以轻松地开始使用 Strands Agents SDK。此外，Strands Agents SDK 还包含一个文档网站、示例项目和一个支持的插件，让你的开发过程更加顺畅。</p>
+<h3 style="font-size:17px;font-weight:700;color:#111111;line-height:1.45;letter-spacing:0.04em;padding-bottom:6px;margin-top:28px;margin-bottom:14px" data-darkmode-color="#d0d0d0">社区与支持</h3>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">Strands Agents SDK 还有一个活跃的社区和丰富的支持资源。如果你在使用过程中遇到任何问题，社区内的开发者和用户可以为你提供帮助。此外，Strands Agents SDK 还有一个 Discord 频道，你可以在这里找到更多关于项目使用的详细信息和社区支持。</p>
+<h3 style="font-size:17px;font-weight:700;color:#111111;line-height:1.45;letter-spacing:0.04em;padding-bottom:6px;margin-top:28px;margin-bottom:14px" data-darkmode-color="#d0d0d0">总结</h3>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">Strands Agents SDK 是一个简单、高效、功能齐全的 AI 虚拟助手开发工具包。无论你是初学者还是有经验的开发者，都可以轻松使用 Strands Agents SDK 来构建自己的 AI 虚拟助手。如果你正在寻找一个解决方案来解决复杂的技术难题，Strands Agents SDK 是你最好的选择。快来加入 Strands Agents 的社区，一起探索 AI 虚拟助手的无限可能吧！</p>
+<hr style="margin-top:40px;margin-bottom:40px;height:1px;background:linear-gradient(90deg, rgba(213,207,197,0) 0%, rgba(17,17,17,0.9) 26%, rgba(17,17,17,0.9) 74%, rgba(213,207,197,0) 100%);border:none;width:38%;margin-left:auto;margin-right:auto">
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">希望这篇文章能够帮助你了解 Strands Agents SDK 的功能和用途，以及如何使用它来构建自己的 AI 虚拟助手。如果你有任何问题或需要更多帮助，请随时联系我们的社区。</p></section>
+</div>
+
+<script>
+function switchFontSize(size) {
+    // 更新按钮状态
+    document.querySelectorAll('.fs-btn').forEach(function(btn) {
+        if (parseInt(btn.dataset.size) === size) {
+            btn.classList.add('active');
+        } else {
+            btn.classList.remove('active');
+        }
+    });
+
+    // 修改可见预览区和隐藏复制区的 p 标签
+    ['articleContent', 'wechatHtml'].forEach(function(id) {
+        var container = document.getElementById(id);
+        if (!container) return;
+        container.querySelectorAll('p').forEach(function(p) {
+            var currentSize = parseInt(window.getComputedStyle(p).fontSize);
+            if (currentSize >= 14 && currentSize <= 16) {
+                p.style.fontSize = size + 'px';
+                p.style.lineHeight = size === 16 ? '1.75' : '1.8';
+            }
+        });
+        // 修改列表项文字
+        container.querySelectorAll('[style*="font-size:15px"]').forEach(function(el) {
+            if (el.tagName === 'SPAN' || el.tagName === 'SECTION') {
+                el.style.fontSize = size + 'px';
+            }
+        });
+    });
+
+    // 保存选择到 localStorage
+    localStorage.setItem('wechat-format-fontsize', size);
+}
+
+// 页面加载时恢复上次选择
+document.addEventListener('DOMContentLoaded', function() {
+    var saved = localStorage.getItem('wechat-format-fontsize');
+    if (saved && saved !== '15') {
+        switchFontSize(parseInt(saved));
+    }
+});
+
+function copyToWechat() {
+    const source = document.getElementById('wechatHtml');
+    const range = document.createRange();
+    range.selectNodeContents(source);
+
+    // 临时让元素可见（否则某些浏览器不允许复制隐藏元素）
+    source.style.position = 'fixed';
+    source.style.left = '0';
+    source.style.top = '0';
+    source.style.opacity = '0.01';
+    source.style.width = '375px';
+
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+
+    try {
+        document.execCommand('copy');
+        const btn = document.querySelector('.copy-btn');
+        btn.textContent = '已复制!';
+        btn.classList.add('copied');
+        setTimeout(() => {
+            btn.textContent = '复制到微信';
+            btn.classList.remove('copied');
+        }, 2500);
+    } catch(e) {
+        // fallback: 尝试 Clipboard API
+        const html = source.innerHTML;
+        const blob = new Blob([html], { type: 'text/html' });
+        const item = new ClipboardItem({ 'text/html': blob });
+        navigator.clipboard.write([item]).then(() => {
+            const btn = document.querySelector('.copy-btn');
+            btn.textContent = '已复制!';
+            btn.classList.add('copied');
+            setTimeout(() => {
+                btn.textContent = '复制到微信';
+                btn.classList.remove('copied');
+            }, 2500);
+        }).catch(() => {
+            alert('复制失败，请手动选中文章内容复制');
+        });
+    }
+
+    // 恢复隐藏
+    source.style.position = 'absolute';
+    source.style.left = '-9999px';
+    source.style.top = '-9999px';
+    source.style.opacity = '';
+    source.style.width = '';
+
+    sel.removeAllRanges();
+}
+</script>
+</body>
+</html>
+
+
+----------------------------------------
+
+=== 文件: output\wechat\20260923_232340_article\article.html ===
+<section style="background-color:#ffffff;padding:16px" data-darkmode-bgcolor="#1a1712"><h1 style="font-size:29px;font-weight:700;color:#111111;line-height:1.3;letter-spacing:-0.015em;padding:10px 0 9px;border-top:2px solid #111111;border-bottom:1px solid #111111;text-align:left;margin-top:38px;margin-bottom:16px" data-darkmode-color="#e0dcd4">Codebase Memory-MCP: The Fastest and Most Efficient Code Intelligence Engine</h1>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8"><img style="max-width:100%;border-radius:2px;display:block;box-shadow:0 2px 8px rgba(0,0,0,0.1)" alt="illustration" src="images/illustration_01.png" /></p>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8"><img style="max-width:100%;border-radius:2px;display:block;box-shadow:0 2px 8px rgba(0,0,0,0.1)" alt="illustration" src="images/illustration_02.png" /></p>
+<h2 style="font-size:19px;font-weight:700;color:#111111;line-height:1.5;text-transform:uppercase;letter-spacing:0.12em;text-align:center;padding:10px 0;border-top:1px solid rgba(17,17,17,0.85);border-bottom:1px solid rgba(17,17,17,0.85);margin-top:38px;margin-bottom:18px" data-darkmode-color="#e0dcd4">介绍</h2>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">如果你是 AI 编程的爱好者，那么你一定听说过代码智能引擎（Code Intelligence Engine, CIE）。这些工具能帮助开发者提高编程效率，减少出错的可能性，甚至在一定程度上提高代码质量。而在这个领域中，有一个名为 Codebase Memory-MCP 的项目，它以其高效、精准和全面的特点吸引了众多开发者和研究者的目光。</p>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8"><img style="max-width:100%;border-radius:2px;display:block;box-shadow:0 2px 8px rgba(0,0,0,0.1)" alt="illustration" src="images/illustration_03.png" /></p>
+<h2 style="font-size:19px;font-weight:700;color:#111111;line-height:1.5;text-transform:uppercase;letter-spacing:0.12em;text-align:center;padding:10px 0;border-top:1px solid rgba(17,17,17,0.85);border-bottom:1px solid rgba(17,17,17,0.85);margin-top:38px;margin-bottom:18px" data-darkmode-color="#e0dcd4">仓库功能与用途</h2>
+<h3 style="font-size:17px;font-weight:700;color:#111111;line-height:1.45;letter-spacing:0.04em;padding-bottom:6px;margin-top:28px;margin-bottom:14px" data-darkmode-color="#d0d0d0">主要功能</h3>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">Codebase Memory-MCP 是一个高性能的代码智能引擎，它能够将代码库索引到一个持久的知识图谱中。这使得它能够快速查找和理解复杂的代码结构，是编程领域中极其重要的工具。它不仅适用于个人开发者，也适用于企业级的代码智能引擎。</p>
+<h3 style="font-size:17px;font-weight:700;color:#111111;line-height:1.45;letter-spacing:0.04em;padding-bottom:6px;margin-top:28px;margin-bottom:14px" data-darkmode-color="#d0d0d0">用途</h3>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">Codebase Memory-MCP 的主要用途包括：</p>
+<section style="margin-top:16px;margin-bottom:16px"><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">代码优化</strong>：帮助开发者提高代码的可读性和可维护性，减少代码的冗余和错误。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">错误定位</strong>：快速定位到代码中的问题，提高代码的可靠性。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">知识积累</strong>：帮助开发者积累和整合代码知识，提高代码质量和代码的可理解性。</span></section></section>
+<h3 style="font-size:17px;font-weight:700;color:#111111;line-height:1.45;letter-spacing:0.04em;padding-bottom:6px;margin-top:28px;margin-bottom:14px" data-darkmode-color="#d0d0d0">亮点</h3>
+<section style="margin-top:16px;margin-bottom:16px"><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">高效索引</strong>：平均代码库索引速度在毫秒级别，处理大规模代码库（如 Linux 内核）只需 3 分钟。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">低资源消耗</strong>：使用纯 C 语言实现，零依赖于外部库，仅需一个可执行文件和少量的静态二进制文件。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">高性能</strong>：在高性能计算领域有着极高的性能表现。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">零依赖</strong>：不需要依赖任何 API、服务或语言运行时，只需一个静态二进制文件，即可部署和运行。</span></section></section>
+<h3 style="font-size:17px;font-weight:700;color:#111111;line-height:1.45;letter-spacing:0.04em;padding-bottom:6px;margin-top:28px;margin-bottom:14px" data-darkmode-color="#d0d0d0">使用场景</h3>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">Codebase Memory-MCP 适用于以下场景：</p>
+<section style="margin-top:16px;margin-bottom:16px"><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">开发者</strong>：提高代码质量和效率，减少出错率。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">企业级项目</strong>：提供强大的代码智能引擎，提升代码质量和开发效率。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">科研领域</strong>：研究代码智能引擎的性能和效果，为未来的开发提供参考。</span></section></section>
+<h2 style="font-size:19px;font-weight:700;color:#111111;line-height:1.5;text-transform:uppercase;letter-spacing:0.12em;text-align:center;padding:10px 0;border-top:1px solid rgba(17,17,17,0.85);border-bottom:1px solid rgba(17,17,17,0.85);margin-top:38px;margin-bottom:18px" data-darkmode-color="#e0dcd4">结语</h2>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">Codebase Memory-MCP 是一个高性能的代码智能引擎，它的出现为开发者和研究者提供了一种全新的方式来提高代码质量和开发效率。如果你对代码智能引擎有浓厚的兴趣，不妨关注一下这个项目，也许你会从中获得灵感，或者找到新的研究方向。</p>
+<hr style="margin-top:40px;margin-bottom:40px;height:1px;background:linear-gradient(90deg, rgba(213,207,197,0) 0%, rgba(17,17,17,0.9) 26%, rgba(17,17,17,0.9) 74%, rgba(213,207,197,0) 100%);border:none;width:38%;margin-left:auto;margin-right:auto">
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8"><img style="max-width:100%;border-radius:2px;display:block;box-shadow:0 2px 8px rgba(0,0,0,0.1)" alt="关注公众号" src="images/公众号结束处.png" /></p></section>
+
+----------------------------------------
+
+=== 文件: output\wechat\20260923_232340_article\preview.html ===
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Codebase Memory-MCP: The Fastest and Most Efficient Code Intelligence Engine - 微信排版预览</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    font-family: -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    background: #f0f0f0;
+    min-height: 100vh;
+}
+.toolbar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    background: rgba(255,255,255,0.95);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid #e0e0e0;
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    z-index: 100;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+}
+.toolbar-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+.toolbar-info {
+    font-size: 13px;
+    color: #666;
+}
+.toolbar-info span {
+    margin-right: 12px;
+}
+.toolbar-info .theme-name {
+    background: #f5f5f5;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-weight: 500;
+    color: #333;
+}
+.copy-btn {
+    padding: 10px 24px;
+    background: #07c160;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 1px;
+}
+.copy-btn:hover { background: #06ae56; transform: translateY(-1px); }
+.copy-btn:active { transform: translateY(0); }
+.copy-btn.copied {
+    background: #34c759;
+}
+.phone-frame {
+    max-width: 415px;
+    margin: 76px auto 40px;
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.1);
+    overflow: hidden;
+}
+.phone-header {
+    background: #ededed;
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    color: #999;
+    border-bottom: 1px solid #e0e0e0;
+}
+.article-content {
+    padding: 20px;
+    font-family: -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+}
+/* 隐藏的纯微信 HTML，用于复制 */
+#wechatHtml {
+    position: absolute;
+    left: -9999px;
+    top: -9999px;
+}
+/* ── Font Size Selector ── */
+.font-size-selector {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin: 12px auto;
+    padding: 8px 0;
+    max-width: 415px;
+}
+.fs-label {
+    font-size: 13px;
+    color: #999;
+}
+.fs-btn {
+    padding: 4px 12px;
+    border: 1px solid #ddd;
+    border-radius: 16px;
+    background: #fff;
+    font-size: 13px;
+    color: #666;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+}
+.fs-btn:hover {
+    border-color: #07C160;
+    color: #07C160;
+}
+.fs-btn.active {
+    background: #07C160;
+    border-color: #07C160;
+    color: #fff;
+}
+@media (max-width: 480px) {
+    .phone-frame {
+        margin: 60px 0 20px;
+        border-radius: 0;
+        box-shadow: none;
+    }
+    .toolbar {
+        padding: 8px 12px;
+    }
+    .copy-btn {
+        padding: 8px 16px;
+        font-size: 13px;
+    }
+}
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+    <div class="toolbar-left">
+        <div class="toolbar-info">
+            <span class="theme-name">报纸</span>
+            <span>650 字</span>
+        </div>
+    </div>
+    <button class="copy-btn" onclick="copyToWechat()">复制到微信</button>
+</div>
+
+<div class="font-size-selector">
+    <span class="fs-label">字号</span>
+    <button class="fs-btn active" data-size="15" onclick="switchFontSize(15)">15px</button>
+    <button class="fs-btn" data-size="16" onclick="switchFontSize(16)">16px</button>
+</div>
+
+<div class="phone-frame">
+    <div class="phone-header">微信公众号预览</div>
+    <div class="article-content" id="articleContent">
+<section style="background-color:#ffffff;padding:16px" data-darkmode-bgcolor="#1a1712"><h1 style="font-size:29px;font-weight:700;color:#111111;line-height:1.3;letter-spacing:-0.015em;padding:10px 0 9px;border-top:2px solid #111111;border-bottom:1px solid #111111;text-align:left;margin-top:38px;margin-bottom:16px" data-darkmode-color="#e0dcd4">Codebase Memory-MCP: The Fastest and Most Efficient Code Intelligence Engine</h1>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8"><img style="max-width:100%;border-radius:2px;display:block;box-shadow:0 2px 8px rgba(0,0,0,0.1)" alt="illustration" src="images/illustration_01.png" /></p>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8"><img style="max-width:100%;border-radius:2px;display:block;box-shadow:0 2px 8px rgba(0,0,0,0.1)" alt="illustration" src="images/illustration_02.png" /></p>
+<h2 style="font-size:19px;font-weight:700;color:#111111;line-height:1.5;text-transform:uppercase;letter-spacing:0.12em;text-align:center;padding:10px 0;border-top:1px solid rgba(17,17,17,0.85);border-bottom:1px solid rgba(17,17,17,0.85);margin-top:38px;margin-bottom:18px" data-darkmode-color="#e0dcd4">介绍</h2>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">如果你是 AI 编程的爱好者，那么你一定听说过代码智能引擎（Code Intelligence Engine, CIE）。这些工具能帮助开发者提高编程效率，减少出错的可能性，甚至在一定程度上提高代码质量。而在这个领域中，有一个名为 Codebase Memory-MCP 的项目，它以其高效、精准和全面的特点吸引了众多开发者和研究者的目光。</p>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8"><img style="max-width:100%;border-radius:2px;display:block;box-shadow:0 2px 8px rgba(0,0,0,0.1)" alt="illustration" src="images/illustration_03.png" /></p>
+<h2 style="font-size:19px;font-weight:700;color:#111111;line-height:1.5;text-transform:uppercase;letter-spacing:0.12em;text-align:center;padding:10px 0;border-top:1px solid rgba(17,17,17,0.85);border-bottom:1px solid rgba(17,17,17,0.85);margin-top:38px;margin-bottom:18px" data-darkmode-color="#e0dcd4">仓库功能与用途</h2>
+<h3 style="font-size:17px;font-weight:700;color:#111111;line-height:1.45;letter-spacing:0.04em;padding-bottom:6px;margin-top:28px;margin-bottom:14px" data-darkmode-color="#d0d0d0">主要功能</h3>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">Codebase Memory-MCP 是一个高性能的代码智能引擎，它能够将代码库索引到一个持久的知识图谱中。这使得它能够快速查找和理解复杂的代码结构，是编程领域中极其重要的工具。它不仅适用于个人开发者，也适用于企业级的代码智能引擎。</p>
+<h3 style="font-size:17px;font-weight:700;color:#111111;line-height:1.45;letter-spacing:0.04em;padding-bottom:6px;margin-top:28px;margin-bottom:14px" data-darkmode-color="#d0d0d0">用途</h3>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">Codebase Memory-MCP 的主要用途包括：</p>
+<section style="margin-top:16px;margin-bottom:16px"><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">代码优化</strong>：帮助开发者提高代码的可读性和可维护性，减少代码的冗余和错误。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">错误定位</strong>：快速定位到代码中的问题，提高代码的可靠性。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">知识积累</strong>：帮助开发者积累和整合代码知识，提高代码质量和代码的可理解性。</span></section></section>
+<h3 style="font-size:17px;font-weight:700;color:#111111;line-height:1.45;letter-spacing:0.04em;padding-bottom:6px;margin-top:28px;margin-bottom:14px" data-darkmode-color="#d0d0d0">亮点</h3>
+<section style="margin-top:16px;margin-bottom:16px"><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">高效索引</strong>：平均代码库索引速度在毫秒级别，处理大规模代码库（如 Linux 内核）只需 3 分钟。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">低资源消耗</strong>：使用纯 C 语言实现，零依赖于外部库，仅需一个可执行文件和少量的静态二进制文件。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">高性能</strong>：在高性能计算领域有着极高的性能表现。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">零依赖</strong>：不需要依赖任何 API、服务或语言运行时，只需一个静态二进制文件，即可部署和运行。</span></section></section>
+<h3 style="font-size:17px;font-weight:700;color:#111111;line-height:1.45;letter-spacing:0.04em;padding-bottom:6px;margin-top:28px;margin-bottom:14px" data-darkmode-color="#d0d0d0">使用场景</h3>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">Codebase Memory-MCP 适用于以下场景：</p>
+<section style="margin-top:16px;margin-bottom:16px"><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">开发者</strong>：提高代码质量和效率，减少出错率。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">企业级项目</strong>：提供强大的代码智能引擎，提升代码质量和开发效率。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">科研领域</strong>：研究代码智能引擎的性能和效果，为未来的开发提供参考。</span></section></section>
+<h2 style="font-size:19px;font-weight:700;color:#111111;line-height:1.5;text-transform:uppercase;letter-spacing:0.12em;text-align:center;padding:10px 0;border-top:1px solid rgba(17,17,17,0.85);border-bottom:1px solid rgba(17,17,17,0.85);margin-top:38px;margin-bottom:18px" data-darkmode-color="#e0dcd4">结语</h2>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">Codebase Memory-MCP 是一个高性能的代码智能引擎，它的出现为开发者和研究者提供了一种全新的方式来提高代码质量和开发效率。如果你对代码智能引擎有浓厚的兴趣，不妨关注一下这个项目，也许你会从中获得灵感，或者找到新的研究方向。</p>
+<hr style="margin-top:40px;margin-bottom:40px;height:1px;background:linear-gradient(90deg, rgba(213,207,197,0) 0%, rgba(17,17,17,0.9) 26%, rgba(17,17,17,0.9) 74%, rgba(213,207,197,0) 100%);border:none;width:38%;margin-left:auto;margin-right:auto">
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8"><img style="max-width:100%;border-radius:2px;display:block;box-shadow:0 2px 8px rgba(0,0,0,0.1)" alt="关注公众号" src="images/公众号结束处.png" /></p></section>
+    </div>
+</div>
+
+<!-- 隐藏区域：存放纯微信 HTML（不含预览壳样式），复制时用这个 -->
+<div id="wechatHtml">
+<section style="background-color:#ffffff;padding:16px" data-darkmode-bgcolor="#1a1712"><h1 style="font-size:29px;font-weight:700;color:#111111;line-height:1.3;letter-spacing:-0.015em;padding:10px 0 9px;border-top:2px solid #111111;border-bottom:1px solid #111111;text-align:left;margin-top:38px;margin-bottom:16px" data-darkmode-color="#e0dcd4">Codebase Memory-MCP: The Fastest and Most Efficient Code Intelligence Engine</h1>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8"><img style="max-width:100%;border-radius:2px;display:block;box-shadow:0 2px 8px rgba(0,0,0,0.1)" alt="illustration" src="images/illustration_01.png" /></p>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8"><img style="max-width:100%;border-radius:2px;display:block;box-shadow:0 2px 8px rgba(0,0,0,0.1)" alt="illustration" src="images/illustration_02.png" /></p>
+<h2 style="font-size:19px;font-weight:700;color:#111111;line-height:1.5;text-transform:uppercase;letter-spacing:0.12em;text-align:center;padding:10px 0;border-top:1px solid rgba(17,17,17,0.85);border-bottom:1px solid rgba(17,17,17,0.85);margin-top:38px;margin-bottom:18px" data-darkmode-color="#e0dcd4">介绍</h2>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">如果你是 AI 编程的爱好者，那么你一定听说过代码智能引擎（Code Intelligence Engine, CIE）。这些工具能帮助开发者提高编程效率，减少出错的可能性，甚至在一定程度上提高代码质量。而在这个领域中，有一个名为 Codebase Memory-MCP 的项目，它以其高效、精准和全面的特点吸引了众多开发者和研究者的目光。</p>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8"><img style="max-width:100%;border-radius:2px;display:block;box-shadow:0 2px 8px rgba(0,0,0,0.1)" alt="illustration" src="images/illustration_03.png" /></p>
+<h2 style="font-size:19px;font-weight:700;color:#111111;line-height:1.5;text-transform:uppercase;letter-spacing:0.12em;text-align:center;padding:10px 0;border-top:1px solid rgba(17,17,17,0.85);border-bottom:1px solid rgba(17,17,17,0.85);margin-top:38px;margin-bottom:18px" data-darkmode-color="#e0dcd4">仓库功能与用途</h2>
+<h3 style="font-size:17px;font-weight:700;color:#111111;line-height:1.45;letter-spacing:0.04em;padding-bottom:6px;margin-top:28px;margin-bottom:14px" data-darkmode-color="#d0d0d0">主要功能</h3>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">Codebase Memory-MCP 是一个高性能的代码智能引擎，它能够将代码库索引到一个持久的知识图谱中。这使得它能够快速查找和理解复杂的代码结构，是编程领域中极其重要的工具。它不仅适用于个人开发者，也适用于企业级的代码智能引擎。</p>
+<h3 style="font-size:17px;font-weight:700;color:#111111;line-height:1.45;letter-spacing:0.04em;padding-bottom:6px;margin-top:28px;margin-bottom:14px" data-darkmode-color="#d0d0d0">用途</h3>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">Codebase Memory-MCP 的主要用途包括：</p>
+<section style="margin-top:16px;margin-bottom:16px"><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">代码优化</strong>：帮助开发者提高代码的可读性和可维护性，减少代码的冗余和错误。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">错误定位</strong>：快速定位到代码中的问题，提高代码的可靠性。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">知识积累</strong>：帮助开发者积累和整合代码知识，提高代码质量和代码的可理解性。</span></section></section>
+<h3 style="font-size:17px;font-weight:700;color:#111111;line-height:1.45;letter-spacing:0.04em;padding-bottom:6px;margin-top:28px;margin-bottom:14px" data-darkmode-color="#d0d0d0">亮点</h3>
+<section style="margin-top:16px;margin-bottom:16px"><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">高效索引</strong>：平均代码库索引速度在毫秒级别，处理大规模代码库（如 Linux 内核）只需 3 分钟。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">低资源消耗</strong>：使用纯 C 语言实现，零依赖于外部库，仅需一个可执行文件和少量的静态二进制文件。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">高性能</strong>：在高性能计算领域有着极高的性能表现。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">零依赖</strong>：不需要依赖任何 API、服务或语言运行时，只需一个静态二进制文件，即可部署和运行。</span></section></section>
+<h3 style="font-size:17px;font-weight:700;color:#111111;line-height:1.45;letter-spacing:0.04em;padding-bottom:6px;margin-top:28px;margin-bottom:14px" data-darkmode-color="#d0d0d0">使用场景</h3>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">Codebase Memory-MCP 适用于以下场景：</p>
+<section style="margin-top:16px;margin-bottom:16px"><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">开发者</strong>：提高代码质量和效率，减少出错率。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">企业级项目</strong>：提供强大的代码智能引擎，提升代码质量和开发效率。</span></section><section style="display:flex;margin-bottom:8px;align-items:flex-start"><span style="color:#326891;margin-right:8px;font-weight:bold">•</span><span style="font-size:15px;color:#000000;line-height:1.7;letter-spacing:0.5px" data-darkmode-color="#c8c8c8"><strong style="font-weight:700;color:#111111;background:linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 62%, rgba(50,104,145,0.1) 62%, rgba(50,104,145,0.1) 100%);display:inline" data-darkmode-color="#e0a060">科研领域</strong>：研究代码智能引擎的性能和效果，为未来的开发提供参考。</span></section></section>
+<h2 style="font-size:19px;font-weight:700;color:#111111;line-height:1.5;text-transform:uppercase;letter-spacing:0.12em;text-align:center;padding:10px 0;border-top:1px solid rgba(17,17,17,0.85);border-bottom:1px solid rgba(17,17,17,0.85);margin-top:38px;margin-bottom:18px" data-darkmode-color="#e0dcd4">结语</h2>
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8">Codebase Memory-MCP 是一个高性能的代码智能引擎，它的出现为开发者和研究者提供了一种全新的方式来提高代码质量和开发效率。如果你对代码智能引擎有浓厚的兴趣，不妨关注一下这个项目，也许你会从中获得灵感，或者找到新的研究方向。</p>
+<hr style="margin-top:40px;margin-bottom:40px;height:1px;background:linear-gradient(90deg, rgba(213,207,197,0) 0%, rgba(17,17,17,0.9) 26%, rgba(17,17,17,0.9) 74%, rgba(213,207,197,0) 100%);border:none;width:38%;margin-left:auto;margin-right:auto">
+<p style="font-size:15px;color:#000000;line-height:1.7;margin-top:0;margin-bottom:18px;letter-spacing:0.5px;text-align:left" data-darkmode-color="#c8c8c8"><img style="max-width:100%;border-radius:2px;display:block;box-shadow:0 2px 8px rgba(0,0,0,0.1)" alt="关注公众号" src="images/公众号结束处.png" /></p></section>
+</div>
+
+<script>
+function switchFontSize(size) {
+    // 更新按钮状态
+    document.querySelectorAll('.fs-btn').forEach(function(btn) {
+        if (parseInt(btn.dataset.size) === size) {
+            btn.classList.add('active');
+        } else {
+            btn.classList.remove('active');
+        }
+    });
+
+    // 修改可见预览区和隐藏复制区的 p 标签
+    ['articleContent', 'wechatHtml'].forEach(function(id) {
+        var container = document.getElementById(id);
+        if (!container) return;
+        container.querySelectorAll('p').forEach(function(p) {
+            var currentSize = parseInt(window.getComputedStyle(p).fontSize);
+            if (currentSize >= 14 && currentSize <= 16) {
+                p.style.fontSize = size + 'px';
+                p.style.lineHeight = size === 16 ? '1.75' : '1.8';
+            }
+        });
+        // 修改列表项文字
+        container.querySelectorAll('[style*="font-size:15px"]').forEach(function(el) {
+            if (el.tagName === 'SPAN' || el.tagName === 'SECTION') {
+                el.style.fontSize = size + 'px';
+            }
+        });
+    });
+
+    // 保存选择到 localStorage
+    localStorage.setItem('wechat-format-fontsize', size);
+}
+
+// 页面加载时恢复上次选择
+document.addEventListener('DOMContentLoaded', function() {
+    var saved = localStorage.getItem('wechat-format-fontsize');
+    if (saved && saved !== '15') {
+        switchFontSize(parseInt(saved));
+    }
+});
+
+function copyToWechat() {
+    const source = document.getElementById('wechatHtml');
+    const range = document.createRange();
+    range.selectNodeContents(source);
+
+    // 临时让元素可见（否则某些浏览器不允许复制隐藏元素）
+    source.style.position = 'fixed';
+    source.style.left = '0';
+    source.style.top = '0';
+    source.style.opacity = '0.01';
+    source.style.width = '375px';
+
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+
+    try {
+        document.execCommand('copy');
+        const btn = document.querySelector('.copy-btn');
+        btn.textContent = '已复制!';
+        btn.classList.add('copied');
+        setTimeout(() => {
+            btn.textContent = '复制到微信';
+            btn.classList.remove('copied');
+        }, 2500);
+    } catch(e) {
+        // fallback: 尝试 Clipboard API
+        const html = source.innerHTML;
+        const blob = new Blob([html], { type: 'text/html' });
+        const item = new ClipboardItem({ 'text/html': blob });
+        navigator.clipboard.write([item]).then(() => {
+            const btn = document.querySelector('.copy-btn');
+            btn.textContent = '已复制!';
+            btn.classList.add('copied');
+            setTimeout(() => {
+                btn.textContent = '复制到微信';
+                btn.classList.remove('copied');
+            }, 2500);
+        }).catch(() => {
+            alert('复制失败，请手动选中文章内容复制');
+        });
+    }
+
+    // 恢复隐藏
+    source.style.position = 'absolute';
+    source.style.left = '-9999px';
+    source.style.top = '-9999px';
+    source.style.opacity = '';
+    source.style.width = '';
+
+    sel.removeAllRanges();
+}
+</script>
+</body>
+</html>
+
+
+----------------------------------------
+
 === 文件: output\weekly_tech\article.md ===
 # ## 深度解析：无损记忆——个人AI记忆的革新
 
@@ -23618,6 +24961,8 @@ from .music_player import MusicPlayer
 from .radio_player import RadioPlayer
 from .video_sniffer import VideoSniffer
 
+from .github_repo_daily import GitHubRepoDaily
+
 __all__ = [
     'NewsAggregator',
     'NovelWriterOllama',
@@ -23636,6 +24981,8 @@ __all__ = [
     'MusicPlayer',
     'RadioPlayer',    
     'VideoSniffer',
+    
+    'GitHubRepoDaily',      # ✅ 新增
 ]
 
 
@@ -25176,6 +26523,1188 @@ def _cli_main() -> int:
 
 if __name__ == "__main__":
     sys.exit(_cli_main())
+
+----------------------------------------
+
+=== 文件: skills\github_repo_daily\__init__.py ===
+from .skill import GitHubRepoDaily
+
+__all__ = ["GitHubRepoDaily"]
+
+----------------------------------------
+
+=== 文件: skills\github_repo_daily\github_repo_daily_cli.py ===
+#!/usr/bin/env python
+"""GitHub 仓库每日推荐 CLI"""
+
+import sys
+import argparse
+from pathlib import Path
+
+project_root = Path(__file__).parents[2]
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
+from skills.github_repo_daily import GitHubRepoDaily
+
+
+def main():
+    parser = argparse.ArgumentParser(description="GitHub 仓库每日推荐")
+    parser.add_argument("--no-publish", action="store_true", help="不发布到微信公众号")
+    parser.add_argument("--theme", default="newspaper", help="微信排版主题")
+    parser.add_argument("--model", default=None, help="Ollama 模型")
+    args = parser.parse_args()
+
+    config = {
+        "wechat_publish": not args.no_publish,
+        "wechat_theme": args.theme,
+    }
+    if args.model:
+        config["ollama_model"] = args.model
+
+    skill = GitHubRepoDaily(config)
+    result = skill.execute()
+
+    if result["status"] == "success":
+        print(f"✅ 推荐仓库: {result['result']['repo']}")
+        print(f"📄 文章: {result['result']['article_path']}")
+        print(f"📤 已发布: {result['result']['published']}")
+    else:
+        print(f"❌ 失败: {result.get('error')}")
+
+
+if __name__ == "__main__":
+    main()
+
+----------------------------------------
+
+=== 文件: skills\github_repo_daily\meta.json ===
+{
+  "name": "github_repo_daily",
+  "version": "1.0.0",
+  "description": "每天从 GitHub Trending 选一个仓库，获取 README，用 Ollama 生成介绍文章，并发布到微信公众号草稿箱",
+  "author": "PromptForge",
+  "inputs": {
+    "no_publish": "是否不发布（可选）",
+    "theme": "微信排版主题（可选）",
+    "model": "Ollama 模型（可选）"
+  },
+  "outputs": {
+    "repo": "推荐的仓库全名",
+    "repo_url": "仓库链接",
+    "article_path": "文章 Markdown 路径",
+    "published": "是否发布成功"
+  },
+  "engines": ["ollama", "wechat_formatter"],
+  "depends_on": ["wechat_formatter"],
+  "class_name": "GitHubRepoDaily",
+  "examples": [
+    "python skills/github_repo_daily/github_repo_daily_cli.py",
+    "python skills/github_repo_daily/github_repo_daily_cli.py --no-publish"
+  ]
+}
+
+----------------------------------------
+
+=== 文件: skills\github_repo_daily\README.md ===
+# github_repo_daily
+
+每天推荐一个 GitHub 仓库，自动生成介绍文章并发布到微信公众号草稿箱。
+
+从 GitHub Trending 每日榜单中挑选一个**未推荐过**的仓库，抓取 README 与基础信息，用本地 Ollama 生成一篇介绍文章，再通过已有的 `wechat_formatter` 排版并推送到微信公众号草稿箱。
+
+---
+
+## ✨ 功能
+
+- 🔥 **抓取 Trending**：解析 `https://github.com/trending?since=daily` 每日榜单
+- 🎯 **智能去重**：自动跳过历史已推荐过的仓库（本地 `history.json` 记录）
+- 📡 **GitHub API**：获取仓库 stars / forks / 语言 / topics / README
+- 🧠 **Ollama 生成**：本地大模型生成 800–1200 字通俗介绍文章
+- 🎨 **微信排版**：复用 `wechat_formatter` 的 33 套主题，一键排版
+- 📤 **推送草稿箱**：可直接推送到微信公众号草稿箱（可选关闭）
+- 🔁 **失败兜底**：Trending 抓取失败时使用内置候选仓库；Ollama 失败时输出基础模板文章
+
+---
+
+## 📦 依赖
+
+### Python 依赖
+
+```bash
+pip install requests
+```
+
+### 外部服务
+
+| 服务 | 用途 | 说明 |
+|------|------|------|
+| Ollama | 本地 LLM 生成文章 | 默认 `http://localhost:11434`，需拉取模型如 `qwen2.5:7b` |
+| wechat_formatter | 排版 + 推送 | 已在项目内，需配置 `WECHAT_APP_ID` / `WECHAT_APP_SECRET` |
+
+### 环境变量（可选）
+
+```ini
+# GitHub Personal Access Token，用于提高 API 速率限制（未认证 60 次/小时，认证 5000 次/小时）
+GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx
+
+# Ollama 服务
+OLLAMA_URL=http://localhost:11434
+OLLAMA_MODEL=qwen2.5:7b
+```
+
+> 不设置 `GITHUB_TOKEN` 也能跑，只是频繁调用可能触发限流。
+
+---
+
+## 🚀 快速开始
+
+### 1. 拉取 Ollama 模型
+
+```bash
+ollama pull qwen2.5:7b
+ollama serve
+```
+
+### 2. 配置微信公众号
+
+在项目 `.env` 中设置：
+
+```ini
+WECHAT_APP_ID=wx_xxxxxxxxxxxxxxxx
+WECHAT_APP_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+并将当前公网 IP 加入微信公众号后台 → 基础配置 → IP 白名单。
+
+### 3. 运行
+
+```bash
+# 生成并发布到公众号草稿箱（默认）
+python skills/github_repo_daily/github_repo_daily_cli.py
+
+# 只生成本地文章，不发布
+python skills/github_repo_daily/github_repo_daily_cli.py --no-publish
+
+# 指定 Ollama 模型
+python skills/github_repo_daily/github_repo_daily_cli.py --model qwen2.5:14b
+
+# 指定微信排版主题
+python skills/github_repo_daily/github_repo_daily_cli.py --theme terracotta
+```
+
+---
+
+## 🐍 Python 调用
+
+```python
+from skills.github_repo_daily import GitHubRepoDaily
+
+skill = GitHubRepoDaily({
+    "wechat_publish": True,
+    "wechat_theme": "newspaper",
+    "ollama_model": "qwen2.5:7b",
+})
+
+result = skill.execute()
+
+if result["status"] == "success":
+    print("推荐仓库:", result["result"]["repo"])
+    print("仓库链接:", result["result"]["repo_url"])
+    print("文章路径:", result["result"]["article_path"])
+    print("已发布:",   result["result"]["published"])
+else:
+    print("失败:", result["error"])
+```
+
+---
+
+## 📁 输出结构
+
+```
+output/
+└── github_repo_daily/
+    ├── history.json                     # 已推荐仓库记录（去重用）
+    ├── tmp/                             # 待排版的临时 md
+    │   └── 20260923_080000.md
+    └── 20260923/                        # 按日期归档
+        └── ollama_ollama.md             # 生成的介绍文章
+
+output/
+└── wechat/                              # wechat_formatter 输出
+    └── 20260923_080100_article/
+        ├── article.html
+        ├── preview.html
+        └── images/
+```
+
+---
+
+## ⚙️ 参数配置
+
+`GitHubRepoDaily(config)` 支持的配置项：
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `output_dir` | `./output/github_repo_daily` | 输出根目录 |
+| `history_file` | `history.json` | 历史记录文件名 |
+| `github_token` | `$GITHUB_TOKEN` | GitHub Token，可选 |
+| `ollama_url` | `$OLLAMA_URL` / `http://localhost:11434` | Ollama 地址 |
+| `ollama_model` | `$OLLAMA_MODEL` / `qwen2.5:7b` | Ollama 模型 |
+| `wechat_theme` | `newspaper` | 微信排版主题名 |
+| `wechat_publish` | `True` | 是否推送到公众号草稿箱 |
+| `max_trending` | `25` | 每次从 Trending 取多少个候选 |
+| `log_level` | `INFO` | 日志级别 |
+
+---
+
+## 🔧 工作流程
+
+```
+┌─────────────────────────────┐
+│ 1. 抓取 GitHub Trending 日榜 │
+└──────────────┬──────────────┘
+               ↓
+┌─────────────────────────────┐
+│ 2. 过滤历史已推荐 → 随机挑选 │
+└──────────────┬──────────────┘
+               ↓
+┌─────────────────────────────┐
+│ 3. GitHub API 获取详情+README│
+└──────────────┬──────────────┘
+               ↓
+┌─────────────────────────────┐
+│ 4. Ollama 生成介绍文章       │
+└──────────────┬──────────────┘
+               ↓
+┌─────────────────────────────┐
+│ 5. 保存 md + 记录 history    │
+└──────────────┬──────────────┘
+               ↓
+┌─────────────────────────────┐
+│ 6. wechat_formatter 排版     │
+└──────────────┬──────────────┘
+               ↓
+┌─────────────────────────────┐
+│ 7. 推送公众号草稿箱（可选）  │
+└─────────────────────────────┘
+```
+
+---
+
+## ⏰ 定时任务
+
+### Windows 计划任务
+
+参考 `scripts/register_task.ps1` 注册，或新建任务：
+
+```powershell
+$TaskName   = "PromptForge_GitHubRepoDaily"
+$ProjectDir = "E:\SD_OpenVINO\PromptForge"
+$Python     = "$ProjectDir\venv\Scripts\python.exe"
+$Script     = "$ProjectDir\skills\github_repo_daily\github_repo_daily_cli.py"
+
+$Action  = New-ScheduledTaskAction -Execute $Python -Argument $Script -WorkingDirectory $ProjectDir
+$Trigger = New-ScheduledTaskTrigger -Daily -At "08:00"
+
+Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Force
+```
+
+### Windows 批处理
+
+`scripts/run_github_repo_daily.bat`：
+
+```bat
+@echo off
+chcp 65001 >nul
+cd /d "%~dp0\.."
+
+if exist "venv\Scripts\activate.bat" (
+    call venv\Scripts\activate.bat
+)
+
+python skills\github_repo_daily\github_repo_daily_cli.py >> "output\github_repo_daily\run.log" 2>&1
+exit /b %ERRORLEVEL%
+```
+
+### Linux / macOS crontab
+
+```cron
+0 8 * * * cd /path/to/PromptForge && /path/to/venv/bin/python skills/github_repo_daily/github_repo_daily_cli.py >> output/github_repo_daily/run.log 2>&1
+```
+
+---
+
+## 🛠 CLI 参数
+
+| 参数 | 说明 | 默认 |
+|------|------|------|
+| `--no-publish` | 只生成本地文章，不推送公众号 | 关（默认推送） |
+| `--theme` | 微信排版主题（如 `terracotta` / `newspaper`） | `newspaper` |
+| `--model` | 覆盖 Ollama 模型 | 读环境变量 |
+
+---
+
+## ❓ 常见问题
+
+### Q1: 抓取 Trending 失败 / 返回空列表
+
+- GitHub 页面结构可能变化 → 检查 `fetch_trending_repos()` 里的正则
+- 网络受限 → 检查代理；代码里有内置兜底仓库列表
+
+### Q2: GitHub API 返回 403 / 429
+
+- 未设置 `GITHUB_TOKEN` 时限流（60 次/小时）
+- 建议在环境变量里配置 Personal Access Token
+
+### Q3: Ollama 超时
+
+- 首次加载大模型较慢 → 提前 `ollama run qwen2.5:7b` 预热一次
+- 加大 `timeout` 参数或改用更小的模型
+
+### Q4: 微信公众号推送失败 `errcode=40164`
+
+- IP 不在白名单 → `curl ifconfig.me` 查 IP，加入后台白名单
+- 家宽 IP 会变，变了要重新加
+
+### Q5: 微信公众号推送失败 `errcode=48001`
+
+- 未认证订阅号无草稿箱 API 权限 → 用 `--no-publish` 只生成 HTML，手动复制粘贴
+- 参考 `wechat_formatter` 的 `preview.html` 手动复制流程
+
+### Q6: 文章质量不满意
+
+- 换个更大的 Ollama 模型：`--model qwen2.5:14b` 或 `qwen2.5:32b`
+- 修改 `skill.py` 里 `generate_article()` 的 prompt 模板
+- 调大 `readme` 截断长度（默认 4000 字符）给模型更多上下文
+
+### Q7: 想推送到多个平台（小红书 / 知乎）
+
+- 本项目已内置 `social_auto_upload` skill
+- 在 `publish_to_wechat()` 后追加调用即可
+
+---
+
+## 📂 目录结构
+
+```
+skills/github_repo_daily/
+├── __init__.py                  # 导出 GitHubRepoDaily
+├── skill.py                     # 主技能逻辑
+├── github_repo_daily_cli.py     # 命令行入口
+├── meta.json                    # 技能元数据
+└── README.md                    # 本文档
+```
+
+---
+
+## 🔌 扩展方向
+
+| 想法 | 难度 | 备注 |
+|------|------|------|
+| 支持按语言 / topic 过滤 Trending | ⭐ | URL 加 `?language=python` |
+| 每周汇总 Top 10 生成周报 | ⭐⭐ | 聚合多篇文章 |
+| 自动抓取仓库截图作为封面 | ⭐⭐ | 用 `screenshot` API |
+| 生成中英双语版本 | ⭐ | prompt 双写 |
+| 加入技术栈分析（依赖图） | ⭐⭐⭐ | 解析 package.json / requirements.txt |
+| 推送到小红书 / 知乎 | ⭐ | 复用 `social_auto_upload` |
+| 加入 Star 增长曲线图 | ⭐⭐⭐ | 调 GitHub API 时间序列 |
+
+---
+
+## 📄 License
+
+与 PromptForge 主项目一致（MIT）。
+
+----------------------------------------
+
+=== 文件: skills\github_repo_daily\skill.py ===
+"""
+github_repo_daily - 每天推荐一个 GitHub 仓库并生成介绍文章发布到微信公众号
+
+流程：
+  1. 抓取 GitHub Trending 每日榜单
+  2. 挑选一个未推荐过的仓库
+  3. 调用 GitHub API 获取仓库详情与 README
+  4. 使用 Ollama 生成介绍文章
+  5. 调用 wechat_formatter 排版并发布到公众号草稿箱
+"""
+
+import os
+import re
+import json
+import time
+import base64
+import random
+import shutil 
+import logging
+import requests
+from pathlib import Path
+from datetime import datetime
+from typing import Dict, Any, List, Optional
+
+logger = logging.getLogger(__name__)
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+
+class GitHubRepoDaily:
+    name = "github_repo_daily"
+    version = "1.0.0"
+
+    def __init__(self, config: Dict[str, Any] = None):
+        self.config = config or {}
+        self._setup_logging()
+        self._setup_config()
+
+    def _setup_logging(self):
+        level = self.config.get("log_level", "INFO")
+        logging.basicConfig(
+            level=getattr(logging, level.upper()),
+            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        )
+
+    def _setup_config(self):
+        defaults = {
+            "output_dir": str(PROJECT_ROOT / "output" / "github_repo_daily"),
+            "history_file": "history.json",
+            "github_token": os.environ.get("GITHUB_TOKEN", ""),
+            "ollama_url": os.environ.get("OLLAMA_URL", "http://localhost:11434"),
+            "ollama_model": os.environ.get("OLLAMA_MODEL", "qwen2.5:7b"),
+            "wechat_theme": "newspaper",
+            "wechat_publish": True,
+            "max_trending": 25,
+            "log_level": "INFO",
+            
+            # ✅ 新增：插图与文末二维码
+            "illustration_count": 3,
+            "illustration_engine": "agnes",
+            "illustration_width": 1024,
+            "illustration_height": 1024,
+            "footer_image": "assets/qr/公众号结束处.png",
+            "footer_alt": "关注公众号",            
+        }
+        for k, v in defaults.items():
+            self.config.setdefault(k, v)
+        Path(self.config["output_dir"]).mkdir(parents=True, exist_ok=True)
+
+    # ---------- 历史记录 ----------
+
+    def _load_history(self) -> List[str]:
+        hist_file = Path(self.config["output_dir"]) / self.config["history_file"]
+        if hist_file.exists():
+            try:
+                return json.loads(hist_file.read_text(encoding="utf-8"))
+            except Exception:
+                return []
+        return []
+
+    def _save_history(self, history: List[str]):
+        hist_file = Path(self.config["output_dir"]) / self.config["history_file"]
+        hist_file.write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    # ---------- GitHub 相关 ----------
+
+    def _github_headers(self):
+        headers = {"Accept": "application/vnd.github.v3+json"}
+        token = self.config.get("github_token")
+        if token:
+            headers["Authorization"] = f"token {token}"
+        return headers
+
+    def fetch_trending_repos(self) -> List[Dict[str, str]]:
+        """抓取 GitHub Trending 每日榜单。
+
+        策略：
+          1. 优先用 article.Box-row 切块（GitHub 多年来结构稳定）
+          2. 兜底用宽松正则直接抓 /owner/repo 链接
+          3. 再失败用内置候选仓库
+        """
+        url = "https://github.com/trending?since=daily"
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/122.0.0.0 Safari/537.36"
+            ),
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+
+        html = ""
+        try:
+            resp = requests.get(url, headers=headers, timeout=20)
+            resp.raise_for_status()
+            html = resp.text
+            logger.info(f"Trending 页面大小: {len(html)} 字符")
+        except Exception as e:
+            logger.error(f"抓取 trending 页面失败: {e}")
+
+        repos: List[Dict[str, str]] = []
+        seen = set()
+
+        # ── 方案 1：按 article.Box-row 切块（主选）──
+        if html:
+            blocks = re.findall(
+                r'<article[^>]*class="[^"]*Box-row[^"]*"[^>]*>(.*?)</article>',
+                html,
+                re.DOTALL,
+            )
+            logger.info(f"匹配到 {len(blocks)} 个 Box-row 块")
+
+            for block in blocks:
+                # 块内第一个 /owner/repo 链接就是仓库
+                m = re.search(r'<a\s+[^>]*href="/([^/"\s]+)/([^/"\s]+)"', block)
+                if not m:
+                    continue
+                owner, repo = m.group(1), m.group(2)
+                # 过滤掉 GitHub 自身页面、trending 筛选链接等
+                if owner in ("trending", "topics", "collections", "sponsors",
+                             "login", "signup", "features", "marketplace"):
+                    continue
+                key = f"{owner}/{repo}"
+                if key in seen:
+                    continue
+                seen.add(key)
+                repos.append({
+                    "owner": owner,
+                    "repo": repo,
+                    "url": f"https://github.com/{key}",
+                })
+                if len(repos) >= self.config["max_trending"]:
+                    break
+
+        # ── 方案 2：Box-row 抓不到，兜底用宽松正则 ──
+        if not repos and html:
+            logger.warning("Box-row 解析为空，改用宽松正则兜底")
+            pattern = r'<h2[^>]*>\s*<a\s+[^>]*href="/([^/"\s]+)/([^/"\s]+)"'
+            matches = re.findall(pattern, html, re.DOTALL)
+            for owner, repo in matches[: self.config["max_trending"]]:
+                if owner in ("trending", "topics", "collections"):
+                    continue
+                key = f"{owner}/{repo}"
+                if key in seen:
+                    continue
+                seen.add(key)
+                repos.append({
+                    "owner": owner,
+                    "repo": repo,
+                    "url": f"https://github.com/{key}",
+                })
+
+        # ── 方案 3：全都失败 → 内置候选（保底不崩）──
+        if not repos:
+            logger.warning("Trending 抓取失败，使用内置候选仓库")
+            repos = [
+                {"owner": "ollama", "repo": "ollama",
+                 "url": "https://github.com/ollama/ollama"},
+                {"owner": "microsoft", "repo": "vscode",
+                 "url": "https://github.com/microsoft/vscode"},
+                {"owner": "torvalds", "repo": "linux",
+                 "url": "https://github.com/torvalds/linux"},
+                {"owner": "huggingface", "repo": "transformers",
+                 "url": "https://github.com/huggingface/transformers"},
+                {"owner": "comfyanonymous", "repo": "ComfyUI",
+                 "url": "https://github.com/comfyanonymous/ComfyUI"},
+            ]
+
+        logger.info(f"获取到 {len(repos)} 个 trending 仓库")
+        return repos
+        
+    def pick_repo(self, repos: List[Dict[str, str]]) -> Optional[Dict[str, str]]:
+        """挑选一个未推荐过的仓库"""
+        history = self._load_history()
+        random.shuffle(repos)
+        for r in repos:
+            key = f"{r['owner']}/{r['repo']}"
+            if key not in history:
+                return r
+        return random.choice(repos) if repos else None
+
+    def get_repo_details(self, owner: str, repo: str) -> Dict[str, Any]:
+        """获取仓库详情与 README"""
+        api_base = "https://api.github.com"
+        headers = self._github_headers()
+        details = {}
+        try:
+            # 仓库信息
+            resp = requests.get(f"{api_base}/repos/{owner}/{repo}", headers=headers, timeout=10)
+            if resp.status_code == 200:
+                data = resp.json()
+                details.update({
+                    "full_name": data.get("full_name"),
+                    "description": data.get("description"),
+                    "stars": data.get("stargazers_count"),
+                    "forks": data.get("forks_count"),
+                    "language": data.get("language"),
+                    "topics": data.get("topics", []),
+                    "html_url": data.get("html_url"),
+                    "homepage": data.get("homepage"),
+                })
+            # README
+            resp = requests.get(f"{api_base}/repos/{owner}/{repo}/readme", headers=headers, timeout=10)
+            if resp.status_code == 200:
+                readme_data = resp.json()
+                content = readme_data.get("content", "")
+                readme_text = base64.b64decode(content).decode("utf-8", errors="replace")
+                details["readme"] = readme_text
+            else:
+                details["readme"] = ""
+        except Exception as e:
+            logger.error(f"获取仓库详情失败: {e}")
+        return details
+
+    # ---------- 文章生成 ----------
+
+    def generate_article(self, repo_info: Dict[str, Any]) -> str:
+        """使用 Ollama 生成介绍文章"""
+        full_name = repo_info.get("full_name", "未知仓库")
+        description = repo_info.get("description", "")
+        stars = repo_info.get("stars", 0)
+        language = repo_info.get("language", "")
+        topics = ", ".join(repo_info.get("topics", []))
+        readme = repo_info.get("readme", "")[:4000]  # 截断，避免太长
+
+        prompt = f"""你是一个技术博主，请根据以下 GitHub 仓库信息，写一篇介绍文章。
+要求：
+1. 标题吸引人，包含仓库名。
+2. 介绍仓库的主要功能、用途、亮点。
+3. 语言通俗易懂，适合公众号读者。
+4. 可以包含使用场景、技术栈等。
+5. 文章长度 800-1200 字。
+6. 输出 Markdown 格式，包含标题。
+
+仓库名称：{full_name}
+仓库描述：{description}
+Star 数：{stars}
+主要语言：{language}
+标签：{topics}
+
+README 内容（节选）：
+{readme}
+
+请开始写文章："""
+
+        try:
+            resp = requests.post(
+                f"{self.config['ollama_url']}/api/generate",
+                json={
+                    "model": self.config["ollama_model"],
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {"temperature": 0.7, "num_predict": 2000},
+                },
+                timeout=120,
+            )
+            if resp.status_code == 200:
+                article = resp.json().get("response", "").strip()
+                if article:
+                    return article
+        except Exception as e:
+            logger.error(f"Ollama 生成失败: {e}")
+
+        # 兜底
+        return f"""# {full_name}
+
+{description}
+
+- Star: {stars}
+- 语言: {language}
+- 标签: {topics}
+
+更多详情请访问：{repo_info.get('html_url', '')}
+"""
+
+
+    # ---------- 插图 prompt 提炼 ----------
+
+    def _generate_illustration_prompts(
+        self,
+        repo_info: Dict[str, Any],
+        article: str,
+        count: int = 3,
+    ) -> List[str]:
+        """让 Ollama 从文章里提炼 N 个适合 AI 画图的英文 prompt。
+
+        要点：只画"概念场景"，不画代码/界面/文字（AI 画不好这些）。
+        """
+        full_name = repo_info.get("full_name", "")
+        description = repo_info.get("description", "")
+        language = repo_info.get("language", "")
+        topics = ", ".join(repo_info.get("topics", []))
+
+        # 文章摘要取前 800 字
+        article_excerpt = article[:800].replace("\n", " ")
+
+        prompt = f"""You are an illustrator. Based on the following GitHub repository, write {count} English prompts for AI image generation (Midjourney / DALL-E style).
+
+Requirements:
+1. Each prompt <= 30 English words
+2. Describe a CONCRETE visual scene — do NOT include code, UI, text, logos
+3. Theme should relate to the repo's purpose, tech, or use case (abstract concepts are fine)
+4. Style: techy, modern, clean, cinematic
+5. Output ONLY a JSON array, e.g.: ["prompt 1", "prompt 2", "prompt 3"]
+
+Repo: {full_name}
+Description: {description}
+Language: {language}
+Topics: {topics}
+Article excerpt: {article_excerpt}
+
+JSON array:"""
+
+        try:
+            resp = requests.post(
+                f"{self.config['ollama_url']}/api/generate",
+                json={
+                    "model": self.config["ollama_model"],
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {"temperature": 0.8, "num_predict": 500},
+                },
+                timeout=90,
+            )
+            if resp.status_code == 200:
+                raw = resp.json().get("response", "").strip()
+                # 从回复里抓 JSON 数组
+                m = re.search(r"\[.*\]", raw, re.DOTALL)
+                if m:
+                    arr = json.loads(m.group())
+                    arr = [str(x).strip() for x in arr if str(x).strip()]
+                    if arr:
+                        logger.info(f"✅ 提炼出 {len(arr)} 个配图 prompt")
+                        return arr[:count]
+        except Exception as e:
+            logger.warning(f"⚠️ 提炼配图 prompt 失败: {e}")
+
+        # 兜底：用仓库描述拼一个
+        fallback = [
+            f"abstract tech illustration inspired by {full_name}, "
+            f"modern minimal, cinematic lighting, digital art",
+        ]
+        logger.warning("使用兜底配图 prompt")
+        return fallback
+        
+        
+
+    # ---------- 插图生成 ----------
+
+    def _generate_illustrations(
+        self,
+        prompts: List[str],
+        save_dir: Path,
+    ) -> List[Path]:
+        """用指定引擎生成插图，返回本地路径列表。
+
+        引擎：默认 agnes（免费），也支持 pollinations / siliconflow 等。
+        失败时返回已成功的部分（不中断主流程）。
+        """
+        if not prompts:
+            return []
+
+        save_dir.mkdir(parents=True, exist_ok=True)
+        paths: List[Path] = []
+
+        try:
+            from api_engines import create_engine
+            from config.settings import settings
+
+            engine_name = self.config.get("illustration_engine", "agnes")
+
+            if engine_name == "agnes":
+                engine_cfg = {
+                    "AGNES_API_KEY": settings.agnes_api_key,
+                    "AGNES_BASE_URL": settings.agnes_base_url,
+                    "AGNES_IMAGE_MODEL": settings.agnes_image_model,
+                }
+            elif engine_name == "pollinations":
+                engine_cfg = {"POLLINATIONS_MODEL": settings.pollinations_model}
+            elif engine_name == "siliconflow":
+                engine_cfg = {
+                    "SILICONFLOW_API_KEY": settings.siliconflow_api_key,
+                    "SILICONFLOW_MODEL": settings.siliconflow_model,
+                }
+            else:
+                logger.warning(f"不支持的插图引擎: {engine_name}")
+                return []
+
+            engine = create_engine(engine_name, engine_cfg)
+            if engine is None:
+                logger.warning(f"插图引擎初始化失败: {engine_name}")
+                return []
+
+            w = self.config["illustration_width"]
+            h = self.config["illustration_height"]
+
+            for i, prompt in enumerate(prompts, 1):
+                try:
+                    logger.info(f"🎨 生成插图 [{i}/{len(prompts)}]: {prompt[:60]}...")
+                    img = engine.generate_single(
+                        prompt=prompt,
+                        negative="text, watermark, signature, ui, code, blurry",
+                        width=w,
+                        height=h,
+                        steps=20,
+                        cfg=7.5,
+                    )
+                    path = save_dir / f"illustration_{i:02d}.png"
+                    img.save(path, "PNG", optimize=True)
+                    paths.append(path)
+                    logger.info(f"✅ 插图已保存: {path.name}")
+                    time.sleep(1)  # 轻微节流
+                except Exception as e:
+                    logger.warning(f"⚠️ 插图 {i} 生成失败: {e}")
+                    continue
+
+        except Exception as e:
+            logger.error(f"❌ 插图生成失败: {e}")
+            import traceback
+            traceback.print_exc()
+
+        return paths
+
+
+    # ---------- 插图插入 ----------
+
+    def _insert_illustrations(
+        self,
+        article: str,
+        image_paths: List[Path],
+    ) -> str:
+        """把插图按"段落间均匀分布"的规则插入到 Markdown 文章里。
+
+        策略：
+          - 保留 H1 标题在最前
+          - 后续每个二级标题前，尝试插一张图（图片用完就停）
+          - 图片存于 assets/，md 里用相对路径引用
+        """
+        if not image_paths:
+            return article
+
+        lines = article.split("\n")
+        result: List[str] = []
+        img_idx = 0
+        n_images = len(image_paths)
+
+        # 先把 H1 和紧随其后的引言段照搬
+        head_done = False
+        for line in lines:
+            result.append(line)
+            if not head_done and line.startswith("# "):
+                # 标题后先插一张
+                if img_idx < n_images:
+                    result.append("")
+                    result.append(f"![illustration](assets/{image_paths[img_idx].name})")
+                    result.append("")
+                    img_idx += 1
+                head_done = True
+
+        # 上面简单遍历一遍不行，需要重新做
+        # 用更直接的方法：按行扫描，遇到 ## 二级标题就插图
+        result = []
+        img_idx = 0
+        head_seen = False
+
+        for line in lines:
+            # H1 之后先插第一张
+            if (not head_seen) and line.startswith("# ") and not line.startswith("## "):
+                result.append(line)
+                if img_idx < n_images:
+                    result.append("")
+                    result.append(f"![illustration](assets/{image_paths[img_idx].name})")
+                    result.append("")
+                    img_idx += 1
+                head_seen = True
+                continue
+
+            # 每个 ## 二级标题前插图
+            if line.startswith("## ") and img_idx < n_images:
+                result.append("")
+                result.append(f"![illustration](assets/{image_paths[img_idx].name})")
+                result.append("")
+                img_idx += 1
+
+            result.append(line)
+
+        # 还有剩余图片 → 全部追加到末尾
+        if img_idx < n_images:
+            result.append("")
+            for p in image_paths[img_idx:]:
+                result.append(f"![illustration](assets/{p.name})")
+                result.append("")
+
+        return "\n".join(result)
+        
+    # ---------- 封面 ----------
+
+    def _fetch_cover_image(
+        self,
+        repo_info: Dict[str, Any],
+        save_dir: Path,
+    ) -> Optional[Path]:
+        """下载 GitHub Open Graph 图作为封面。
+
+        GitHub 为每个仓库自动生成 1200x630 的 OG 卡片图，
+        内容含仓库名/描述/语言/star，带渐变背景，很适合当封面。
+
+        处理流程：
+          1. 请求 https://opengraph.githubassets.com/1/{owner}/{repo}
+          2. 裁剪到 2.35:1（微信头条封面标准比例）
+          3. resize 到 900x383（微信推荐尺寸）
+          4. 保存到 images/cover.png
+        """
+        full_name = repo_info.get("full_name") or ""
+        if "/" not in full_name:
+            logger.warning(f"封面：仓库名格式异常 {full_name}")
+            return None
+
+        owner, repo = full_name.split("/", 1)
+        og_url = f"https://opengraph.githubassets.com/1/{owner}/{repo}"
+
+        save_dir.mkdir(parents=True, exist_ok=True)
+        cover_path = save_dir / "cover.png"
+
+        try:
+            from PIL import Image
+            import io as _io
+
+            resp = requests.get(
+                og_url,
+                headers={"User-Agent": "Mozilla/5.0"},
+                timeout=20,
+            )
+            resp.raise_for_status()
+
+            img = Image.open(_io.BytesIO(resp.content)).convert("RGB")
+
+            # 裁剪到 2.35:1（微信头条封面比例）
+            w, h = img.size
+            target_ratio = 2.35
+            if w / h > target_ratio:
+                # 太宽 → 裁左右
+                new_w = int(h * target_ratio)
+                left = (w - new_w) // 2
+                img = img.crop((left, 0, left + new_w, h))
+            else:
+                # 太高 → 裁上下
+                new_h = int(w / target_ratio)
+                top = (h - new_h) // 2
+                img = img.crop((0, top, w, top + new_h))
+
+            # 标准尺寸 900x383
+            img = img.resize((900, 383), Image.Resampling.LANCZOS)
+            img.save(cover_path, "PNG", optimize=True)
+
+            logger.info(f"✅ 封面已保存: {cover_path}")
+            return cover_path
+
+        except Exception as e:
+            logger.warning(f"⚠️ 封面下载/处理失败: {e}")
+            return None
+
+
+    # ---------- 发布到微信 ----------
+
+    def publish_to_wechat(
+        self,
+        article_md: str,
+        repo_info: Optional[Dict[str, Any]] = None,
+        cover_image: Optional[Path] = None,
+    ) -> bool:
+        """调用 wechat_formatter 排版并发布。
+
+        Args:
+            article_md:  Markdown 文章正文（已插入插图）
+            repo_info:   仓库信息，用于兜底生成封面
+            cover_image: 已有封面路径（通常取第一张插图），None 则用 GitHub OG 图
+        """
+        try:
+            from skills.wechat_formatter import WechatFormatter
+
+            # ── 工作目录：隔离本次任务的所有产物 ──
+            work_dir = Path(self.config["output_dir"]) / "tmp" / datetime.now().strftime("%Y%m%d_%H%M%S")
+            assets_dir = work_dir / "assets"
+            assets_dir.mkdir(parents=True, exist_ok=True)
+
+            # 把插图从原位置复制到 assets/（md 里用相对路径 assets/xxx.png）
+            # 注意：插图已经写在 md 里用 assets/ 引用，所以只要文件名对上
+            if cover_image and cover_image.exists():
+                shutil.copy2(cover_image, assets_dir / cover_image.name)
+
+            # 写 md
+            md_file = work_dir / "article.md"
+            md_file.write_text(article_md, encoding="utf-8")
+
+            # ── 处理封面 ──
+            cover_path = None
+            if cover_image and cover_image.exists():
+                cover_path = cover_image
+            elif repo_info:
+                cover_path = self._fetch_cover_image(repo_info, assets_dir)
+
+            # ── 处理文末二维码 ──
+            footer_path = self._get_footer_image()
+
+            # ── 排版 ──
+            fmt = WechatFormatter()
+            fmt_kwargs = {
+                "theme": self.config["wechat_theme"],
+                "open": False,
+            }
+            if footer_path and footer_path.exists():
+                fmt_kwargs["footer_image"] = str(footer_path)
+                fmt_kwargs["footer_alt"] = self.config["footer_alt"]
+
+            result = fmt.format(str(md_file), **fmt_kwargs)
+            if result.get("status") != "success":
+                logger.error(f"排版失败: {result.get('error')}")
+                return False
+
+            article_dir = Path(result["result"]["article_dir"])
+
+            # ── 推送 ──
+            if self.config.get("wechat_publish", True):
+                # 如果封面还没进 article_dir/images/，复制进去
+                if cover_path and cover_path.exists():
+                    images_dir = article_dir / "images"
+                    images_dir.mkdir(parents=True, exist_ok=True)
+                    target = images_dir / cover_path.name
+                    if not target.exists():
+                        shutil.copy2(cover_path, target)
+
+                pub_result = fmt.publish(str(article_dir))
+                if pub_result.get("status") == "success":
+                    logger.info("✅ 已发布到公众号草稿箱")
+                    return True
+                else:
+                    logger.error(f"❌ 发布失败: {pub_result.get('error')}")
+                    return False
+            else:
+                logger.info(f"排版完成，未发布。输出目录: {article_dir}")
+                return True
+
+        except Exception as e:
+            logger.error(f"发布到微信失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
+
+    # ---------- 文末二维码 ----------
+
+    def _get_footer_image(self) -> Optional[Path]:
+        """定位文末二维码图片（assets/qr/公众号结束处.png）"""
+        rel = self.config.get("footer_image")
+        if not rel:
+            return None
+        p = Path(rel)
+        if not p.is_absolute():
+            p = PROJECT_ROOT / p
+        if p.exists():
+            logger.info(f"✅ 文末二维码: {p}")
+            return p
+        logger.warning(f"⚠️ 文末二维码不存在: {p}")
+        return None
+        
+    # ---------- 主入口 ----------
+
+    def execute(self, **kwargs) -> Dict[str, Any]:
+        start_time = time.time()
+        logger.info(f"执行技能: {self.name}")
+
+        try:
+            # 1. 获取 trending 仓库
+            repos = self.fetch_trending_repos()
+            if not repos:
+                return {"status": "error", "error": "未获取到任何仓库"}
+
+            # 2. 选一个未推荐过的
+            repo = self.pick_repo(repos)
+            if not repo:
+                return {"status": "error", "error": "没有可用仓库"}
+
+            owner, repo_name = repo["owner"], repo["repo"]
+            full_name = f"{owner}/{repo_name}"
+            logger.info(f"今日推荐: {full_name}")
+
+            # 3. 获取详情
+            details = self.get_repo_details(owner, repo_name)
+            if not details.get("full_name"):
+                return {"status": "error", "error": f"无法获取仓库详情: {full_name}"}
+
+            # 4. 生成文章正文
+            article = self.generate_article(details)
+            if not article:
+                return {"status": "error", "error": "文章生成失败"}
+
+            # 5. 提炼配图 prompt + 生成插图
+            illustration_paths: List[Path] = []
+            try:
+                prompts = self._generate_illustration_prompts(
+                    details, article, count=self.config["illustration_count"],
+                )
+                if prompts:
+                    work_dir = Path(self.config["output_dir"]) / "tmp" / "illustrations" \
+                               / datetime.now().strftime("%Y%m%d_%H%M%S")
+                    illustration_paths = self._generate_illustrations(prompts, work_dir)
+            except Exception as e:
+                logger.warning(f"⚠️ 插图流程失败，继续无图文章: {e}")
+
+            # 6. 插图插入文章（把图片复制到 article.md 同级的 assets/ 下）
+            if illustration_paths:
+                # 统一放到 tmp/assets/，md 里引用 assets/xxx.png
+                article_work = Path(self.config["output_dir"]) / "tmp" \
+                               / datetime.now().strftime("%Y%m%d_%H%M%S")
+                assets_dir = article_work / "assets"
+                assets_dir.mkdir(parents=True, exist_ok=True)
+
+                # 复制插图
+                new_paths: List[Path] = []
+                for p in illustration_paths:
+                    target = assets_dir / p.name
+                    if p != target:
+                        shutil.copy2(p, target)
+                    new_paths.append(target)
+
+                article = self._insert_illustrations(article, new_paths)
+
+            # 7. 保存文章（便于用户本地查看）
+            article_dir = Path(self.config["output_dir"]) / datetime.now().strftime("%Y%m%d")
+            article_dir.mkdir(parents=True, exist_ok=True)
+            safe_name = full_name.replace("/", "_")
+            md_path = article_dir / f"{safe_name}.md"
+            md_path.write_text(article, encoding="utf-8")
+            logger.info(f"文章已保存: {md_path}")
+
+            # 8. 发布到微信（插图第一张作为封面，否则用 GitHub OG 图）
+            cover = illustration_paths[0] if illustration_paths else None
+            published = self.publish_to_wechat(article, details, cover_image=cover)
+
+            # 9. 记录历史
+            history = self._load_history()
+            if full_name not in history:
+                history.append(full_name)
+                self._save_history(history)
+
+            elapsed = time.time() - start_time
+            return {
+                "status": "success",
+                "result": {
+                    "repo": full_name,
+                    "repo_url": details.get("html_url"),
+                    "article_path": str(md_path),
+                    "illustrations": [str(p) for p in illustration_paths],
+                    "published": published,
+                    "elapsed": f"{elapsed:.2f}s",
+                },
+                "metadata": {"skill": self.name, "version": self.version},
+            }
+
+        except Exception as e:
+            logger.error(f"执行失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return {"status": "error", "error": str(e), "skill": self.name}
+            
 
 ----------------------------------------
 

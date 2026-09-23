@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 from core.safety import SafetyChecker
 from config.settings import settings  # ✅ 新增导入
+from core.skill_routes import SKILL_ROUTES, match_skill
+        
 @dataclass
 class IntentResult:
     """意图分析结果"""
@@ -166,6 +168,25 @@ class IntentAnalyzer:
                 confidence=0.95,
                 system_hint="🐙 正在抓取今日 GitHub 推荐仓库...",
             )
+
+        # core/intent_analyzer.py  (在 analyze 里插入)
+
+
+
+        # ✅ 新增：通用 Skill 意图（GitHub 已单独处理，跳过）
+        hit = match_skill(text)
+        if hit:
+            skill_name, kw = hit
+            # github_daily 已有专门分支，这里跳过避免冲突
+            if skill_name != "github_repo_daily":
+                return IntentResult(
+                    type="skill",
+                    prompt=text,
+                    original_text=text,
+                    confidence=0.85,
+                    params={"skill": skill_name, "keyword": kw},
+                    system_hint=SKILL_ROUTES[skill_name].get("system_hint", ""),
+                )
         
         # 2. ✅ 视频意图优先（无论有无图，先判视频，避免被图生图截胡）
         if self._is_video_intent(text):

@@ -17,6 +17,7 @@ from core.intent_analyzer import IntentAnalyzer
 from core.context_manager import ContextManager
 from services.llm_service import LLMService
 from handlers import TextToImageHandler, ImageToImageHandler, CoupleHandler,ChatHandler, VideoHandler,PresetHandler,GitHubDailyHandler
+from handlers.skill_handler import SkillHandler
 
 class _DailyLogHandler(logging.Handler):
     """把 DailyPipeline 的日志转发到聊天区。
@@ -2475,6 +2476,7 @@ class ChatApp:
                 "video": VideoHandler(self),  # ✅ 新增
                 "preset_image": PresetHandler(self), 
                 "github_daily": GitHubDailyHandler(self),   # ✅ 加这一行
+                "skill": SkillHandler,
             }
             
             handler = handlers.get(intent.type)
