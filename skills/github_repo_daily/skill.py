@@ -5,7 +5,7 @@ github_repo_daily - 每天推荐一个 GitHub 仓库并生成介绍文章发布�
   1. 抓取 GitHub Trending 每日榜单
   2. 挑选一个未推荐过的仓库
   3. 调用 GitHub API 获取仓库详情与 README
-  4. 使用 Ollama 生成介绍文章
+  4. 使用 LLMClient 生成介绍文章（Agnes / Ollama，由 LLM_BACKENDS 决定）
   5. 调用 wechat_formatter 排版并发布到公众号草稿箱
 """
 
@@ -15,7 +15,7 @@ import json
 import time
 import base64
 import random
-import shutil 
+import shutil
 import logging
 import requests
 from pathlib import Path
@@ -25,12 +25,11 @@ from typing import Dict, Any, List, Optional
 logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-# ✅ 新增：LLM 后端优先级。CI 环境默认优先 agnes，本地可改回 ollama 优先
-DEFAULT_LLM_BACKENDS = ["agnes", "ollama"]
+
 
 class GitHubRepoDaily:
     name = "github_repo_daily"
-    version = "1.0.0"
+    version = "1.1.0"   # ✅ 版本 +0.1，标记走 LLMClient
 
     def __init__(self, config: Dict[str, Any] = None):
         self.config = config or {}
@@ -49,39 +48,49 @@ class GitHubRepoDaily:
             "output_dir": str(PROJECT_ROOT / "output" / "github_repo_daily"),
             "history_file": "history.json",
             "github_token": os.environ.get("GITHUB_TOKEN", ""),
-            "ollama_url": os.environ.get("OLLAMA_URL", "http://localhost:11434"),
-            "ollama_model": os.environ.get("OLLAMA_MODEL", "qwen2.5:7b"),
             "wechat_theme": "newspaper",
             "wechat_publish": True,
             "max_trending": 25,
             "log_level": "INFO",
-            
-            # ✅ 新增：插图与文末二维码
+
+            # 插图与文末二维码
             "illustration_count": 3,
             "illustration_engine": "agnes",
             "illustration_width": 1024,
             "illustration_height": 1024,
             "footer_image": "assets/qr/公众号结束处.png",
-            "footer_alt": "关注公众号", 
-            
-            # ✅ 新增：LLM 后端（CI 环境 Agnes 优先，本地可改成 "ollama"）
-            # 支持环境变量覆盖：GH_DAILY_LLM_BACKENDS=agnes,ollama
-            "llm_backends": [
-                b.strip()
-                for b in os.environ.get("GH_DAILY_LLM_BACKENDS", "agnes,ollama").split(",")
-                if b.strip()
-            ],
-            "llm_timeout": int(os.environ.get("GH_DAILY_LLM_TIMEOUT", "120")),
-            "llm_temperature": float(os.environ.get("GH_DAILY_LLM_TEMPERATURE", "0.7")),
-            "llm_max_tokens": int(os.environ.get("GH_DAILY_LLM_MAX_TOKENS", "2048")),
-            
+            "footer_alt": "关注公众号",
+
+            # ✅ 不再声明 llm_backends / llm_timeout / llm_temperature /
+            #    llm_max_tokens / ollama_url / ollama_model —— 全部交给
+            #    config.settings + core.llm_client 统一管理。
+            #    如需 GitHub 日报走独立后端，在 .env 里配
+            #    GH_DAILY_LLM_BACKENDS=xxx,yyy，由 LLMClient 读取。
         }
         for k, v in defaults.items():
             self.config.setdefault(k, v)
         Path(self.config["output_dir"]).mkdir(parents=True, exist_ok=True)
 
-
     # ---------- LLM 统一入口 ----------
+
+    def _get_llm_backends(self) -> Optional[List[str]]:
+        """读取 GitHub 日报专属后端。
+
+        优先级：
+          1. config["llm_backends"]（构造时显式传入）
+          2. settings.gh_daily_llm_backends（.env 里 GH_DAILY_LLM_BACKENDS）
+          3. None（让 LLMClient 用全局 LLM_BACKENDS）
+        """
+        if self.config.get("llm_backends"):
+            return list(self.config["llm_backends"])
+        try:
+            from config.settings import settings
+            gh_backends = getattr(settings, "gh_daily_llm_backends", None)
+            if gh_backends:
+                return list(gh_backends)
+        except Exception:
+            pass
+        return None
 
     def _llm_generate(
         self,
@@ -93,86 +102,30 @@ class GitHubRepoDaily:
     ) -> str:
         """统一的 LLM 调用入口。
 
-        按 config["llm_backends"] 顺序尝试，成功即返回；全部失败返回 ""。
+        走 core.llm_client.LLMClient，后端顺序由下列配置决定（就近优先）：
+          1. 构造 config["llm_backends"]
+          2. .env 的 GH_DAILY_LLM_BACKENDS
+          3. .env 的 LLM_BACKENDS（全局）
+
+        全部后端失败返回 ""（strict=False，不抛异常）。
         """
-        temperature = temperature if temperature is not None else self.config["llm_temperature"]
-        max_tokens = max_tokens if max_tokens is not None else self.config["llm_max_tokens"]
-        timeout = timeout if timeout is not None else self.config["llm_timeout"]
+        from core.llm_client import get_default_client
 
-        backends = self.config.get("llm_backends") or DEFAULT_LLM_BACKENDS
-
-        for backend in backends:
-            try:
-                if backend == "agnes":
-                    text = self._llm_agnes(prompt, temperature, max_tokens, timeout)
-                elif backend == "ollama":
-                    text = self._llm_ollama(prompt, temperature, max_tokens, timeout)
-                else:
-                    logger.warning(f"未知 LLM 后端: {backend}")
-                    continue
-
-                if text:
-                    logger.info(f"✅ LLM 后端命中: {backend} ({len(text)} 字)")
-                    return text
-                logger.warning(f"⚠️ LLM 后端 {backend} 返回空，尝试下一个")
-            except Exception as e:
-                logger.warning(f"⚠️ LLM 后端 {backend} 失败: {e}，尝试下一个")
-
-        logger.error("❌ 所有 LLM 后端均失败")
-        return ""
-
-    def _llm_agnes(self, prompt: str, temperature: float,
-                   max_tokens: int, timeout: int) -> str:
-        """调用 Agnes 文本模型。"""
-        import sys as _sys
-        if str(PROJECT_ROOT) not in _sys.path:
-            _sys.path.insert(0, str(PROJECT_ROOT))
-
-        from api_engines import create_engine
-        from config.settings import settings
-
-        api_key = settings.agnes_api_key
-        if not api_key:
-            raise RuntimeError("未配置 AGNES_API_KEY")
-
-        engine = create_engine("agnes", {
-            "AGNES_API_KEY": api_key,
-            "AGNES_BASE_URL": settings.agnes_base_url,
-            "AGNES_IMAGE_MODEL": settings.agnes_image_model,
-            "AGNES_TEXT_MODEL": settings.agnes_text_model,
-        })
-
-        text = engine.chat(
-            messages=[{"role": "user", "content": prompt}],
+        llm = get_default_client(
+            backends=self._get_llm_backends(),
             temperature=temperature,
             max_tokens=max_tokens,
-            stream=False,
+            timeout=timeout,
+            strict=False,
         )
-        return (text or "").strip()
+        text = llm.generate(prompt)
 
-    def _llm_ollama(self, prompt: str, temperature: float,
-                    max_tokens: int, timeout: int) -> str:
-        """调用本地 Ollama。"""
-        try:
-            resp = requests.post(
-                f"{self.config['ollama_url']}/api/generate",
-                json={
-                    "model": self.config["ollama_model"],
-                    "prompt": prompt,
-                    "stream": False,
-                    "options": {
-                        "temperature": temperature,
-                        "num_predict": max_tokens,
-                    },
-                },
-                timeout=timeout,
-            )
-            if resp.status_code != 200:
-                raise RuntimeError(f"HTTP {resp.status_code}: {resp.text[:120]}")
-            return (resp.json().get("response") or "").strip()
-        except requests.exceptions.ConnectionError as e:
-            raise RuntimeError(f"无法连接 Ollama ({self.config['ollama_url']}): {e}")
-            
+        if text:
+            logger.info(f"✅ LLM 返回 {len(text)} 字")
+        else:
+            logger.error("❌ 所有 LLM 后端均失败")
+        return text
+
     # ---------- 历史记录 ----------
 
     def _load_history(self) -> List[str]:
@@ -237,12 +190,10 @@ class GitHubRepoDaily:
             logger.info(f"匹配到 {len(blocks)} 个 Box-row 块")
 
             for block in blocks:
-                # 块内第一个 /owner/repo 链接就是仓库
                 m = re.search(r'<a\s+[^>]*href="/([^/"\s]+)/([^/"\s]+)"', block)
                 if not m:
                     continue
                 owner, repo = m.group(1), m.group(2)
-                # 过滤掉 GitHub 自身页面、trending 筛选链接等
                 if owner in ("trending", "topics", "collections", "sponsors",
                              "login", "signup", "features", "marketplace"):
                     continue
@@ -294,7 +245,7 @@ class GitHubRepoDaily:
 
         logger.info(f"获取到 {len(repos)} 个 trending 仓库")
         return repos
-        
+
     def pick_repo(self, repos: List[Dict[str, str]]) -> Optional[Dict[str, str]]:
         """挑选一个未推荐过的仓库"""
         history = self._load_history()
@@ -311,7 +262,6 @@ class GitHubRepoDaily:
         headers = self._github_headers()
         details = {}
         try:
-            # 仓库信息
             resp = requests.get(f"{api_base}/repos/{owner}/{repo}", headers=headers, timeout=10)
             if resp.status_code == 200:
                 data = resp.json()
@@ -325,7 +275,6 @@ class GitHubRepoDaily:
                     "html_url": data.get("html_url"),
                     "homepage": data.get("homepage"),
                 })
-            # README
             resp = requests.get(f"{api_base}/repos/{owner}/{repo}/readme", headers=headers, timeout=10)
             if resp.status_code == 200:
                 readme_data = resp.json()
@@ -341,7 +290,7 @@ class GitHubRepoDaily:
     # ---------- 文章生成 ----------
 
     def generate_article(self, repo_info: Dict[str, Any]) -> str:
-        """生成介绍文章：优先 Agnes，兜底 Ollama，全失败用基础模板。"""
+        """生成介绍文章：走 LLMClient（Agnes / Ollama 由 LLM_BACKENDS 决定）。"""
         full_name = repo_info.get("full_name", "未知仓库")
         description = repo_info.get("description", "")
         stars = repo_info.get("stars", 0)
@@ -373,12 +322,10 @@ README 内容（节选）：
         article = self._llm_generate(prompt, temperature=0.7, max_tokens=2048)
 
         if article:
-            # 有些 LLM 会裹 ```markdown ... ```，剥掉
             article = re.sub(r"^```(?:markdown|md)?\s*\n", "", article)
             article = re.sub(r"\n```\s*$", "", article)
             return article.strip()
 
-        # 兜底模板
         logger.warning("⚠️ 所有 LLM 均失败，使用基础模板")
         return f"""# {full_name}
 
@@ -399,12 +346,11 @@ README 内容（节选）：
         article: str,
         count: int = 3,
     ) -> List[str]:
-
+        """让 LLM 从文章里提炼 N 个适合 AI 画图的英文 prompt。"""
         if count <= 0:
             logger.info("配图数量为 0，跳过 prompt 提炼")
             return []
-            
-        """让 LLM 从文章里提炼 N 个适合 AI 画图的英文 prompt。"""
+
         full_name = repo_info.get("full_name", "")
         description = repo_info.get("description", "")
         language = repo_info.get("language", "")
@@ -443,13 +389,11 @@ JSON array:"""
                 except json.JSONDecodeError as e:
                     logger.warning(f"⚠️ 配图 prompt JSON 解析失败: {e}")
 
-        # 兜底
         logger.warning("使用兜底配图 prompt")
         return [
             f"abstract tech illustration inspired by {full_name}, "
             f"modern minimal, cinematic lighting, digital art"
         ]
-        
 
     # ---------- 插图生成 ----------
 
@@ -515,7 +459,7 @@ JSON array:"""
                     img.save(path, "PNG", optimize=True)
                     paths.append(path)
                     logger.info(f"✅ 插图已保存: {path.name}")
-                    time.sleep(1)  # 轻微节流
+                    time.sleep(1)
                 except Exception as e:
                     logger.warning(f"⚠️ 插图 {i} 生成失败: {e}")
                     continue
@@ -527,7 +471,6 @@ JSON array:"""
 
         return paths
 
-
     # ---------- 插图插入 ----------
 
     def _insert_illustrations(
@@ -535,13 +478,7 @@ JSON array:"""
         article: str,
         image_paths: List[Path],
     ) -> str:
-        """把插图按"段落间均匀分布"的规则插入到 Markdown 文章里。
-
-        策略：
-          - 保留 H1 标题在最前
-          - 后续每个二级标题前，尝试插一张图（图片用完就停）
-          - 图片存于 assets/，md 里用相对路径引用
-        """
+        """把插图按"段落间均匀分布"的规则插入到 Markdown 文章里。"""
         if not image_paths:
             return article
 
@@ -550,27 +487,9 @@ JSON array:"""
         img_idx = 0
         n_images = len(image_paths)
 
-        # 先把 H1 和紧随其后的引言段照搬
-        head_done = False
-        for line in lines:
-            result.append(line)
-            if not head_done and line.startswith("# "):
-                # 标题后先插一张
-                if img_idx < n_images:
-                    result.append("")
-                    result.append(f"![illustration](assets/{image_paths[img_idx].name})")
-                    result.append("")
-                    img_idx += 1
-                head_done = True
-
-        # 上面简单遍历一遍不行，需要重新做
-        # 用更直接的方法：按行扫描，遇到 ## 二级标题就插图
-        result = []
-        img_idx = 0
         head_seen = False
 
         for line in lines:
-            # H1 之后先插第一张
             if (not head_seen) and line.startswith("# ") and not line.startswith("## "):
                 result.append(line)
                 if img_idx < n_images:
@@ -581,7 +500,6 @@ JSON array:"""
                 head_seen = True
                 continue
 
-            # 每个 ## 二级标题前插图
             if line.startswith("## ") and img_idx < n_images:
                 result.append("")
                 result.append(f"![illustration](assets/{image_paths[img_idx].name})")
@@ -590,7 +508,6 @@ JSON array:"""
 
             result.append(line)
 
-        # 还有剩余图片 → 全部追加到末尾
         if img_idx < n_images:
             result.append("")
             for p in image_paths[img_idx:]:
@@ -598,7 +515,7 @@ JSON array:"""
                 result.append("")
 
         return "\n".join(result)
-        
+
     # ---------- 封面 ----------
 
     def _fetch_cover_image(
@@ -606,17 +523,7 @@ JSON array:"""
         repo_info: Dict[str, Any],
         save_dir: Path,
     ) -> Optional[Path]:
-        """下载 GitHub Open Graph 图作为封面。
-
-        GitHub 为每个仓库自动生成 1200x630 的 OG 卡片图，
-        内容含仓库名/描述/语言/star，带渐变背景，很适合当封面。
-
-        处理流程：
-          1. 请求 https://opengraph.githubassets.com/1/{owner}/{repo}
-          2. 裁剪到 2.35:1（微信头条封面标准比例）
-          3. resize 到 900x383（微信推荐尺寸）
-          4. 保存到 images/cover.png
-        """
+        """下载 GitHub Open Graph 图作为封面。"""
         full_name = repo_info.get("full_name") or ""
         if "/" not in full_name:
             logger.warning(f"封面：仓库名格式异常 {full_name}")
@@ -641,21 +548,17 @@ JSON array:"""
 
             img = Image.open(_io.BytesIO(resp.content)).convert("RGB")
 
-            # 裁剪到 2.35:1（微信头条封面比例）
             w, h = img.size
             target_ratio = 2.35
             if w / h > target_ratio:
-                # 太宽 → 裁左右
                 new_w = int(h * target_ratio)
                 left = (w - new_w) // 2
                 img = img.crop((left, 0, left + new_w, h))
             else:
-                # 太高 → 裁上下
                 new_h = int(w / target_ratio)
                 top = (h - new_h) // 2
                 img = img.crop((0, top, w, top + new_h))
 
-            # 标准尺寸 900x383
             img = img.resize((900, 383), Image.Resampling.LANCZOS)
             img.save(cover_path, "PNG", optimize=True)
 
@@ -666,7 +569,6 @@ JSON array:"""
             logger.warning(f"⚠️ 封面下载/处理失败: {e}")
             return None
 
-
     # ---------- 发布到微信 ----------
 
     def publish_to_wechat(
@@ -674,19 +576,12 @@ JSON array:"""
         article_md: str,
         repo_info: Optional[Dict[str, Any]] = None,
         cover_image: Optional[Path] = None,
-        work_dir: Optional[Path] = None,      # ✅ 新增
+        work_dir: Optional[Path] = None,
     ) -> bool:
-        """调用 wechat_formatter 排版并发布。
-
-        Args:
-            article_md:  Markdown 文章正文（已插入插图）
-            repo_info:   仓库信息，用于兜底生成封面
-            cover_image: 已有封面路径（通常取第一张插图），None 则用 GitHub OG 图
-        """
+        """调用 wechat_formatter 排版并发布。"""
         try:
             from skills.wechat_formatter import WechatFormatter
 
-            # ✅ work_dir 由外部传入，不再自己造
             if work_dir is None:
                 work_dir = Path(self.config["output_dir"]) / "tmp" \
                            / datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -694,29 +589,23 @@ JSON array:"""
             assets_dir = work_dir / "assets"
             assets_dir.mkdir(parents=True, exist_ok=True)
 
-            # ✅ 如果 cover 是外部路径（如 GitHub OG 图），才复制
-            #    否则它已经在 assets_dir 里了
             if cover_image and cover_image.exists():
                 target = assets_dir / cover_image.name
                 if cover_image != target and not target.exists():
                     shutil.copy2(cover_image, target)
 
-            # 写 md（如果还没写）
             md_file = work_dir / "article.md"
             if not md_file.exists():
                 md_file.write_text(article_md, encoding="utf-8")
 
-            # ── 处理封面（如果是 GitHub OG 图，下载后放 assets_dir）──
             cover_path = None
             if cover_image and cover_image.exists():
                 cover_path = cover_image
             elif repo_info:
                 cover_path = self._fetch_cover_image(repo_info, assets_dir)
 
-            # ── 处理文末二维码 ──
             footer_path = self._get_footer_image()
 
-            # ── 排版 ──
             fmt = WechatFormatter()
             fmt_kwargs = {
                 "theme": self.config["wechat_theme"],
@@ -733,7 +622,6 @@ JSON array:"""
 
             article_dir = Path(result["result"]["article_dir"])
 
-            # ── 推送 ──
             if self.config.get("wechat_publish", True):
                 if cover_path and cover_path.exists():
                     images_dir = article_dir / "images"
@@ -759,7 +647,6 @@ JSON array:"""
             traceback.print_exc()
             return False
 
-
     # ---------- 文末二维码 ----------
 
     def _get_footer_image(self) -> Optional[Path]:
@@ -775,22 +662,20 @@ JSON array:"""
             return p
         logger.warning(f"⚠️ 文末二维码不存在: {p}")
         return None
-        
+
     # ---------- 主入口 ----------
 
     def execute(self, **kwargs) -> Dict[str, Any]:
         start_time = time.time()
         logger.info(f"执行技能: {self.name}")
 
-        work_dir: Optional[Path] = None   # ✅ 新增：提升作用域，方便 finally 清理
+        work_dir: Optional[Path] = None
 
         try:
-            # 1. 获取 trending 仓库
             repos = self.fetch_trending_repos()
             if not repos:
                 return {"status": "error", "error": "未获取到任何仓库"}
 
-            # 2. 选一个未推荐过的
             repo = self.pick_repo(repos)
             if not repo:
                 return {"status": "error", "error": "没有可用仓库"}
@@ -799,23 +684,19 @@ JSON array:"""
             full_name = f"{owner}/{repo_name}"
             logger.info(f"今日推荐: {full_name}")
 
-            # 3. 获取详情
             details = self.get_repo_details(owner, repo_name)
             if not details.get("full_name"):
                 return {"status": "error", "error": f"无法获取仓库详情: {full_name}"}
 
-            # 4. 生成文章正文
             article = self.generate_article(details)
             if not article:
                 return {"status": "error", "error": "文章生成失败"}
 
-            # ✅ 提前创建 work_dir
             work_dir = Path(self.config["output_dir"]) / "tmp" \
                        / datetime.now().strftime("%Y%m%d_%H%M%S")
             assets_dir = work_dir / "assets"
             assets_dir.mkdir(parents=True, exist_ok=True)
 
-            # 5. 提炼 prompt + 生成插图
             illustration_paths: List[Path] = []
             try:
                 prompts = self._generate_illustration_prompts(
@@ -826,19 +707,14 @@ JSON array:"""
             except Exception as e:
                 logger.warning(f"⚠️ 插图流程失败，继续无图文章: {e}")
 
-            # 6. 插图插入文章
             if illustration_paths:
                 article = self._insert_illustrations(article, illustration_paths)
 
-            # 7. 保存 md
             md_file = work_dir / "article.md"
             md_file.write_text(article, encoding="utf-8")
 
-            # ✅ 新增：提前把插图路径固化成字符串列表
-            #    避免 work_dir 清理后返回的是失效路径
             illustration_str_paths = [str(p) for p in illustration_paths]
 
-            # 8. 发布到微信
             cover = illustration_paths[0] if illustration_paths else None
             published = self.publish_to_wechat(
                 article_md=article,
@@ -847,7 +723,6 @@ JSON array:"""
                 work_dir=work_dir,
             )
 
-            # 9. 记录历史
             history = self._load_history()
             if full_name not in history:
                 history.append(full_name)
@@ -859,8 +734,8 @@ JSON array:"""
                 "result": {
                     "repo": full_name,
                     "repo_url": details.get("html_url"),
-                    "article_path": str(md_file),   # ✅ 修正：md_path → md_file
-                    "illustrations": illustration_str_paths,   # ✅ 用固化后的路径
+                    "article_path": str(md_file),
+                    "illustrations": illustration_str_paths,
                     "published": published,
                     "elapsed": f"{elapsed:.2f}s",
                 },
@@ -874,7 +749,6 @@ JSON array:"""
             return {"status": "error", "error": str(e), "skill": self.name}
 
         finally:
-            # ✅ 新增：无论成功失败，都清理临时目录
             if work_dir is not None:
                 try:
                     if work_dir.exists():
@@ -882,4 +756,3 @@ JSON array:"""
                         logger.info(f"🧹 已清理临时目录: {work_dir}")
                 except Exception as e:
                     logger.warning(f"⚠️ 清理临时目录失败: {e}")
-                    

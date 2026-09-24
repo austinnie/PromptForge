@@ -1,14 +1,17 @@
 """
-novel_writer_ollama - 使用本地 Ollama 大模型自动写小说（支持断点续写和连载）
+novel_writer_ollama - 使用本地/在线 LLM 自动写小说（支持断点续写和连载）
 
 功能：
   - 自动保存小说到文件
   - 断点续写：中断后可以从上次进度继续
   - 连载：基于已有内容生成后续章节
   - 多语言支持：支持 17 种语言小说生成
+
+LLM 后端（Agnes / Ollama）由 core.llm_client.LLMClient 统一调度：
+  - .env 的 LLM_BACKENDS 决定优先级（默认 agnes,ollama）
+  - 环境变量 LLM_BACKENDS=ollama 可切换为纯本地
 """
 
-import requests
 import json
 import logging
 import time
@@ -335,18 +338,21 @@ LANG_CONFIG = {
 
 class NovelWriterOllama:
     """
-    使用本地 Ollama 大模型自动写小说（支持断点续写和连载）
+    使用统一 LLM 后端自动写小说（支持断点续写和连载）
+
+    注：类名保留 NovelWriterOllama 是为了兼容 skills/__init__.py 和历史调用方，
+        实际后端由 core.llm_client.LLMClient 决定。
     """
 
     def __init__(self, config: Dict[str, Any] = None):
         """初始化技能"""
         self.config = config or {}
         self.name = "novel_writer_ollama"
-        self.version = "1.0.0"
+        self.version = "1.1.0"
         self._setup_logging()
         self._setup_config()
-        
-        logger.info("NovelWriterOllama 初始化完成")
+
+        logger.info("NovelWriter 初始化完成")
 
     def _setup_logging(self):
         log_level = self.config.get('log_level', 'INFO')
@@ -357,8 +363,10 @@ class NovelWriterOllama:
 
     def _setup_config(self):
         defaults = {
+            # ⚠️ 下列两项保留仅为向后兼容；实际后端由 LLMClient 决定
             'default_model': 'qwen2.5:7b',
             'ollama_url': 'http://localhost:11434',
+
             'default_temperature': 0.85,
             'default_chapter_count': 3,
             'default_words_per_chapter': 500,
@@ -400,31 +408,40 @@ class NovelWriterOllama:
         logger.warning(f"不支持的语言: {lang}，使用中文")
         return LANG_CONFIG["zh"]
 
-    def _check_ollama(self, ollama_url: str) -> bool:
-        """检查 Ollama 服务是否可用"""
+    # ==================== ✅ 改造：后端探测 ====================
+
+    def _check_llm(self) -> bool:
+        """轻量探测：至少一个 LLM 后端可用就返回 True。
+
+        不再阻塞式检查 Ollama，避免 LLM_BACKENDS=agnes 时误判。
+        实际可用性由 _call_llm() 内部的 LLMClient 多后端尝试保证。
+        """
+        from core.llm_client import get_default_client
+
         try:
-            response = requests.get(f"{ollama_url}/api/tags", timeout=5)
-            if response.status_code == 200:
-                data = response.json()
-                models = [m['name'] for m in data.get('models', [])]
-                logger.info(f"Ollama 服务可用，已安装模型: {', '.join(models)}")
+            llm = get_default_client(
+                temperature=0.1,
+                max_tokens=8,
+                timeout=20,
+                strict=False,
+            )
+            text = llm.generate("Hi")
+            if text:
+                logger.info(f"✅ LLM 探测成功: {text[:30]!r}")
                 return True
+            logger.warning("⚠️ LLM 探测返回空，继续尝试")
+            return True  # 不阻断——让正式生成时再失败
         except Exception as e:
-            logger.error(f"Ollama 服务连接失败: {e}")
+            logger.error(f"❌ LLM 探测异常: {e}")
             return False
-        return False
 
-    def _call_ollama(
-        self,
-        ollama_url: str,
-        model: str,
-        prompt: str,
-        temperature: float = 0.85,
-    ) -> str:
-        """兼容旧签名。实际走 LLMClient（Agnes 优先，Ollama 兜底）。
+    # ==================== ✅ 改造：统一 LLM 调用 ====================
 
-        ollama_url / model 参数保留是为了不破坏调用方，实际生效的是
-        LLMClient 从环境变量/配置里读到的后端。
+    def _call_llm(self, prompt: str, temperature: float = 0.85) -> str:
+        """统一的 LLM 调用入口。
+
+        后端由 LLMClient 决定（Agnes 优先，Ollama 兜底）。
+        失败返回 ""（不抛异常），上层自行处理空串。
         """
         try:
             from core.llm_client import get_default_client
@@ -437,7 +454,20 @@ class NovelWriterOllama:
         except Exception as e:
             logger.error(f"LLM 调用失败: {e}")
             return ""
-        
+
+    # ⚠️ 兼容旧调用方的签名（ollama_url / model 参数保留但忽略）
+    def _call_ollama(
+        self,
+        ollama_url: str,
+        model: str,
+        prompt: str,
+        temperature: float = 0.85,
+    ) -> str:
+        """[DEPRECATED] 兼容旧签名，内部走 _call_llm。"""
+        return self._call_llm(prompt, temperature)
+
+    # ==================== 加载已有小说 ====================
+
     def _load_existing_novel(self, filepath: str) -> Dict:
         """加载已有小说内容"""
         path = Path(filepath)
@@ -502,7 +532,7 @@ class NovelWriterOllama:
 
         # ✅ 解析章节内容
         chapters = self._parse_chapters_from_file(filepath)
-        
+
         # ✅ 使用 len(chapters) 作为章节数，而不是正则统计
         chapter_count = len(chapters)
 
@@ -511,25 +541,25 @@ class NovelWriterOllama:
             "genre": genre,
             "language": language,
             "chapters": chapters,
-            "chapter_count": chapter_count,  # ✅ 与 chapters 数量一致
+            "chapter_count": chapter_count,
             "total_words": total_words,
             "filepath": str(path)
         }
-    
+
     def _parse_chapters_from_file(self, filepath: str) -> List[Dict]:
         """从文件解析章节内容"""
         path = Path(filepath)
         if not path.exists():
             return []
-        
+
         with open(path, 'r', encoding='utf-8') as f:
             content = f.read()
-        
+
         chapters = []
-        
+
         # 使用更精确的分割：匹配行首的章节标记
         parts = re.split(r'\n(?=第\d+章[：:]|Chapter \d+[:：]|Capítulo \d+[:：]|Chapitre \d+[:：]|Kapitel \d+[:：]|Capitolo \d+[:：]|제\d+장[：:]|الفصل \d+[:：]|บทที่ \d+[:：]|Hoofdstuk \d+[:：]|Rozdział \d+[:：]|Luku \d+[:：]|Κεφάλαιο \d+[:：]|פרק \d+[:：])', content)
-        
+
         # 多语言章节匹配模式
         patterns = [
             (r'第(\d+)章[：:]\s*(.+?)(?:\n|$)', 'zh/ja'),
@@ -547,12 +577,12 @@ class NovelWriterOllama:
             (r'Κεφάλαιο (\d+)[：:]\s*(.+?)(?:\n|$)', 'el'),
             (r'פרק (\d+)[：:]\s*(.+?)(?:\n|$)', 'he'),
         ]
-        
+
         for part in parts:
             # 跳过空内容
             if not part.strip():
                 continue
-            
+
             # 尝试匹配所有模式
             matched = False
             for pattern, _ in patterns:
@@ -560,7 +590,7 @@ class NovelWriterOllama:
                 if match:
                     idx = int(match.group(1))
                     title_text = match.group(2).strip()
-                    
+
                     # 提取内容：移除章节标题行和分隔线
                     content_part = part
                     # 移除标题行
@@ -578,10 +608,10 @@ class NovelWriterOllama:
                     content_part = re.sub(r'^Luku \d+[：:]\s*.+?\n', '', content_part, flags=re.MULTILINE)
                     content_part = re.sub(r'^Κεφάλαιο \d+[：:]\s*.+?\n', '', content_part, flags=re.MULTILINE)
                     content_part = re.sub(r'^פרק \d+[：:]\s*.+?\n', '', content_part, flags=re.MULTILINE)
-                    
+
                     # 移除分隔线
                     content_part = re.sub(r'^-{40,}\n', '', content_part, flags=re.MULTILINE)
-                    
+
                     content_part = content_part.strip()
                     if content_part:
                         chapters.append({
@@ -591,13 +621,13 @@ class NovelWriterOllama:
                         })
                     matched = True
                     break
-            
+
             # 如果没有匹配到任何模式，继续下一个
             if not matched:
                 continue
-        
+
         return chapters
-    
+
     def _save_novel(self, result_data: Dict, is_continue: bool = False) -> str:
         """保存小说到文件 - 使用目标语言的标签"""
         output_dir = Path(self.config.get('output_dir', './generated_novels'))
@@ -655,10 +685,21 @@ class NovelWriterOllama:
 
         return str(filepath)
 
-    def _generate_chapter(self, ollama_url: str, model: str, genre: str, title: str,
-                          outline: str, characters: str, chapter_index: int,
-                          total_chapters: int, style: str, temperature: float,
-                          lang_config: Dict, prev_chapters: List[Dict] = None) -> Dict[str, str]:
+    def _generate_chapter(
+        self,
+        ollama_url: str,      # ⚠️ 保留但不再使用
+        model: str,           # ⚠️ 保留但不再使用
+        genre: str,
+        title: str,
+        outline: str,
+        characters: str,
+        chapter_index: int,
+        total_chapters: int,
+        style: str,
+        temperature: float,
+        lang_config: Dict,
+        prev_chapters: List[Dict] = None,
+    ) -> Dict[str, str]:
         """生成单个章节（多语言），要求按场景组织"""
         system_template = lang_config.get('system_prompt', '你是一位专业的小说作家')
         language_instruction = lang_config.get('language_instruction', '')
@@ -684,7 +725,7 @@ class NovelWriterOllama:
 
         # 生成章节标题
         title_prompt = f"{system_prompt}\n{context}\n\n请为第{chapter_index}章生成一个吸引人的章节标题（仅输出标题，不要其他内容）："
-        chapter_title = self._call_ollama(ollama_url, model, title_prompt, temperature)
+        chapter_title = self._call_llm(title_prompt, temperature)
         chapter_title = chapter_title.strip().strip('"').strip('「').strip('」')
         if not chapter_title:
             chapter_title = f"第{chapter_index}章"
@@ -703,18 +744,26 @@ class NovelWriterOllama:
 旁白：探索者李明轻声说：“这片森林似乎隐藏着什么秘密。”
 
 请写出第{chapter_index}章的完整内容，注意每个场景独立："""
-        
-        chapter_content = self._call_ollama(ollama_url, model, content_prompt, temperature)
+
+        chapter_content = self._call_llm(content_prompt, temperature)
 
         return {
             "index": chapter_index,
             "title": chapter_title,
             "content": chapter_content
         }
-        
-    def _generate_summary(self, ollama_url: str, model: str, genre: str, title: str,
-                          outline: str, characters: str, chapters: List[Dict],
-                          lang_config: Dict) -> str:
+
+    def _generate_summary(
+        self,
+        ollama_url: str,      # ⚠️ 保留但不再使用
+        model: str,           # ⚠️ 保留但不再使用
+        genre: str,
+        title: str,
+        outline: str,
+        characters: str,
+        chapters: List[Dict],
+        lang_config: Dict,
+    ) -> str:
         """生成小说简介（多语言）"""
         if not chapters:
             return f"《{title}》是一部{genre}小说，讲述了{outline}的故事。"
@@ -742,7 +791,7 @@ class NovelWriterOllama:
 
         prompt = prompt_templates.get(lang_code, prompt_templates['zh'])
 
-        summary = self._call_ollama(ollama_url, model, prompt, 0.7)
+        summary = self._call_llm(prompt, 0.7)
         if not summary:
             summary = f"《{title}》是一部{genre}小说，讲述了{outline}的故事。"
         return summary
@@ -773,19 +822,16 @@ class NovelWriterOllama:
             lang_name = lang_config.get('name', '中文')
             logger.info(f"  语言: {lang_name} ({language})")
 
-            logger.info(f"检查 Ollama 服务: {ollama_url}")
-            if not self._check_ollama(ollama_url):
-                return {
-                    "status": "error",
-                    "error": f"Ollama 服务不可用: {ollama_url}"
-                }
+            # ✅ 改造：轻量探测 LLM（不阻断）
+            if not self._check_llm():
+                logger.warning("⚠️ LLM 探测未通过，尝试继续（正式生成时再失败）")
 
             # 检查是否是续写模式
             existing_data = None
             existing_chapters = []
             start_index = 1
             chapters_to_generate = chapter_count
-            target_total = chapter_count  # ✅ 默认为 chapter_count（首次生成时）
+            target_total = chapter_count
 
             if continue_from:
                 existing_data = self._load_existing_novel(continue_from)
@@ -798,11 +844,11 @@ class NovelWriterOllama:
                     title = existing_data.get('title', title)
                     language = existing_data.get('language', language)
                     lang_config = self._get_lang_config(language)
-                    
+
                     start_index = existing_chapter_count + 1
-                    chapters_to_generate = chapter_count  # ✅ chapter_count 是追加的章数
-                    target_total = existing_chapter_count + chapter_count  # ✅ 计算目标总章数
-                    
+                    chapters_to_generate = chapter_count
+                    target_total = existing_chapter_count + chapter_count
+
                     if chapters_to_generate <= 0:
                         return {
                             "status": "success",
@@ -820,7 +866,7 @@ class NovelWriterOllama:
             logger.info(f"开始生成小说: {title} (语言: {lang_name})")
             logger.info(f"  模型: {model}")
             logger.info(f"  类型: {genre}")
-            logger.info(f"  总章节数: {target_total}")  # ✅ 显示目标总章数
+            logger.info(f"  总章节数: {target_total}")
             logger.info(f"  已有章节: {len(existing_chapters)}")
             logger.info(f"  需生成: {chapters_to_generate}")
 
@@ -829,10 +875,10 @@ class NovelWriterOllama:
 
             for i in range(chapters_to_generate):
                 chapter_idx = start_index + i
-                logger.info(f"  生成第 {chapter_idx}/{target_total} 章...")  # ✅ 显示正确的总章数
+                logger.info(f"  生成第 {chapter_idx}/{target_total} 章...")
                 chapter = self._generate_chapter(
                     ollama_url, model, genre, title, outline, characters,
-                    chapter_idx, target_total, style, temperature,  # ✅ 传入 target_total
+                    chapter_idx, target_total, style, temperature,
                     lang_config, prev_chapters
                 )
                 all_chapters.append(chapter)
@@ -854,7 +900,7 @@ class NovelWriterOllama:
                 "summary": summary,
                 "chapters": all_chapters,
                 "total_words": total_words,
-                "model_used": model,
+                "model_used": "LLMClient",
                 "generated_at": datetime.now().isoformat(),
                 "generation_time": f"{time.time() - start_time:.2f}s"
             }
@@ -883,6 +929,8 @@ class NovelWriterOllama:
 
         except Exception as e:
             logger.error(f"执行失败: {e}")
+            import traceback
+            traceback.print_exc()
             return {
                 "status": "error",
                 "error": str(e),
