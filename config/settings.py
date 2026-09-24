@@ -315,6 +315,11 @@ class Settings:
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         )
     )
+    
+    # ✅ 新增：新闻摘要 LLM 后端（不配则用全局 LLM_BACKENDS）
+    news_llm_backends: List[str] = field(
+        default_factory=lambda: _env_list("NEWS_LLM_BACKENDS", [])
+    )    
 
     # ============================================================
     # 初始化后处理

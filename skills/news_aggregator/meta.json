@@ -1,0 +1,41 @@
+{
+  "name": "news_aggregator",
+  "version": "1.0.0",
+  "description": "RSS 新闻聚合器：7 大类新闻源抓取 + AI 智能摘要，支持多源去重与每日简报生成",
+  "author": "PromptForge",
+  "inputs": {
+    "category": "新闻分类：tech / business / world / china / usa / japan / korea",
+    "sources": "自定义 RSS 源（逗号分隔），与 category 二选一",
+    "top_n": "限制返回新闻数（默认 50）",
+    "validate": "是否验证 RSS 源可用性（默认 true）"
+  },
+  "outputs": {
+    "total_fetched": "抓取到的原始新闻数",
+    "unique_count": "去重后的新闻数",
+    "display_count": "返回给上层展示的新闻数",
+    "feeds_count": "使用的 RSS 源数量",
+    "articles": "展示用新闻列表（前 top_n 条）",
+    "all_articles": "去重后的全部新闻",
+    "report": "生成的简报文本",
+    "report_file": "简报保存路径（save_report=true 时）"
+  },
+  "engines": ["agnes", "ollama"],
+  "depends_on": ["llm_client"],
+  "class_name": "NewsAggregator",
+  "env": {
+    "NEWS_LLM_BACKENDS": "该 skill 专属 LLM 后端（不配则用全局 LLM_BACKENDS）",
+    "NEWS_ENABLED": "全局新闻功能开关",
+    "NEWS_OUTPUT_DIR": "简报输出目录",
+    "NEWS_FEEDS": "默认新闻分类（逗号分隔）",
+    "NEWS_MAX_ARTICLES": "每条源最多抓取条数",
+    "NEWS_VALIDATE_FEEDS": "是否验证 RSS 源",
+    "NEWS_ENABLE_SUMMARY": "是否启用 AI 摘要",
+    "NEWS_SUMMARY_MODEL": "摘要用的 Ollama 模型名（仅 ollama 后端生效）",
+    "NEWS_CACHE_TTL": "RSS 源缓存秒数",
+    "NEWS_USER_AGENT": "抓取用的 User-Agent"
+  },
+  "examples": [
+    "python -m skills.news_aggregator.skill --category tech --top-n 10",
+    "from skills import NewsAggregator; NewsAggregator().execute(category='tech', top_n=10)"
+  ]
+}

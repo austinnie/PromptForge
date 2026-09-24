@@ -2,6 +2,7 @@
 """6层提示词组合器 - LayerForge 核心引擎"""
 
 import random
+import time
 from typing import Dict, List, Optional
 
 # 尝试导入 tiktoken（用于精确 token 计数）
@@ -210,8 +211,21 @@ class PromptComposer:
         """
         from core.llm_client import get_default_client
 
-        SYSTEM_PROMPTS = { ... }   # 保持不变
-        QUALITY_TAGS = { ... }     # 保持不变
+        SYSTEM_PROMPTS = {
+            "general": "你是一个Stable Diffusion提示词专家。将用户描述转换为英文AI绘画提示词。要求：包含主体、环境、光影、画质修饰词，以逗号分隔。只输出提示词，不要解释。",
+            "anime": "你是一个动漫风格提示词专家。将用户描述转换为精美的日系动漫绘画提示词。包含角色特征、服装、背景、色彩氛围。只输出英文提示词。",
+            "realistic": "你是一个写实摄影提示词专家。将用户描述转换为真实感摄影提示词。包含相机参数、光线、构图、细节质感。只输出英文提示词。",
+            "sketch": "你是一个素描/线稿提示词专家。将用户描述转换为铅笔素描或白描风格的提示词。强调线条、留白、黑白对比。只输出英文提示词。",
+            "mecha": "你是一个机甲/科幻提示词专家。将用户描述转换为机甲机械风格的提示词。包含机械细节、材质、科技感。只输出英文提示词。",
+        }
+
+        QUALITY_TAGS = {
+            "general": "masterpiece, best quality, 8k",
+            "anime": "anime style, masterpiece, high quality, vibrant colors, detailed",
+            "realistic": "photorealistic, highly detailed, sharp focus, 8k, professional photography",
+            "sketch": "pencil sketch, black and white, fine linework, white background, raw art",
+            "mecha": "sci-fi, mechanical, intricate details, hyper-detailed, concept art",
+        }
 
         system_prompt = SYSTEM_PROMPTS.get(style_hint, SYSTEM_PROMPTS["general"])
         quality_tag = QUALITY_TAGS.get(style_hint, QUALITY_TAGS["general"])
