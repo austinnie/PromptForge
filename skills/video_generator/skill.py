@@ -23,6 +23,8 @@ from datetime import datetime
 
 from PIL import Image
 
+from .prompt_rules import apply_rules
+
 logger = logging.getLogger(__name__)
 
 # ==================== 常量配置 ====================
@@ -74,6 +76,9 @@ class VideoGenerator:
             "engine": DEFAULT_ENGINE,
             "auto_merge": True,
             "auto_fallback": True,
+            # 提示词规则（见 prompt_rules.py）；设 False 可整体关闭，做 A/B 对照
+            "apply_prompt_rules": True,
+            "style_lock": None,
         }
         for key, value in defaults.items():
             if key not in self.config:
@@ -133,7 +138,29 @@ class VideoGenerator:
             segment_duration = kwargs.get("segment_duration", self.config["segment_duration"])
             reference_image = kwargs.get("reference_image")
 
-            if auto_merge and duration > segment_duration:
+            # ---- 提示词规则 ----
+            dialogue = kwargs.get("dialogue")
+            is_long = bool(auto_merge and duration > segment_duration)
+            if dialogue and is_long:
+                return {"status": "error",
+                        "error": "dialogue 目前只支持单段视频（duration <= segment_duration）；"
+                                 "长视频的每段台词需要分镜，请用逐镜方案"}
+            rules = None
+            if kwargs.get("apply_prompt_rules", self.config.get("apply_prompt_rules", True)):
+                rules = {
+                    "dialogue": dialogue,
+                    "speaker": kwargs.get("speaker"),
+                    "voice": kwargs.get("voice"),
+                    "style_lock": kwargs.get("style_lock", self.config.get("style_lock")),
+                    # 场景语言默认 en；只有显式传 prompt_lang="zh" 时才用中文块。
+                    # 绝不因为台词里有汉字就把整块切成中文（见 prompt_rules.py 顶部说明）。
+                    "lang": kwargs.get("prompt_lang", "en"),
+                    # 当前引擎带图走 reference 模式（图只是风格参考，不是首帧），
+                    # 所以始终用「不提首帧」的版本；等接入 keyframe 模式后再改为 True
+                    "has_first_frame": False,
+                }
+
+            if is_long:
                 return self._generate_long_video(
                     prompt=prompt,
                     duration=duration,
@@ -142,6 +169,7 @@ class VideoGenerator:
                     height=height,
                     reference_image=reference_image,
                     start_time=start_time,
+                    rules=rules,
                 )
             else:
                 return self._generate_single_video(
@@ -151,6 +179,7 @@ class VideoGenerator:
                     height=height,
                     reference_image=reference_image,
                     start_time=start_time,
+                    rules=rules,
                 )
         except Exception as e:
             logger.error(f"执行失败: {e}")
@@ -158,12 +187,13 @@ class VideoGenerator:
             traceback.print_exc()
             return {"status": "error", "error": str(e), "skill": self.name}
 
-    def _generate_single_video(self, prompt, duration, width, height, reference_image, start_time):
+    def _generate_single_video(self, prompt, duration, width, height, reference_image, start_time, rules=None):
         """生成单个短视频"""
         logger.info(f"🎬 生成单个视频 ({duration}s)...")
 
+        final_prompt = self._compose_prompt(prompt, rules)
         result = self._video_engine.video_generation(
-            prompt=prompt,
+            prompt=final_prompt,
             image=reference_image,
             duration=duration,
             width=width,
@@ -190,13 +220,14 @@ class VideoGenerator:
                 "duration": duration,
                 "segments": 1,
                 "prompt": prompt,
+                "final_prompt": final_prompt,
                 "generated_at": datetime.now().isoformat(),
                 "elapsed": f"{time.time() - start_time:.2f}s",
             },
             "metadata": {"skill": self.name, "version": self.version},
         }
 
-    def _generate_long_video(self, prompt, duration, segment_duration, width, height, reference_image, start_time):
+    def _generate_long_video(self, prompt, duration, segment_duration, width, height, reference_image, start_time, rules=None):
         """生成长视频（拆分为多个片段拼接）"""
         segment_count = duration // segment_duration
         if duration % segment_duration != 0:
@@ -217,7 +248,7 @@ class VideoGenerator:
                 init_image = reference_image if i == 0 else None
 
                 result = self._video_engine.video_generation(
-                    prompt=segment_prompt,
+                    prompt=self._compose_prompt(segment_prompt, rules),
                     image=init_image,
                     duration=segment_duration,
                     width=width,
@@ -299,6 +330,15 @@ class VideoGenerator:
                 logger.warning(f"⚠️ 任务未完成，临时文件保留在: {temp_dir}")
 
     # ==================== 工具方法 ====================
+
+    def _compose_prompt(self, prompt: str, rules: Optional[Dict[str, Any]]) -> str:
+        """套用 prompt_rules 的固定块；rules 为 None 表示关闭，原样返回。
+        最终提示词写进日志，方便事后核对到底发了什么。"""
+        if not rules:
+            return prompt
+        final = apply_rules(prompt, **rules)
+        logger.info("📝 最终提示词:\n%s", final)
+        return final
 
     def _download_video_file(self, url: str, dest_path: str, max_retries: int = 5) -> bool:
         """下载视频文件（带重试）"""
