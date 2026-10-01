@@ -192,7 +192,7 @@ class VideoGenerator:
         logger.info(f"🎬 生成单个视频 ({duration}s)...")
 
         final_prompt = self._compose_prompt(prompt, rules)
-        result = self._video_engine.video_generation(
+        result = self._video_generation_with_queue_retry(
             prompt=final_prompt,
             image=reference_image,
             duration=duration,
@@ -247,7 +247,7 @@ class VideoGenerator:
                 segment_prompt = prompt if i == 0 else f"{prompt}，继续上一段，保持连贯"
                 init_image = reference_image if i == 0 else None
 
-                result = self._video_engine.video_generation(
+                result = self._video_generation_with_queue_retry(
                     prompt=self._compose_prompt(segment_prompt, rules),
                     image=init_image,
                     duration=segment_duration,
@@ -329,6 +329,38 @@ class VideoGenerator:
                 # ✅ 失败时保留已生成的片段，便于人工/续传使用
                 logger.warning(f"⚠️ 任务未完成，临时文件保留在: {temp_dir}")
 
+    def _video_generation_with_queue_retry(self, **kwargs) -> Dict[str, Any]:
+        from api_engines.agnes import VideoQueueFullError   # ← 这里导入
+        """调用 video_generation；遇到视频队列满时按指数退避重试。
+
+        节奏：60s → 120s → 300s → 600s → 900s → 1800s
+        累计等待约 63 分钟；超过上限则抛出。
+        可通过 config 覆盖：
+          - queue_max_retries: 最大重试次数（默认 6）
+          - queue_first_wait:  首次等待秒数（默认 60）
+        """
+        max_retries = int(self.config.get("queue_max_retries", 6))
+        wait = int(self.config.get("queue_first_wait", 60))
+
+        last_err: Optional[Exception] = None
+        for attempt in range(1, max_retries + 1):
+            try:
+                return self._video_engine.video_generation(**kwargs)
+            except VideoQueueFullError as e:
+                last_err = e
+                if attempt >= max_retries:
+                    logger.error(f"❌ 队列持续满，{max_retries} 次重试后放弃: {e}")
+                    raise
+                logger.warning(
+                    f"⏳ 视频队列满（第 {attempt}/{max_retries} 次），"
+                    f"{wait}s 后重试... ({e})"
+                )
+                time.sleep(wait)
+                wait = min(wait * 2, 1800)
+
+        # 理论不可达，防御性抛出
+        raise last_err if last_err else RuntimeError("队列重试异常")
+        
     # ==================== 工具方法 ====================
 
     def _compose_prompt(self, prompt: str, rules: Optional[Dict[str, Any]]) -> str:

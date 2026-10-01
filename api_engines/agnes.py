@@ -14,6 +14,11 @@ import base64
 from typing import Optional, Dict, Any, List
 from enum import Enum
 
+class VideoQueueFullError(Exception):
+    """Agnes 视频队列已满（503 + code=video_queue_full）。
+    这是服务层临时拥塞，不是路由故障，切节点无效。
+    上层应据此做指数退避重试，而不是换 URL。"""
+    pass
 
 class AgnesMode(Enum):
     """Agnes AI 支持的模式"""
@@ -159,26 +164,33 @@ class AgnesEngine:
         data: Dict[str, Any],
         timeout: int = 120,
     ) -> Dict[str, Any]:
-        """发送请求到 Agnes AI API（带路由切换）"""
+        """发送请求到 Agnes AI API（带路由切换）
+
+        错误处理规则（对齐 Agnes 官方 Agent Compatibility 文档）：
+          - 503 + code=video_queue_full：抛 VideoQueueFullError，不切路由（同一队列，切了没用）
+          - 503 其他：路由故障，切下一个
+          - 429：退避等待后重试
+          - 401/403/404：认证/资源错误，直接抛，不切路由
+          - 其他 4xx：直接抛
+        """
         if not self.api_key:
             raise ValueError("请设置 AGNES_API_KEY")
-        
+
         # 限速
         elapsed = time.time() - self.last_request_time
         if elapsed < self.min_interval:
             time.sleep(self.min_interval - elapsed)
-        
+
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
         }
-        
-        # ✅ 尝试多个路由
+
         max_attempts = len(self.ROUTES) * 2
         for attempt in range(max_attempts):
             route = self._get_working_route()
             url = f"{route}/{endpoint.lstrip('/')}"
-            
+
             try:
                 response = requests.post(
                     url,
@@ -186,59 +198,107 @@ class AgnesEngine:
                     json=data,
                     timeout=timeout
                 )
-                
+
                 self.last_request_time = time.time()
-                
-                # ✅ 503 错误 - 服务不可用，切换路由
+
+                # ---------- 503：区分"队列满" vs "路由故障" ----------
                 if response.status_code == 503:
-                    print(f"⚠️ 路由 {route} 返回 503，尝试切换...")
+                    error_detail = {}
+                    try:
+                        error_detail = response.json()
+                    except Exception:
+                        pass
+
+                    code = error_detail.get("code", "")
+
+                    # 视频队列满：同一服务层的临时拥塞，切路由没用
+                    if code == "video_queue_full":
+                        msg = error_detail.get("message", "video queue is full")
+                        raise VideoQueueFullError(
+                            f"Agnes 视频队列已满: {msg}"
+                        )
+
+                    # 其他 503：才当路由故障处理
+                    print(f"⚠️ 路由 {route} 返回 503 ({code or 'unknown'})，尝试切换...")
                     self._mark_route_failed(route)
                     time.sleep(1)
                     continue
-                
-                # ✅ 429 错误 - 限流，等待后重试
+
+                # ---------- 429：限流，退避重试 ----------
                 if response.status_code == 429:
-                    print(f"⚠️ 请求限流 (429)，等待后重试...")
-                    time.sleep(3)
+                    wait = min(3 * (attempt + 1), 30)
+                    print(f"⚠️ 请求限流 (429)，{wait}s 后重试...")
+                    time.sleep(wait)
                     continue
-                
+
+                # ---------- 401/403/404：认证/资源错误，不切路由 ----------
+                if response.status_code in (401, 403, 404):
+                    error_detail = {}
+                    try:
+                        error_detail = response.json()
+                    except Exception:
+                        pass
+                    error_msg = (
+                        error_detail.get("error", {}).get("message")
+                        or error_detail.get("message")
+                        or error_detail.get("detail")
+                        or response.text[:200]
+                    )
+                    raise Exception(
+                        f"Agnes AI {response.status_code} 错误: {error_msg}\n"
+                        f"  → 当前节点: {route}\n"
+                        f"  → 401/403/404 不切节点；请确认 key 与节点匹配、"
+                        f"模型/端点是否存在"
+                    )
+
+                # ---------- 其他非 200 ----------
                 if response.status_code != 200:
                     error_detail = {}
                     try:
                         error_detail = response.json()
-                    except:
+                    except Exception:
                         pass
-                    
+
                     if error_detail:
-                        error_msg = error_detail.get('error', {}).get('message', str(error_detail))
+                        error_msg = (
+                            error_detail.get("error", {}).get("message")
+                            or error_detail.get("message")
+                            or str(error_detail)
+                        )
                     else:
                         error_msg = response.text[:200]
-                    
-                    raise Exception(f"Agnes AI API 调用失败 (状态码 {response.status_code}): {error_msg}")
-                
+
+                    raise Exception(
+                        f"Agnes AI API 调用失败 (状态码 {response.status_code}): {error_msg}"
+                    )
+
                 return response.json()
-                
+
+            except VideoQueueFullError:
+                # 队列满：直接往外抛，不切路由、不消耗 attempt
+                raise
+
             except requests.exceptions.ConnectionError:
                 print(f"⚠️ 路由 {route} 连接失败，尝试切换...")
                 self._mark_route_failed(route)
                 time.sleep(1)
                 continue
-                
+
             except requests.exceptions.Timeout:
                 print(f"⚠️ 路由 {route} 超时，尝试切换...")
                 self._mark_route_failed(route)
                 time.sleep(1)
                 continue
-                
+
             except requests.exceptions.RequestException as e:
                 if attempt == max_attempts - 1:
                     raise Exception(f"Agnes AI 请求失败: {e}")
                 print(f"⚠️ 请求异常 (尝试 {attempt+1}/{max_attempts}): {e}")
                 time.sleep(2)
                 continue
-        
+
         raise Exception("Agnes AI 所有路由均不可用，请稍后重试")
-    
+        
     def _download_image(self, image_url: str) -> Image.Image:
         """下载图片"""
         if image_url.startswith("data:image"):
@@ -586,75 +646,113 @@ class AgnesEngine:
         height: int = 768,
         model: str = None,
         callback_url: str = None,
+        mode: str = None,
+        first_frame_url: str = None,
+        last_frame_url: str = None,
     ) -> Dict[str, Any]:
         """
         视频生成（POST /v1/videos）
-        严格按照官方文档：https://apihub.agnes-ai.com/v1
-        使用 agnes-video-2.5-flash 模型
+
+        官方文档：https://wiki.agnes-ai.com (agnes-video-2.5-flash)
+
+        Args:
+            mode: "text" | "keyframe" | "reference"
+                  - None 时按 image 参数自动判断：
+                    有 image → "reference"，无 image → "text"
+            first_frame_url: keyframe 模式的首帧图片 URL
+            last_frame_url:  keyframe 模式的尾帧图片 URL（可选）
+
+        注意（Flash 版限制）：
+          - size 固定 "720P"
+          - reference 模式 images 最多 5 张、audios 最多 3 段
+          - keyframe 模式只接受 first_frame / last_frame（不收 images/audios）
         """
-        # 1. 默认值处理
+        # 1. duration 钳制（官方 4-12 秒）
         if duration is None:
             duration = 10
-            print(f"ℹ️ duration 未指定，使用默认值: {duration} 秒")
-
-        # 2. 钳制（官方支持 4-12 秒）
         original = duration
         if duration < 4:
             duration = 5
-            print(f"⚠️ 视频时长 {original} 秒小于 4，已调整为 {duration} 秒")
+            print(f"⚠️ 视频时长 {original}s < 4，已调整为 {duration}s")
         elif duration > 12:
             duration = 12
-            print(f"⚠️ 视频时长 {original} 秒大于 12，已调整为 {duration} 秒")
-
+            print(f"⚠️ 视频时长 {original}s > 12，已调整为 {duration}s")
         print(f"🔍 [Agnes API] 最终使用 duration: {duration} 秒")
 
         model = model or self.video_model
         if "2.5-flash" not in model:
             print(f"⚠️ 建议使用 agnes-video-2.5-flash 模型，当前为: {model}")
 
-        # 3. 根据是否有图片决定模式
-        if image:
-            mode = "reference"
-            images_data = [f"data:image/png;base64,{self._image_to_base64(image)}"]
-            print(f"🔍 [Agnes API] 使用 reference 模式，1 张参考图")
-        else:
-            mode = "text"
-            images_data = None
+        # 2. 决定 mode
+        if mode is None:
+            mode = "reference" if image else "text"
 
-        # 4. 根据宽高比选择 aspect_ratio
+        if mode not in ("text", "keyframe", "reference"):
+            raise ValueError(f"不支持的 mode: {mode}（应为 text/keyframe/reference）")
+
+        # 3. 根据 mode 组装参数
+        data: Dict[str, Any] = {
+            "model": model,
+            "prompt": prompt,
+            "seconds": str(duration),
+            "mode": mode,
+            "size": "720P",
+        }
+
+        # ---- text 模式 ----
+        if mode == "text":
+            print(f"🔍 [Agnes API] mode=text（纯文生视频）")
+
+        # ---- keyframe 模式 ----
+        elif mode == "keyframe":
+            if not first_frame_url and not last_frame_url:
+                raise ValueError(
+                    "mode=keyframe 需要 first_frame_url 或 last_frame_url 至少提供一个"
+                )
+            if first_frame_url:
+                data["first_frame"] = first_frame_url
+                print(f"🔍 [Agnes API] mode=keyframe, first_frame={first_frame_url[:80]}...")
+            if last_frame_url:
+                data["last_frame"] = last_frame_url
+                print(f"🔍 [Agnes API] mode=keyframe, last_frame={last_frame_url[:80]}...")
+
+        # ---- reference 模式 ----
+        else:  # reference
+            if image is None:
+                raise ValueError("mode=reference 需要 image 参数")
+            images_list = image if isinstance(image, list) else [image]
+            if len(images_list) > 5:
+                print(f"⚠️ reference 模式最多 5 张图，当前 {len(images_list)} 张，只取前 5 张")
+                images_list = images_list[:5]
+            images_data = [
+                f"data:image/png;base64,{self._image_to_base64(img)}"
+                for img in images_list
+            ]
+            data["images"] = images_data
+            print(f"🔍 [Agnes API] mode=reference, {len(images_data)} 张参考图")
+
+        # 4. aspect_ratio
         if width == height:
             aspect_ratio = "1:1"
         elif width > height:
             aspect_ratio = "16:9"
         else:
             aspect_ratio = "9:16"
-
-        # 5. 构建官方格式参数
-        data = {
-            "model": model,
-            "prompt": prompt,
-            "seconds": str(duration),
-            "mode": mode,
-            "size": "720P",
-            "aspect_ratio": aspect_ratio,
-        }
-
-        if mode == "reference" and images_data:
-            data["images"] = images_data
+        data["aspect_ratio"] = aspect_ratio
 
         if callback_url:
             data["callback_url"] = callback_url
 
-        
+        # 5. 发送前打印（隐藏 base64）
         _disp = dict(data)
         if isinstance(_disp.get("images"), list):
             _disp["images"] = [f"<base64:{len(s)}chars>" for s in _disp["images"]]
-        print(f"🔍 [Agnes API] 发送数据: {_disp}")        
+        print(f"🔍 [Agnes API] 发送数据: {_disp}")
 
-        # 6. 发送请求
+        # 6. 发送（VideoQueueFullError 会原样穿过 _request）
         result = self._request("videos", data, timeout=300)
         return result
-    
+        
 
     # api_engines/agnes.py
 
