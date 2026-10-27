@@ -402,9 +402,11 @@ JSON array:"""
         prompts: List[str],
         save_dir: Path,
     ) -> List[Path]:
-        """用指定引擎生成插图，返回本地路径列表。
+        """用统一的 provider 链生成插图，返回本地路径列表。
 
-        引擎：默认 agnes（免费），也支持 pollinations / siliconflow 等。
+        provider 选择：
+          - config["illustration_engine"]（默认 "agnes"）
+          - 走 FallbackImageProvider，主 provider 失败自动切下一个
         失败时返回已成功的部分（不中断主流程）。
         """
         if not prompts:
@@ -414,32 +416,18 @@ JSON array:"""
         paths: List[Path] = []
 
         try:
-            from api_engines import create_engine
-            from config.settings import settings
+            from skills._provider_helper import build_image_provider
+            from providers.base import ImageRequest
 
             engine_name = self.config.get("illustration_engine", "agnes")
 
-            if engine_name == "agnes":
-                engine_cfg = {
-                    "AGNES_API_KEY": settings.agnes_api_key,
-                    "AGNES_BASE_URL": settings.agnes_base_url,
-                    "AGNES_IMAGE_MODEL": settings.agnes_image_model,
-                }
-            elif engine_name == "pollinations":
-                engine_cfg = {"POLLINATIONS_MODEL": settings.pollinations_model}
-            elif engine_name == "siliconflow":
-                engine_cfg = {
-                    "SILICONFLOW_API_KEY": settings.siliconflow_api_key,
-                    "SILICONFLOW_MODEL": settings.siliconflow_model,
-                }
-            else:
-                logger.warning(f"不支持的插图引擎: {engine_name}")
-                return []
-
-            engine = create_engine(engine_name, engine_cfg)
-            if engine is None:
-                logger.warning(f"插图引擎初始化失败: {engine_name}")
-                return []
+            provider = build_image_provider(
+                primary=engine_name,
+                on_fallback=lambda frm, to, err: logger.warning(
+                    f"⚠️ 插图 provider {frm} 失败（{str(err).splitlines()[0][:60]}），"
+                    f"切换到 {to}"
+                ),
+            )
 
             w = self.config["illustration_width"]
             h = self.config["illustration_height"]
@@ -447,14 +435,14 @@ JSON array:"""
             for i, prompt in enumerate(prompts, 1):
                 try:
                     logger.info(f"🎨 生成插图 [{i}/{len(prompts)}]: {prompt[:60]}...")
-                    img = engine.generate_single(
+                    img = provider.text_to_image(ImageRequest(
                         prompt=prompt,
                         negative="text, watermark, signature, ui, code, blurry",
                         width=w,
                         height=h,
                         steps=20,
                         cfg=7.5,
-                    )
+                    ))
                     path = save_dir / f"illustration_{i:02d}.png"
                     img.save(path, "PNG", optimize=True)
                     paths.append(path)
@@ -470,7 +458,7 @@ JSON array:"""
             traceback.print_exc()
 
         return paths
-
+        
     # ---------- 插图插入 ----------
 
     def _insert_illustrations(

@@ -116,74 +116,45 @@ class TechHotArticle:
             logger.warning("Pillow 未安装，图片生成功能不可用")
 
         # ✅ 初始化图像引擎
-        self._image_engine = None
+        # ✅ 初始化图像 provider 链
+        self._provider = None
+        self._image_engine_provider = None
         self._init_image_engine()
 
         logger.info("TechHotArticle 初始化完成")
 
     def _init_image_engine(self):
-        """初始化图像生成引擎（支持多个 API 提供商，可配置切换）"""
+        """初始化图像 provider 链（带 fallback，可配 image_engine）。"""
         try:
             import sys
             project_root = Path(__file__).parents[2]
             if str(project_root) not in sys.path:
                 sys.path.insert(0, str(project_root))
-            
-            from api_engines import create_engine
-            #from config.settings import settings
-            
-            # ✅ 从配置读取提供商（默认 agnes）
-            provider = self.config.get("image_engine", DEFAULT_IMAGE_ENGINE)
-            
-            # ✅ 允许通过环境变量/配置覆盖
-            # 可选值: agnes, pollinations, huggingface, stability, replicate, freeapi
-            if provider == "agnes":
-                config = {
-                    "AGNES_API_KEY": settings.agnes_api_key,
-                    "AGNES_BASE_URL": settings.agnes_base_url,
-                    "AGNES_IMAGE_MODEL": settings.agnes_image_model,
-                }
-            elif provider == "pollinations":
-                config = {
-                    "POLLINATIONS_MODEL": settings.pollinations_model,
-                }
-            elif provider == "huggingface":
-                config = {
-                    "HF_API_TOKEN": settings.hf_api_token,
-                    "HF_MODEL": settings.hf_model,
-                }
-            elif provider == "stability":
-                config = {
-                    "STABILITY_API_KEY": settings.stability_api_key,
-                    "STABILITY_MODEL": settings.stability_model,
-                }
-            elif provider == "replicate":
-                config = {
-                    "REPLICATE_API_TOKEN": settings.replicate_api_token,
-                    "REPLICATE_MODEL": settings.replicate_model,
-                }
-            elif provider == "freeapi":
-                config = {
-                    "FREEAPI_MODEL": settings.freeapi_model,
-                }
-            else:
-                logger.warning(f"⚠️ 未知图像引擎: {provider}，回退到 Agnes")
-                provider = "agnes"
-                config = {
-                    "AGNES_API_KEY": settings.agnes_api_key,
-                    "AGNES_BASE_URL": settings.agnes_base_url,
-                    "AGNES_IMAGE_MODEL": settings.agnes_image_model,
-                }
-            
-            self._image_engine = create_engine(provider, config)
-            self._image_engine_provider = provider
-            logger.info(f"✅ 图像引擎已加载: {provider} ({self._image_engine.get_name()})")
-            
+
+            from skills._provider_helper import build_image_provider
+
+            # self.config["image_engine"] 来自 settings.article_image_engine
+            engine_name = self.config.get("image_engine")  # None 就让 helper 用默认
+
+            self._provider = build_image_provider(
+                primary=engine_name,
+                on_fallback=lambda frm, to, err: logger.warning(
+                    f"⚠️ 图像 provider {frm} 失败（{str(err).splitlines()[0][:60]}），"
+                    f"切换到 {to}"
+                ),
+            )
+            self._image_engine_provider = self._provider.primary
+            logger.info(
+                f"✅ 图像 provider 链: {self._provider.chain} "
+                f"(primary={self._image_engine_provider})"
+            )
         except Exception as e:
-            logger.warning(f"⚠️ 图像引擎初始化失败: {e}，将使用 Pillow 回退方案")
-            self._image_engine = None
+            logger.warning(f"⚠️ 图像 provider 初始化失败: {e}，将使用 Pillow 回退方案")
+            import traceback
+            traceback.print_exc()
+            self._provider = None
             self._image_engine_provider = None
-        
+            
     def _setup_logging(self):
         log_level = self.config.get("log_level", "INFO")
         logging.basicConfig(
@@ -616,14 +587,16 @@ class TechHotArticle:
         return positions
         
 
-    def _generate_image_for_block(self, block_text: str, article_title: str) -> Optional[str]:
-        """为某个段落块生成配图"""
-        
-        # ✅ 如果 API 引擎不可用，直接回退到 Pillow
-        if not self._image_engine:
-            logger.info("🔄 图像引擎不可用，使用 Pillow 回退方案")
+    def _generate_image_for_block(
+        self, block_text: str, article_title: str
+    ) -> Optional[str]:
+        """为某个段落块生成配图。"""
+
+        # ✅ 如果 provider 不可用，直接回退到 Pillow
+        if not self._provider:
+            logger.info("🔄 图像 provider 不可用，使用 Pillow 回退方案")
             return self._generate_pillow_image(article_title)
-        
+
         try:
             snippet = block_text[:80].replace("\n", " ").strip()
             style = self.config.get("image_style", "digital art, tech illustration")
@@ -633,34 +606,42 @@ class TechHotArticle:
                 f"Style: {style}, vibrant colors, professional, high quality, "
                 f"no text, no watermark, no signature"
             )
-            
+
             logger.info(f"🎨 [API] 生成配图: {snippet[:40]}...")
-            
-            image = self._image_engine.generate_single(
+
+            from providers.base import ImageRequest
+
+            image = self._provider.text_to_image(ImageRequest(
                 prompt=prompt,
-                negative="text, watermark, signature, low quality, blurry, ugly, deformed",
+                negative=(
+                    "text, watermark, signature, low quality, blurry, "
+                    "ugly, deformed"
+                ),
                 width=self.config.get("image_width", 800),
                 height=self.config.get("image_height", 600),
                 steps=25,
                 cfg=7.5,
                 seed=random.randint(1, 999),
-            )
-            
+            ))
+
             # 保存
             output_dir = Path(self.config["output_dir"]) / "images"
             output_dir.mkdir(parents=True, exist_ok=True)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:19]
             filepath = output_dir / f"article_image_api_{timestamp}.png"
-            
+
             # 调整尺寸
-            target_size = (self.config["image_width"], self.config["image_height"])
+            target_size = (
+                self.config["image_width"],
+                self.config["image_height"],
+            )
             if image.size != target_size:
                 image = image.resize(target_size, Image.Resampling.LANCZOS)
-            
+
             image.save(filepath, "PNG")
             logger.info(f"✅ API 配图已保存: {filepath}")
             return str(filepath)
-            
+
         except Exception as e:
             logger.error(f"❌ API 配图生成失败: {e}")
             logger.info("🔄 回退到 Pillow 生成")

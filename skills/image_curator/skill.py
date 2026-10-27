@@ -86,33 +86,56 @@ class ImageCurator:
         Path(self.config["output_dir"]).mkdir(parents=True, exist_ok=True)
 
     def _init_vision_engine(self):
+        """初始化视觉引擎（走 providers 注册表）。
+
+        vision 不做自动 fallback：
+          - Agnes 的 vision 模型免费且稳定
+          - 视觉理解对模型一致性要求高，切 provider 会改变描述风格
+        """
         try:
             import sys
             project_root = Path(__file__).parents[2]
             if str(project_root) not in sys.path:
                 sys.path.insert(0, str(project_root))
 
-            from api_engines import create_engine
+            from providers import create, list_providers, get_meta
             from config.settings import settings
 
             engine_name = self.config.get("vision_engine", DEFAULT_VISION_ENGINE)
-            if engine_name == "agnes":
-                cfg = {
-                    "AGNES_API_KEY": settings.agnes_api_key,
-                    "AGNES_BASE_URL": settings.agnes_base_url,
-                    "AGNES_VIDEO_MODEL": settings.agnes_video_model,
-                }
-            else:
-                logger.warning(f"⚠️ 不支持的视觉引擎: {engine_name}")
+
+            # 检查是否支持 vision
+            vision_providers = [
+                p for p in list_providers()
+                if "vision" in get_meta(p).get("capabilities", [])
+            ]
+
+            if not vision_providers:
+                logger.warning("⚠️ 没有任何 provider 支持 vision")
+                self._vision_engine = None
                 return
 
-            self._vision_engine = create_engine(engine_name, cfg)
-            self._vision_engine_provider = engine_name
-            logger.info(f"✅ 视觉引擎已加载: {engine_name}")
-        except Exception as e:
-            logger.warning(f"⚠️ 视觉引擎初始化失败: {e}")
-            self._vision_engine = None
+            if engine_name not in vision_providers:
+                fallback = (
+                    "agnes" if "agnes" in vision_providers
+                    else vision_providers[0]
+                )
+                logger.warning(
+                    f"⚠️ provider '{engine_name}' 不支持 vision，回退到 {fallback}"
+                )
+                engine_name = fallback
 
+            self._vision_engine = create(
+                engine_name,
+                settings.get_provider_config(engine_name),
+            )
+            self._vision_engine_provider = engine_name
+            logger.info(f"✅ vision provider 已加载: {engine_name}")
+        except Exception as e:
+            logger.warning(f"⚠️ vision provider 初始化失败: {e}")
+            import traceback
+            traceback.print_exc()
+            self._vision_engine = None
+            
     # ---------- 主入口 ----------
 
     def curate(self, directory: str, **kwargs) -> Dict[str, Any]:
@@ -318,7 +341,10 @@ class ImageCurator:
                 "请以艺术评论家的口吻，写一段 80-120 字的引言，"
                 "概括这组图片的整体气质与看点。只输出正文，不要标题。"
             )
-            return self._vision_engine.chat_simple(prompt).strip()
+            # ✅ 用 chat 接口，兼容 AgnesAdapter
+            return self._vision_engine.chat([
+                {"role": "user", "content": prompt}
+            ]).strip()
         except Exception as e:
             logger.warning(f"⚠️ 引言生成失败: {e}")
             return f"本文收录了「{title}」主题下的 {len(entries)} 张作品。"
