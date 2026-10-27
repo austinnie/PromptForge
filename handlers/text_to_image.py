@@ -12,6 +12,15 @@ from core.prompt_builder import PromptBuilder
 from core.safety import SafetyChecker
 from api_engines import create_engine
 
+# ✅ 新增导入（A 阶段）
+from providers import list_providers, get_meta
+from providers.base import ImageRequest
+from providers.fallback import FallbackImageProvider
+
+from providers.errors import (
+    ProviderUnavailable,
+    ProviderAuthError,
+)
 
 class TextToImageHandler(BaseHandler):
     """文生图处理器"""
@@ -21,32 +30,60 @@ class TextToImageHandler(BaseHandler):
         self.prompt_builder = PromptBuilder()
         self.is_generating = False
         self.cancel_flag = False
-        
-        # API 引擎（延迟初始化）
         self._api_engine = None
     
+    # ==================== API 引擎 ====================
     def _get_api_engine(self):
-        """获取 API 引擎（单例）"""
-        if self._api_engine is None:
-            settings = self.app.settings
-            provider = settings.api_provider
-            config = settings.get_api_config().get(provider, {})
-            
-            try:
-                self._api_engine = create_engine(provider, config)
-                print(f"✅ API 引擎初始化: {provider}")
-            except Exception as e:
-                print(f"❌ API 引擎初始化失败: {e}")
-                return None
-        
-        return self._api_engine
-    
-    def handle(self, intent: Dict[str, Any]) -> None:
-        """处理文生图意图"""
+        """
+        返回 FallbackImageProvider（带自动回退）。
+        A 阶段：primary = settings.api_provider，
+                fallback = 其它所有 image provider（free 优先）。
+        """
+        if self._api_engine is not None:
+            return self._api_engine
+
         settings = self.app.settings
+        primary = settings.api_provider
+
+        if primary not in list_providers("image"):
+            print(f"⚠️ provider '{primary}' 不支持图像，回退到 agnes")
+            primary = "agnes" if "agnes" in list_providers("image") else list_providers("image")[0]
+
+        # 候选池：其它 image provider，free 优先，名字稳定排序
+        pool = [p for p in list_providers("image") if p != primary]
+        pool.sort(key=lambda p: (not get_meta(p).get("free", False), p))
+
+        # 收集所有配置（A 阶段：get_provider_config 自动扫 .env）
+        configs = {
+            p: settings.get_provider_config(p)
+            for p in [primary] + pool
+        }
+
+        def _format_fallback_reason(err: Exception) -> str:
+            """把 fallback 的异常原因转成人话。"""
+            if isinstance(err, ProviderUnavailable):
+                # ProviderUnavailable 的 message 已经是友好的（比如"余额不足"）
+                # 取第一行就够了，不要整个堆栈
+                first_line = str(err).split("\n")[0].strip()
+                return first_line or "服务暂时不可用"
+            if isinstance(err, ProviderAuthError):
+                return "认证失败"
+            return str(err).split("\n")[0][:80] or "未知错误"
+    
+        self._api_engine = FallbackImageProvider(
+            primary=primary,
+            fallback=pool,
+            configs=configs,
+            on_fallback=lambda frm, to, err: self._reply(
+                f"⚠️ {frm} 不可用（{_format_fallback_reason(err)}），切换到 {to}..."
+            ),
+        )
+        print(f"✅ API 引擎链: {[primary] + pool}")
+        return self._api_engine
         
-        # 根据模式选择生成方式
-        if settings.generation_mode == "api":
+    # ==================== 分发 ====================    
+    def handle(self, intent: Dict[str, Any]) -> None:
+        if self.app.settings.generation_mode == "api":
             self._handle_api(intent)
         else:
             self._handle_local(intent)
@@ -145,28 +182,26 @@ class TextToImageHandler(BaseHandler):
 
 
     def _handle_api(self, intent: Dict[str, Any]) -> None:
-        """API 模式生成"""
         if self.is_generating:
             self._reply("⏳ 正在生成中，请稍候...")
             return
 
-        # ✅ 检查是否为图生图
+        # 图生图交给专门方法
         intent_type = intent.get("type", "text_to_image")
-        is_img2img = (intent_type == "image_to_image" or 
-                      intent.get("params", {}).get("mode") == "reference")
-        
-        # 如果是图生图，调用专门的 API 图生图方法
+        is_img2img = (
+            intent_type == "image_to_image"
+            or intent.get("params", {}).get("mode") == "reference"
+        )
         if is_img2img:
             self._handle_api_img2img(intent)
             return
-        
+
         prompt = intent.get("prompt", "")
         original_text = intent.get("original_text", "")
-        
         if not prompt:
             self._reply("❌ 请描述您想生成的图片内容")
             return
-        
+
         # 安全检查
         if self.app.settings.safe_mode:
             is_unsafe, _ = SafetyChecker.check(prompt)
@@ -175,142 +210,71 @@ class TextToImageHandler(BaseHandler):
                 if not prompt:
                     self._reply("🛡️ 内容被安全过滤")
                     return
-        
-        # 获取 API 引擎
+
         engine = self._get_api_engine()
         if engine is None:
             self._reply("❌ API 引擎初始化失败，请检查 API 密钥配置")
             return
-        
+
         params = self._estimate_params(original_text or prompt)
         width = min(params["width"] * 2, 1024)
         height = min(params["height"] * 2, 1024)
         steps = max(params["steps"], 20)
         cfg = params["cfg"]
-        
-        self._update_status(f"☁️ API 生成中... (宽度: {width}, 高度: {height})")
+
+        self._update_status(f"☁️ API 生成中... ({width}x{height})")
         self.is_generating = True
         self.cancel_flag = False
-        
-        try:
 
-            # 构建提示词
-            if self.app.settings.api_provider == "pollinations":
-                # Pollinations 对长提示词不友好，用简化版
-                simple_prompt = prompt   # ✅ 用传入的 prompt（已经是 6 层拼好的）
-                for word in ["生成", "画", "帮我画", "create", "generate"]:
-                    simple_prompt = simple_prompt.replace(word, "")
-                full_prompt = simple_prompt.strip().strip('，').strip(',')
-                print(f"🔍 Pollinations 使用简化 Prompt: {full_prompt}")
-            else:
-                # ✅ 其他 API 直接用传入的 prompt（不要再重新构建）
-                full_prompt = prompt
-            
-            negative = self._build_negative(original_text)
-            
-            self._update_status(f"☁️ 调用 {engine.get_name()} API...")
-            
-            image = engine.generate_single(
-                prompt=full_prompt,
-                negative=negative,
+        try:
+            # ✅ 统一构造请求，prompt 简化由各 adapter 内部处理
+            req = ImageRequest(
+                prompt=prompt,
+                negative=self._build_negative(original_text),
                 width=width,
                 height=height,
                 steps=steps,
                 cfg=cfg,
-                seed=random.randint(1, 2**32 - 1)
+                seed=random.randint(1, 2**32 - 1),
             )
-            
+
+            self._update_status(f"☁️ 调用 {self.app.settings.api_provider} API...")
+            image = engine.text_to_image(req)
+
             filepath = self._save_image(image, prompt[:50], "api")
-            
-            self._reply(f"✅ 图片已生成（{engine.get_name()} API）！\n📁 {os.path.basename(filepath)}")
+            self._reply(f"✅ 图片已生成！\n📁 {os.path.basename(filepath)}")
             self._update_status("✅ API 生成完成")
-            
+
             if self.context:
                 self.context.update(
                     {"type": "text_to_image", "prompt": prompt},
-                    {"image_path": filepath}
+                    {"image_path": filepath},
                 )
-            
+
         except Exception as e:
-            error_msg = str(e)
-            
-            # ✅ 如果 Free API 失败，自动切换到 Pollinations
-            if self.app.settings.api_provider == "freeapi" and "不可用" in error_msg:
-                print(f"⚠️ Free API 不可用，自动切换到 Pollinations")
-                self._reply("⚠️ Free API 暂时不可用，自动切换到 Pollinations...")
-                
-                # 切换提供商
-                self.app.settings.api_provider = "pollinations"
-                self._api_engine = None
-                engine = self._get_api_engine()
-                
-                if engine:
-                    try:
-                        # 重新生成
-                        self._update_status("☁️ 切换到 Pollinations 重新生成...")
-                        
-                        # 简化 prompt
-                        simple_prompt = intent.get("original_text", prompt)
-                        for word in ["生成", "画", "帮我画", "create", "generate"]:
-                            simple_prompt = simple_prompt.replace(word, "")
-                        full_prompt = simple_prompt.strip().strip('，').strip(',')
-                        
-                        image = engine.generate_single(
-                            prompt=full_prompt,
-                            negative="ugly, blurry",
-                            width=width,
-                            height=height,
-                            steps=steps,
-                            cfg=cfg,
-                            seed=random.randint(1, 2**32 - 1)
-                        )
-                        
-                        filepath = self._save_image(image, prompt[:50], "api")
-                        self._reply(f"✅ 图片已生成（Pollinations AI）！\n📁 {os.path.basename(filepath)}")
-                        self._update_status("✅ Pollinations 生成完成")
-                        
-                        if self.context:
-                            self.context.update(
-                                {"type": "text_to_image", "prompt": prompt},
-                                {"image_path": filepath}
-                            )
-                        return
-                        
-                    except Exception as e2:
-                        print(f"❌ Pollinations 也失败了: {e2}")
-                        self._reply(f"❌ 所有 API 都失败了，请稍后重试或使用本地模式")
-                        self._update_status("❌ 所有 API 失败")
-                        return
-            
-            # 原有错误处理
             if self.cancel_flag:
                 self._reply("⏹️ 已取消生成")
             else:
-                self._reply(f"❌ API 生成失败: {error_msg}")
+                self._reply(f"❌ API 生成失败: {e}")
                 self._update_status("❌ API 生成失败")
             import traceback
             traceback.print_exc()
         finally:
             self.is_generating = False
 
+    # ==================== API 图生图 ====================
 
-
-    # handlers/text_to_image.py - 新增方法
     def _handle_api_img2img(self, intent: Dict[str, Any]) -> None:
-        """API 图生图"""
-        # 检查是否有图片
-        if not hasattr(self.app, 'uploaded_images') or not self.app.uploaded_images:
+        if not hasattr(self.app, "uploaded_images") or not self.app.uploaded_images:
             self._reply("❌ 图生图需要上传一张参考图片")
             return
-        
+
         prompt = intent.get("prompt", "")
         original_text = intent.get("original_text", "")
-        
         if not prompt:
             self._reply("❌ 请描述您想如何修改这张图片")
             return
-        
-        # 安全检查
+
         if self.app.settings.safe_mode:
             is_unsafe, _ = SafetyChecker.check(prompt)
             if is_unsafe:
@@ -318,71 +282,61 @@ class TextToImageHandler(BaseHandler):
                 if not prompt:
                     self._reply("🛡️ 内容被安全过滤")
                     return
-        
-        # 获取 API 引擎
+
         engine = self._get_api_engine()
         if engine is None:
             self._reply("❌ API 引擎初始化失败，请检查 API 密钥配置")
             return
-        
-        # ✅ 检查引擎是否支持图生图
-        if not hasattr(engine, 'image_to_image'):
-            self._reply(f"❌ {engine.get_name()} 不支持图生图，请切换到支持图生图的 API (如 Agnes)")
-            return
-        
-        # 参数
+
         params = self._estimate_params(original_text or prompt)
         width = min(params["width"], 1024)
         height = min(params["height"], 1024)
         steps = max(params["steps"], 20)
         cfg = params["cfg"]
-        
-        self._update_status(f"☁️ API 图生图中...")
+
+        self._update_status("☁️ API 图生图中...")
         self.is_generating = True
         self.cancel_flag = False
-        
+
         try:
-            # 获取参考图
-            init_image = self.app.uploaded_images[0].copy().convert('RGB')
-            
-            # 构建提示词
+            init_image = self.app.uploaded_images[0].copy().convert("RGB")
             full_prompt = self._build_quality_prompt(original_text, intent.get("keywords", {}))
-            negative = self._build_negative(original_text)
-            
-            # 调用 API 图生图
-            image = engine.image_to_image(
+
+            req = ImageRequest(
                 prompt=full_prompt,
-                image=init_image,
-                strength=0.7,
+                negative=self._build_negative(original_text),
                 width=width,
                 height=height,
                 steps=steps,
                 cfg=cfg,
-                seed=random.randint(1, 2**32 - 1)
+                seed=random.randint(1, 2**32 - 1),
+                reference=init_image,
+                strength=0.7,
             )
-            
+            image = engine.image_to_image(req)
+
             filepath = self._save_image(image, prompt[:50], "img2img_api")
-            
-            self._reply(f"✅ 图生图完成（{engine.get_name()} API）！\n📁 {os.path.basename(filepath)}")
+            self._reply(f"✅ 图生图完成！\n📁 {os.path.basename(filepath)}")
             self._update_status("✅ API 图生图完成")
-            
+
             if self.context:
                 self.context.update(
                     {"type": "image_to_image", "prompt": prompt},
-                    {"image_path": filepath}
+                    {"image_path": filepath},
                 )
-            
+
         except Exception as e:
             if self.cancel_flag:
                 self._reply("⏹️ 已取消")
             else:
-                self._reply(f"❌ API 图生图失败: {str(e)}")
+                self._reply(f"❌ API 图生图失败: {e}")
                 self._update_status("❌ API 图生图失败")
             import traceback
             traceback.print_exc()
         finally:
             self.is_generating = False
-        
+
+
     def _build_quality_prompt(self, text: str, keywords: Dict) -> str:
         """构建高质量提示词 - 以用户描述为核心"""
         quality = "masterpiece, best quality, 8k, highly detailed"

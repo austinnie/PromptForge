@@ -173,29 +173,54 @@ class ChatApp:
         ttk.Label(toolbar_row1, text="API:").pack(side=tk.LEFT, padx=5)
         
         self.provider_var = tk.StringVar(value=self.settings.api_provider)
+        #self.provider_combo = ttk.Combobox(
+        #    toolbar_row1,
+        #    textvariable=self.provider_var,
+        #    values=[
+        #    "pollinations", 
+        #    "huggingface", 
+        #    "tongyi", 
+        #    "yige", 
+        #    "hunyuan", 
+        #    "agnes", 
+        #    "freeapi", 
+        #    "replicate", 
+        #    "stability",
+        #    "free_multimodal_proxy",   # 新增
+        #    "freellmapi",               # 新增
+        #    "siliconflow",              # 新增
+        #    "openrouter",               # 新增            
+        #    ],
+        #    width=12,
+        #    state="readonly"
+        #)
+        #self.provider_combo.pack(side=tk.LEFT, padx=2)
+        #self.provider_combo.bind('<<ComboboxSelected>>', self._on_provider_changed)
+
+        from providers import list_providers, get_meta
+
+        def _refresh_provider_list(self):
+            """从注册表读 provider 列表，按免费优先排序"""
+            names = list_providers()
+            # 免费/需 key 分组，GUI 更好看
+            def sort_key(n):
+                m = get_meta(n)
+                return (not m.get("free", False), m.get("requires_key", False), n)
+            names.sort(key=sort_key)
+
+            self.provider_combo["values"] = names
+            if self.provider_var.get() not in names and names:
+                self.provider_var.set(names[0])
+
+        # 初始化时
         self.provider_combo = ttk.Combobox(
             toolbar_row1,
             textvariable=self.provider_var,
-            values=[
-            "pollinations", 
-            "huggingface", 
-            "tongyi", 
-            "yige", 
-            "hunyuan", 
-            "agnes", 
-            "freeapi", 
-            "replicate", 
-            "stability",
-            "free_multimodal_proxy",   # 新增
-            "freellmapi",               # 新增
-            "siliconflow",              # 新增
-            "openrouter",               # 新增            
-            ],
-            width=12,
-            state="readonly"
+            values=[],
+            width=18,
+            state="readonly",
         )
-        self.provider_combo.pack(side=tk.LEFT, padx=2)
-        self.provider_combo.bind('<<ComboboxSelected>>', self._on_provider_changed)
+        self._refresh_provider_list()
         
         self.mode_hint = ttk.Label(
             toolbar_row1,
