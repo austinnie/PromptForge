@@ -28,11 +28,37 @@ class VideoHandler(BaseHandler):
         super().__init__(app)
         self.is_generating = False
         self.cancel_flag = False
+        self._video_engine = None
 
         # ✅ 统一从 settings 读取分段时长
         self.segment_duration = app.settings.video_segment_duration
         print(f"🔍 [VideoHandler] 初始化，分段时长 = {self.segment_duration} 秒")        
 
+    def _get_video_engine(self):
+        """返回带 fallback 的视频 provider 链。
+
+        第一次调用时懒加载，之后复用同一个实例（内部有 _last_provider_name 状态）。
+        """
+        if getattr(self, "_video_engine", None) is not None:
+            return self._video_engine
+
+        from skills._provider_helper import build_video_provider
+
+        def _on_fallback(frm, to, err):
+            self._reply(
+                f"⚠️ 视频 provider {frm} 失败"
+                f"（{str(err).splitlines()[0][:60]}），切换到 {to}..."
+            )
+
+        try:
+            self._video_engine = build_video_provider(on_fallback=_on_fallback)
+            self._reply(f"✅ 视频 provider 链: {self._video_engine.chain}")
+        except Exception as e:
+            self._reply(f"❌ 视频 provider 初始化失败: {e}")
+            self._video_engine = None
+
+        return self._video_engine
+        
     def handle(self, intent: Dict[str, Any]) -> None:
         """处理视频生成意图"""
         # 检查模式
@@ -46,16 +72,11 @@ class VideoHandler(BaseHandler):
             return
 
         # 获取 API 引擎
-        from handlers.text_to_image import TextToImageHandler
-        api_handler = TextToImageHandler(self.app)
-        engine = api_handler._get_api_engine()
+        # 获取视频 provider 链（带 fallback）
+        engine = self._get_video_engine()
 
         if engine is None:
-            self._reply("❌ API 引擎初始化失败")
-            return
-
-        if not hasattr(engine, 'video_generation'):
-            self._reply(f"❌ {engine.get_name()} 不支持视频生成")
+            self._reply("❌ 视频 provider 初始化失败")
             return
 
         # 系统提示
@@ -89,13 +110,15 @@ class VideoHandler(BaseHandler):
             # ✅ 调试打印
             # print(f"🔍 [单段模式] 使用分段时长: {self.segment_duration}")
             print(f"🔍 [DEBUG] _handle_single_mode,准备调用 video_generation，duration = {self.app.settings.video_segment_duration}")
-            result = engine.video_generation(
+            from providers.base import VideoRequest
+            req = VideoRequest(
                 prompt=prompt,
                 image=init_image,
-                duration=self.app.settings.video_segment_duration,# 修改
+                duration=self.app.settings.video_segment_duration,
                 width=768,
-                height=768
+                height=768,
             )
+            result = engine.video_generation(req)
 
             video_id = result.get('video_id')
             if not video_id:
@@ -166,13 +189,15 @@ class VideoHandler(BaseHandler):
                     segment_prompt = f"{prompt}，继续上一段的动作，保持连贯"
                     
                 print(f"🔍 [DEBUG] _handle_merge_mode 准备调用 video_generation，duration = {self.app.settings.video_segment_duration}")
-                result = engine.video_generation(
+                from providers.base import VideoRequest
+                req = VideoRequest(
                     prompt=segment_prompt,
                     image=init_image if i == 0 else None,
-                    duration=self.segment_duration,   # 使用统一变量
+                    duration=self.segment_duration,
                     width=768,
-                    height=768
+                    height=768,
                 )
+                result = engine.video_generation(req)
 
                 video_id = result.get('video_id')
                 if not video_id:
@@ -379,16 +404,11 @@ class VideoHandler(BaseHandler):
             return None
 
         # 获取 API 引擎
-        from handlers.text_to_image import TextToImageHandler
-        api_handler = TextToImageHandler(self.app)
-        engine = api_handler._get_api_engine()
+        # 获取视频 provider 链
+        engine = self._get_video_engine()
 
         if engine is None:
-            print("❌ API 引擎初始化失败")
-            return None
-
-        if not hasattr(engine, 'video_generation'):
-            print(f"❌ {engine.get_name()} 不支持视频生成")
+            print("❌ 视频 provider 初始化失败")
             return None
 
         try:
@@ -398,13 +418,15 @@ class VideoHandler(BaseHandler):
             # 调用视频生成 API
             
             print(f"🔍 [DEBUG] generate_video_from_prompt,准备调用 video_generation，duration = {self.app.settings.video_segment_duration}")
-            result = engine.video_generation(
+            from providers.base import VideoRequest
+            req = VideoRequest(
                 prompt=prompt,
                 image=init_image,
-                duration=actual_duration,   # 使用实际值
+                duration=actual_duration,
                 width=768,
-                height=768
+                height=768,
             )
+            result = engine.video_generation(req)
 
             video_id = result.get('video_id')
             if not video_id:

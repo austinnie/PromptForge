@@ -73,3 +73,43 @@ def list_image_providers() -> list[str]:
     names = list_providers("image")
     names.sort(key=lambda p: (not get_meta(p).get("free", False), p))
     return names
+    
+def build_video_provider(
+    primary: Optional[str] = None,
+    fallback: Optional[list[str]] = None,
+    on_fallback: Optional[Callable[[str, str, Exception], None]] = None,
+):
+    """构造一个带 fallback 的视频 provider 链。
+
+    只挑支持 video 能力的 provider；一个都没有就报错。
+    """
+    from config.settings import settings
+    from providers import list_providers, get_meta
+    from providers.fallback import FallbackVideoProvider
+
+    primary = primary or settings.api_provider
+
+    video_providers = list_providers("video")
+    if not video_providers:
+        raise RuntimeError("providers 注册表里没有任何 video provider")
+
+    if primary not in video_providers:
+        fallback_primary = "agnes" if "agnes" in video_providers else video_providers[0]
+        logger.warning(
+            f"⚠️ provider '{primary}' 不支持视频，回退到 {fallback_primary}"
+        )
+        primary = fallback_primary
+
+    if fallback is None:
+        fallback = [p for p in video_providers if p != primary]
+        fallback.sort(key=lambda p: (not get_meta(p).get("free", False), p))
+
+    pool = [primary] + [p for p in fallback if p != primary]
+    configs = {p: settings.get_provider_config(p) for p in pool}
+
+    return FallbackVideoProvider(
+        primary=primary,
+        fallback=[p for p in pool if p != primary],
+        configs=configs,
+        on_fallback=on_fallback,
+    )    

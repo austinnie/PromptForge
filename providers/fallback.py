@@ -23,7 +23,7 @@ from typing import Optional
 
 from PIL import Image
 
-from .base import ImageRequest, ImageProvider
+from .base import ImageRequest, ImageProvider, VideoRequest
 from .registry import create
 from .errors import ProviderUnavailable, ProviderAuthError, ProviderConfigError
 
@@ -81,3 +81,63 @@ class FallbackImageProvider:
                     except Exception:
                         pass
         raise last_error or RuntimeError(f"所有 provider 都失败: {self.chain}")
+        
+class FallbackVideoProvider:
+    """按顺序尝试多个 provider，直到视频任务创建成功。
+
+    跟 FallbackImageProvider 同构，但只覆盖视频能力。
+    注意：wait_for_video 只在"创建成功"的那个 provider 上调用，
+    所以必须记住上次成功的 provider 名。
+    """
+
+    def __init__(
+        self,
+        primary: str,
+        fallback: list[str],
+        configs: dict[str, dict],
+        on_fallback: Optional[callable] = None,
+    ):
+        self.primary = primary
+        self.chain = [primary] + [p for p in fallback if p != primary]
+        self.configs = configs
+        self.on_fallback = on_fallback  # (failed, next, error)
+        # 记录成功创建视频任务的 provider（wait_for_video 用）
+        self._last_provider_name: Optional[str] = None
+
+    def video_generation(self, req: VideoRequest) -> dict:
+        last_error: Optional[Exception] = None
+        for i, name in enumerate(self.chain):
+            try:
+                cfg = self.configs.get(name, {})
+                provider = create(name, cfg)
+                logger.info(f"[video_generation] 尝试 provider: {name}")
+                result = provider.video_generation(req)
+                self._last_provider_name = name
+                return result
+            except (ProviderAuthError, ProviderConfigError):
+                # 认证 / 配置错误，切下一个没意义
+                raise
+            except Exception as e:
+                last_error = e
+                if i == len(self.chain) - 1:
+                    break
+                next_name = self.chain[i + 1]
+                logger.warning(
+                    f"[video_generation] {name} 失败: {e}，切换到 {next_name}"
+                )
+                if self.on_fallback:
+                    try:
+                        self.on_fallback(name, next_name, e)
+                    except Exception:
+                        pass
+        raise last_error or RuntimeError(f"所有 provider 都失败: {self.chain}")
+
+    def wait_for_video(self, video_id: str, **kw) -> str:
+        """用"创建成功"的那个 provider 等结果。"""
+        name = self._last_provider_name or self.primary
+        cfg = self.configs.get(name, {})
+        provider = create(name, cfg)
+        return provider.wait_for_video(video_id, **kw)
+
+    def get_name(self) -> str:
+        return f"FallbackVideoProvider({self.chain})"        
