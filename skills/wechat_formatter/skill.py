@@ -321,13 +321,17 @@ class WechatFormatter:
             project_root = Path(__file__).parents[2]
             if str(project_root) not in sys.path:
                 sys.path.insert(0, str(project_root))
-            from api_engines import create_engine
+
+            from providers import create
             from config.settings import settings
 
-            engine = create_engine("agnes", {
-                "AGNES_API_KEY": settings.agnes_api_key,
-                "AGNES_BASE_URL": settings.agnes_base_url,
-                "AGNES_VIDEO_MODEL": settings.agnes_video_model,
+            if not settings.agnes_api_key:
+                logger.warning("⚠️ 未配置 AGNES_API_KEY，跳过 AI 增强")
+                return markdown
+
+            engine = create("agnes", {
+                "api_key": settings.agnes_api_key,
+                "base_url": settings.agnes_base_url,
             })
 
             prompt = f"""你是微信公众号排版助手。请分析下面的 Markdown 文章，只做结构增强，不改写内容：
@@ -345,7 +349,9 @@ class WechatFormatter:
 {markdown[:6000]}"""
 
             logger.info("🤖 AI 内容增强中...")
-            result = engine.chat_simple(prompt)
+
+            # ✅ AgnesAdapter 只有 chat()，没有 chat_simple()
+            result = engine.chat([{"role": "user", "content": prompt}])
             enhanced = (result or "").strip()
             return enhanced if enhanced else markdown
         except Exception as e:

@@ -13,3 +13,7 @@ class ProviderConfigError(ProviderError):
 
 class AllProvidersFailed(ProviderError):
     """所有 provider 都失败"""
+    
+class VideoQueueFull(ProviderUnavailable):
+    """视频队列满，属于服务层临时拥塞，应退避重试"""
+    pass    

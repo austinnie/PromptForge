@@ -14,11 +14,9 @@ import base64
 from typing import Optional, Dict, Any, List
 from enum import Enum
 
-class VideoQueueFullError(Exception):
-    """Agnes 视频队列已满（503 + code=video_queue_full）。
-    这是服务层临时拥塞，不是路由故障，切节点无效。
-    上层应据此做指数退避重试，而不是换 URL。"""
-    pass
+# ✅ 迁到 providers.errors，保留旧名作为 alias
+from providers.errors import VideoQueueFull
+VideoQueueFullError = VideoQueueFull
 
 class AgnesMode(Enum):
     """Agnes AI 支持的模式"""

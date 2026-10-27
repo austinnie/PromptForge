@@ -95,22 +95,22 @@ class VideoGenerator:
             if str(project_root) not in sys.path:
                 sys.path.insert(0, str(project_root))
 
-            from api_engines import create_engine
+            from providers import create
             from config.settings import settings
 
             engine_name = self.config.get("engine", DEFAULT_ENGINE)
 
             if engine_name == "agnes":
                 config = {
-                    "AGNES_API_KEY": settings.agnes_api_key,
-                    "AGNES_BASE_URL": settings.agnes_base_url,
-                    "AGNES_VIDEO_MODEL": settings.agnes_video_model,
+                    "api_key": settings.agnes_api_key,
+                    "base_url": settings.agnes_base_url,
+                    "video_model": settings.agnes_video_model,
                 }
             else:
                 logger.warning(f"⚠️ 不支持的视频引擎: {engine_name}")
                 return
 
-            self._video_engine = create_engine(engine_name, config)
+            self._video_engine = create(engine_name, config)
             self._video_engine_provider = engine_name
             logger.info(f"✅ 视频引擎已加载: {engine_name} ({self._video_engine.get_name()})")
         except Exception as e:
@@ -330,8 +330,10 @@ class VideoGenerator:
                 logger.warning(f"⚠️ 任务未完成，临时文件保留在: {temp_dir}")
 
     def _video_generation_with_queue_retry(self, **kwargs) -> Dict[str, Any]:
-        from api_engines.agnes import VideoQueueFullError   # ← 这里导入
         """调用 video_generation；遇到视频队列满时按指数退避重试。
+
+        上游传 kwargs（prompt / image / duration / width / height / mode / ...），
+        这里统一转换成 providers.base.VideoRequest，再交给 adapter。
 
         节奏：60s → 120s → 300s → 600s → 900s → 1800s
         累计等待约 63 分钟；超过上限则抛出。
@@ -339,14 +341,32 @@ class VideoGenerator:
           - queue_max_retries: 最大重试次数（默认 6）
           - queue_first_wait:  首次等待秒数（默认 60）
         """
+        from providers.errors import VideoQueueFull
+        from providers.base import VideoRequest
+
+        # kwargs → VideoRequest
+        req = VideoRequest(
+            prompt=kwargs.get("prompt", ""),
+            image=kwargs.get("image"),
+            image_list=kwargs.get("image_list"),
+            duration=int(kwargs.get("duration", 10)),
+            width=int(kwargs.get("width", 768)),
+            height=int(kwargs.get("height", 768)),
+            seed=kwargs.get("seed"),
+            mode=kwargs.get("mode"),
+            first_frame_url=kwargs.get("first_frame_url"),
+            last_frame_url=kwargs.get("last_frame_url"),
+            callback_url=kwargs.get("callback_url"),
+        )
+
         max_retries = int(self.config.get("queue_max_retries", 6))
         wait = int(self.config.get("queue_first_wait", 60))
 
         last_err: Optional[Exception] = None
         for attempt in range(1, max_retries + 1):
             try:
-                return self._video_engine.video_generation(**kwargs)
-            except VideoQueueFullError as e:
+                return self._video_engine.video_generation(req)
+            except VideoQueueFull as e:
                 last_err = e
                 if attempt >= max_retries:
                     logger.error(f"❌ 队列持续满，{max_retries} 次重试后放弃: {e}")

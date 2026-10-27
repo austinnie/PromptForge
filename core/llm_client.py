@@ -271,17 +271,17 @@ class LLMClient:
         if self._agnes_engine is not None:
             return self._agnes_engine
 
-        from api_engines import create_engine
+        from providers import create
         from config.settings import settings
 
         if not settings.agnes_api_key:
             raise RuntimeError("未配置 AGNES_API_KEY")
 
-        engine = create_engine("agnes", {
-            "AGNES_API_KEY": settings.agnes_api_key,
-            "AGNES_BASE_URL": settings.agnes_base_url,
-            "AGNES_IMAGE_MODEL": settings.agnes_image_model,
-            "AGNES_TEXT_MODEL": settings.agnes_text_model,
+        engine = create("agnes", {
+            "api_key": settings.agnes_api_key,
+            "base_url": settings.agnes_base_url,
+            "image_model": settings.agnes_image_model,
+            "text_model": settings.agnes_text_model,
         })
         self._agnes_engine = engine
         return engine

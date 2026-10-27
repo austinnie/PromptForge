@@ -10,7 +10,6 @@ from PIL import Image
 from .base import BaseHandler
 from core.prompt_builder import PromptBuilder
 from core.safety import SafetyChecker
-from api_engines import create_engine
 
 # ✅ 新增导入（A 阶段）
 from providers import list_providers, get_meta
