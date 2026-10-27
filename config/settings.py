@@ -13,11 +13,13 @@ import os
 import logging
 from pathlib import Path
 from dataclasses import dataclass, field
-from typing import Optional, List
-
+#from typing import Optional, List
+from typing import Optional
 from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
+
+_PROVIDER_CACHE: dict[str, dict] = {}
 
 # ------------------------------------------------------------
 # 加载 .env
@@ -63,6 +65,7 @@ def _env_list(key: str, default: List[str]) -> List[str]:
     if not v:
         return list(default)
     return [item.strip() for item in v.split(",") if item.strip()]
+
 
 
 @dataclass
@@ -347,71 +350,73 @@ class Settings:
             return self.model_path
         return None
 
-    def get_api_config(self) -> dict:
-        """获取所有 API 配置（供 create_engine 使用）"""
-        return {
-            "tongyi": {
-                "TONGYI_API_KEY": self.tongyi_api_key,
-                "TONGYI_MODEL": self.tongyi_model,
-                "TONGYI_BASE_URL": self.tongyi_base_url,
-            },
-            "yige": {
-                "YIGE_API_KEY": self.yige_api_key,
-                "YIGE_SECRET_KEY": self.yige_secret_key,
-            },
-            "hunyuan": {
-                "HUNYUAN_SECRET_ID": self.hunyuan_secret_id,
-                "HUNYUAN_SECRET_KEY": self.hunyuan_secret_key,
-            },
-            "huggingface": {
-                "HF_API_TOKEN": self.hf_api_token,
-                "HF_MODEL": self.hf_model,
-            },
-            "pollinations": {
-                "POLLINATIONS_API_KEY": self.pollinations_api_key,
-                "POLLINATIONS_MODEL": self.pollinations_model,
-                "POLLINATIONS_VIDEO_MODEL": self.pollinations_video_model,
-                "POLLINATIONS_AUDIO_MODEL": self.pollinations_audio_model,
-            },
-            "agnes": {
-                "AGNES_API_KEY": self.agnes_api_key,
-                "AGNES_IMAGE_MODEL": self.agnes_image_model,
-                "AGNES_TEXT_MODEL": self.agnes_text_model,
-                "AGNES_VIDEO_MODEL": self.agnes_video_model,
-                "AGNES_VISION_MODEL": self.agnes_vision_model,
-                "AGNES_BASE_URL": self.agnes_base_url,
-            },
-            "freeapi": {
-                "FREEAPI_MODEL": self.freeapi_model,
-            },
-            "replicate": {
-                "REPLICATE_API_TOKEN": self.replicate_api_token,
-                "REPLICATE_MODEL": self.replicate_model,
-            },
-            "stability": {
-                "STABILITY_API_KEY": self.stability_api_key,
-                "STABILITY_MODEL": self.stability_model,
-            },
-            "free_multimodal_proxy": {
-                "FREE_MULTIMODAL_PROXY_URL": self.free_multimodal_proxy_url,
-                "FREE_MULTIMODAL_PROXY_MODEL": self.free_multimodal_proxy_model,
-                "FREE_MULTIMODAL_PROXY_TOKEN": self.free_multimodal_proxy_token,
-            },
-            "freellmapi": {
-                "FREELLMAPI_URL": self.freellmapi_url,
-                "FREELLMAPI_MODEL": self.freellmapi_model,
-                "FREELLMAPI_KEY": self.freellmapi_key,
-            },
-            "siliconflow": {
-                "SILICONFLOW_API_KEY": self.siliconflow_api_key,
-                "SILICONFLOW_MODEL": self.siliconflow_model,
-            },
-            "openrouter": {
-                "OPENROUTER_API_KEY": self.openrouter_api_key,
-                "OPENROUTER_MODEL": self.openrouter_model,
-            },
-        }
-
+    #def get_api_config(self) -> dict:
+    #    """获取所有 API 配置（供 create_engine 使用）"""
+    #    return {
+    #        "tongyi": {
+    #            "TONGYI_API_KEY": self.tongyi_api_key,
+    #            "TONGYI_MODEL": self.tongyi_model,
+    #            "TONGYI_BASE_URL": self.tongyi_base_url,
+    #        },
+    #        "yige": {
+    #            "YIGE_API_KEY": self.yige_api_key,
+    #            "YIGE_SECRET_KEY": self.yige_secret_key,
+    #        },
+    #        "hunyuan": {
+    #            "HUNYUAN_SECRET_ID": self.hunyuan_secret_id,
+    #            "HUNYUAN_SECRET_KEY": self.hunyuan_secret_key,
+    #        },
+    #        "huggingface": {
+    #            "HF_API_TOKEN": self.hf_api_token,
+    #            "HF_MODEL": self.hf_model,
+    #        },
+    #        "pollinations": {
+    #            "POLLINATIONS_API_KEY": self.pollinations_api_key,
+    #            "POLLINATIONS_MODEL": self.pollinations_model,
+    #            "POLLINATIONS_VIDEO_MODEL": self.pollinations_video_model,
+    #            "POLLINATIONS_AUDIO_MODEL": self.pollinations_audio_model,
+    #        },
+    #        "agnes": {
+    #            "AGNES_API_KEY": self.agnes_api_key,
+    #            "AGNES_IMAGE_MODEL": self.agnes_image_model,
+    #            "AGNES_TEXT_MODEL": self.agnes_text_model,
+    #            "AGNES_VIDEO_MODEL": self.agnes_video_model,
+    #            "AGNES_VISION_MODEL": self.agnes_vision_model,
+    #            "AGNES_BASE_URL": self.agnes_base_url,
+    #        },
+    #        "freeapi": {
+    #            "FREEAPI_MODEL": self.freeapi_model,
+    #        },
+    #        "replicate": {
+    #            "REPLICATE_API_TOKEN": self.replicate_api_token,
+    #            "REPLICATE_MODEL": self.replicate_model,
+    #        },
+    #        "stability": {
+    #            "STABILITY_API_KEY": self.stability_api_key,
+    #            "STABILITY_MODEL": self.stability_model,
+    #        },
+    #        "free_multimodal_proxy": {
+    #            "FREE_MULTIMODAL_PROXY_URL": self.free_multimodal_proxy_url,
+    #            "FREE_MULTIMODAL_PROXY_MODEL": self.free_multimodal_proxy_model,
+    #            "FREE_MULTIMODAL_PROXY_TOKEN": self.free_multimodal_proxy_token,
+    #        },
+    #        "freellmapi": {
+    #            "FREELLMAPI_URL": self.freellmapi_url,
+    #            "FREELLMAPI_MODEL": self.freellmapi_model,
+    #            "FREELLMAPI_KEY": self.freellmapi_key,
+    #        },
+    #        "siliconflow": {
+    #            "SILICONFLOW_API_KEY": self.siliconflow_api_key,
+    #            "SILICONFLOW_MODEL": self.siliconflow_model,
+    #        },
+    #        "openrouter": {
+    #            "OPENROUTER_API_KEY": self.openrouter_api_key,
+    #            "OPENROUTER_MODEL": self.openrouter_model,
+    #        },
+    #    }
+    #
+    
+    
     def get_provider_info(self, provider: str) -> dict:
         """获取特定提供商的信息"""
         providers = {
@@ -484,5 +489,34 @@ class Settings:
         }
         return providers.get(provider, {})
 
+    def get_provider_config(self, name: str) -> dict:
+        """
+        自动从环境变量读取 provider 配置。
+
+        "agnes" -> 扫描所有 AGNES_* 变量，转小写去掉前缀：
+            AGNES_API_KEY=x       -> {"api_key": "x"}
+            AGNES_IMAGE_MODEL=y   -> {"image_model": "y"}
+            AGNES_BASE_URL=z      -> {"base_url": "z"}
+
+        同时保留原值（大写）用于兼容旧代码：
+            -> {"api_key": "x", "AGNES_API_KEY": "x", ...}
+        """
+        if name in _PROVIDER_CACHE:
+            return _PROVIDER_CACHE[name]
+
+        prefix = f"{name.upper()}_"
+        cfg: dict = {}
+        for key, value in os.environ.items():
+            if not key.startswith(prefix):
+                continue
+            # 小写短名
+            short = key[len(prefix):].lower()
+            cfg[short] = value
+            # 大写全名（兼容旧 adapter 中 config.get("AGNES_API_KEY")）
+            cfg[key] = value
+
+        _PROVIDER_CACHE[name] = cfg
+        return cfg
+    
 
 settings = Settings()
