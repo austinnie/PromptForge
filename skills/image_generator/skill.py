@@ -6,16 +6,19 @@ image_generator - 图像生成 Skill
   - 图生图（image-to-image）
   - 多 API 提供商切换
   - 自动回退（API 失败时切换）
+
+数据流：
+  ImageGenerator → FallbackImageProvider → providers/adapters/*
+
+不再直接依赖 api_engines。
 """
 
-import os
-import time
-import json
 import logging
 import random
-from pathlib import Path
-from typing import Dict, Any, Optional, List
+import time
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, Optional
 
 from PIL import Image
 
@@ -32,34 +35,36 @@ DEFAULT_ENGINE = "agnes"
 class ImageGenerator:
     """图像生成 Skill（文生图 / 图生图）"""
 
-    # 可用的图像引擎
+    # 可用的图像引擎（保留给 GUI / CLI --engines 用，真实来源是 providers 注册表）
     AVAILABLE_ENGINES = [
         "agnes", "pollinations", "huggingface",
         "freeapi", "stability", "replicate",
     ]
 
-    # 引擎自动回退顺序
+    # 引擎自动回退顺序（保留向后兼容；真实 fallback 由 FallbackImageProvider 决定）
     FALLBACK_ORDER = ["agnes", "pollinations", "freeapi", "huggingface"]
 
     def __init__(self, config: Dict[str, Any] = None):
         self.config = config or {}
         self.name = "image_generator"
-        self.version = "1.0.0"
+        self.version = "1.1.0"  # 走 providers 版
         self._setup_logging()
         self._setup_config()
 
-        # ✅ 初始化图像引擎
-        self._image_engine = None
+        # ✅ 初始化图像 provider 链
+        self._provider = None
         self._image_engine_provider = None
         self._init_image_engine()
 
         logger.info("ImageGenerator 初始化完成")
 
+    # ==================== 配置 / 日志 ====================
+
     def _setup_logging(self):
         log_level = self.config.get("log_level", "INFO")
         logging.basicConfig(
             level=getattr(logging, log_level.upper()),
-            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         )
 
     def _setup_config(self):
@@ -69,10 +74,11 @@ class ImageGenerator:
             "image_height": DEFAULT_IMAGE_HEIGHT,
             "steps": DEFAULT_STEPS,
             "cfg": DEFAULT_CFG,
-            "engine": DEFAULT_ENGINE,
-            "negative_prompt": "text, watermark, signature, low quality, blurry, ugly, deformed",
-            "auto_fallback": True,   # API 失败时自动切换引擎
-            "engine_priority": self.FALLBACK_ORDER,  # 回退顺序
+            # engine=None → 用 settings.api_provider
+            "engine": None,
+            "negative_prompt": (
+                "text, watermark, signature, low quality, blurry, ugly, deformed"
+            ),
         }
         for key, value in defaults.items():
             if key not in self.config:
@@ -80,83 +86,42 @@ class ImageGenerator:
 
         Path(self.config["output_dir"]).mkdir(parents=True, exist_ok=True)
 
-    # ==================== 引擎初始化 ====================
+    # ==================== Provider 初始化 ====================
 
     def _init_image_engine(self):
-        """初始化图像引擎（支持多个提供商）"""
+        """初始化图像 provider 链（带 fallback）。"""
         try:
             import sys
             project_root = Path(__file__).parents[2]
             if str(project_root) not in sys.path:
                 sys.path.insert(0, str(project_root))
 
-            from api_engines import create_engine
-            from config.settings import settings
+            from skills._provider_helper import build_image_provider
 
-            engine_name = self.config.get("engine", DEFAULT_ENGINE)
-            self._image_engine = self._create_engine_by_name(engine_name, settings)
-            if self._image_engine:
-                self._image_engine_provider = engine_name
-                logger.info(f"✅ 图像引擎已加载: {engine_name} ({self._image_engine.get_name()})")
-            else:
-                logger.warning(f"⚠️ 图像引擎初始化失败: {engine_name}")
+            engine_name = self.config.get("engine")  # None 就让 helper 用默认
 
+            def _on_fallback(frm: str, to: str, err: Exception):
+                logger.warning(
+                    f"⚠️ provider {frm} 失败（{str(err).splitlines()[0][:80]}），"
+                    f"切换到 {to}"
+                )
+
+            self._provider = build_image_provider(
+                primary=engine_name,
+                on_fallback=_on_fallback,
+            )
+            self._image_engine_provider = self._provider.primary
+
+            logger.info(
+                f"✅ 图像 provider 链: {self._provider.chain} "
+                f"(primary={self._image_engine_provider})"
+            )
         except Exception as e:
-            logger.warning(f"⚠️ 图像引擎初始化异常: {e}")
-            self._image_engine = None
-
-    def _create_engine_by_name(self, engine_name: str, settings) -> Optional[Any]:
-        """根据引擎名称创建引擎实例"""
-        try:
-            from api_engines import create_engine
-
-            if engine_name == "agnes":
-                config = {
-                    "AGNES_API_KEY": settings.agnes_api_key,
-                    "AGNES_BASE_URL": settings.agnes_base_url,
-                    "AGNES_IMAGE_MODEL": settings.agnes_image_model,
-                }
-            elif engine_name == "pollinations":
-                config = {"POLLINATIONS_MODEL": settings.pollinations_model}
-            elif engine_name == "huggingface":
-                config = {
-                    "HF_API_TOKEN": settings.hf_api_token,
-                    "HF_MODEL": settings.hf_model,
-                }
-            elif engine_name == "stability":
-                config = {
-                    "STABILITY_API_KEY": settings.stability_api_key,
-                    "STABILITY_MODEL": settings.stability_model,
-                }
-            elif engine_name == "replicate":
-                config = {
-                    "REPLICATE_API_TOKEN": settings.replicate_api_token,
-                    "REPLICATE_MODEL": settings.replicate_model,
-                }
-            elif engine_name == "freeapi":
-                config = {"FREEAPI_MODEL": settings.freeapi_model}
-            else:
-                return None
-
-            return create_engine(engine_name, config)
-        except Exception as e:
-            logger.warning(f"⚠️ 创建引擎 {engine_name} 失败: {e}")
-            return None
-
-    def _switch_engine(self, engine_name: str) -> bool:
-        """切换到指定的引擎"""
-        try:
-            from config.settings import settings
-            engine = self._create_engine_by_name(engine_name, settings)
-            if engine:
-                self._image_engine = engine
-                self._image_engine_provider = engine_name
-                logger.info(f"🔄 已切换到引擎: {engine_name}")
-                return True
-            return False
-        except Exception as e:
-            logger.warning(f"⚠️ 切换引擎失败: {e}")
-            return False
+            logger.warning(f"⚠️ 图像 provider 初始化失败: {e}")
+            import traceback
+            traceback.print_exc()
+            self._provider = None
+            self._image_engine_provider = None
 
     # ==================== 文生图 ====================
 
@@ -165,14 +130,14 @@ class ImageGenerator:
         文生图
 
         Args:
-            prompt: 提示词
-            width: 宽度
-            height: 高度
-            steps: 推理步数
-            cfg: 引导强度
-            seed: 随机种子
+            prompt:   提示词
+            width:    宽度
+            height:   高度
+            steps:    推理步数
+            cfg:      引导强度
+            seed:     随机种子
             negative: 负面提示词
-            engine: 指定引擎（覆盖默认）
+            engine:   指定首选引擎（覆盖本次调用的 primary）
 
         Returns:
             {
@@ -195,20 +160,45 @@ class ImageGenerator:
             if not prompt:
                 return {"status": "error", "error": "prompt 不能为空"}
 
+            if self._provider is None:
+                return {
+                    "status": "error",
+                    "error": "图像 provider 不可用（检查 .env 里的 API key）",
+                }
+
             width = kwargs.get("width", self.config["image_width"])
             height = kwargs.get("height", self.config["image_height"])
             steps = kwargs.get("steps", self.config["steps"])
             cfg = kwargs.get("cfg", self.config["cfg"])
             seed = kwargs.get("seed", random.randint(1, 2**32 - 1))
             negative = kwargs.get("negative", self.config["negative_prompt"])
-            engine_name = kwargs.get("engine", self.config.get("engine"))
+            engine_name = kwargs.get("engine")  # 单次调用覆盖 primary
 
-            # ✅ 如果指定了引擎，切换
+            # ✅ 若指定了 engine 且与当前 primary 不同，临时换 primary
+            #    （不重建整个链，只是临时切换一次）
+            provider = self._provider
+            effective_engine = self._image_engine_provider
             if engine_name and engine_name != self._image_engine_provider:
-                self._switch_engine(engine_name)
+                from skills._provider_helper import build_image_provider
 
-            # ✅ 调用引擎生成
-            image = self._generate_with_fallback(
+                try:
+                    provider = build_image_provider(
+                        primary=engine_name,
+                        on_fallback=lambda f, t, e: logger.warning(
+                            f"⚠️ {f} 失败，切到 {t}: {str(e)[:80]}"
+                        ),
+                    )
+                    effective_engine = provider.primary
+                    logger.info(f"🔄 本次调用使用 provider: {effective_engine}")
+                except Exception as e:
+                    logger.warning(f"⚠️ 指定 provider {engine_name} 失败，用默认: {e}")
+                    provider = self._provider
+                    effective_engine = self._image_engine_provider
+
+            # ✅ 构造统一请求
+            from providers.base import ImageRequest
+
+            req = ImageRequest(
                 prompt=prompt,
                 negative=negative,
                 width=width,
@@ -218,10 +208,14 @@ class ImageGenerator:
                 seed=seed,
             )
 
-            if image is None:
-                return {"status": "error", "error": "图像生成失败（所有引擎均不可用）"}
+            image = provider.text_to_image(req)
 
-            # ✅ 保存图片
+            if image is None:
+                return {
+                    "status": "error",
+                    "error": "图像生成失败（所有 provider 均不可用）",
+                }
+
             image_path = self._save_image(image, prompt, "text2img")
 
             return {
@@ -230,7 +224,7 @@ class ImageGenerator:
                     "image_path": image_path,
                     "width": image.size[0],
                     "height": image.size[1],
-                    "engine": self._image_engine_provider,
+                    "engine": effective_engine,
                     "seed": seed,
                     "prompt": prompt,
                     "generated_at": datetime.now().isoformat(),
@@ -239,7 +233,7 @@ class ImageGenerator:
                 "metadata": {
                     "skill": self.name,
                     "version": self.version,
-                }
+                },
             }
 
         except Exception as e:
@@ -248,60 +242,20 @@ class ImageGenerator:
             traceback.print_exc()
             return {"status": "error", "error": str(e), "skill": self.name}
 
-    def _generate_with_fallback(self, prompt, negative, width, height, steps, cfg, seed) -> Optional[Image.Image]:
-        """带自动回退的图像生成"""
-        auto_fallback = self.config.get("auto_fallback", True)
-        priority = self.config.get("engine_priority", self.FALLBACK_ORDER)
-
-        # 首先尝试当前引擎
-        engines_to_try = [self._image_engine_provider]
-        if auto_fallback:
-            for eng in priority:
-                if eng not in engines_to_try:
-                    engines_to_try.append(eng)
-
-        for engine_name in engines_to_try:
-            if not engine_name:
-                continue
-
-            # 切换引擎（如果与当前不同）
-            if engine_name != self._image_engine_provider:
-                if not self._switch_engine(engine_name):
-                    continue
-
-            if not self._image_engine:
-                continue
-
-            try:
-                logger.info(f"🎨 使用引擎 {engine_name} 生成图片...")
-                image = self._image_engine.generate_single(
-                    prompt=prompt,
-                    negative=negative,
-                    width=width,
-                    height=height,
-                    steps=steps,
-                    cfg=cfg,
-                    seed=seed,
-                )
-                return image
-            except Exception as e:
-                logger.warning(f"⚠️ 引擎 {engine_name} 生成失败: {e}")
-                continue
-
-        return None
-
     # ==================== 图生图 ====================
 
-    def generate_from_image(self, prompt: str, image: Image.Image, **kwargs) -> Dict[str, Any]:
+    def generate_from_image(
+        self, prompt: str, image: Image.Image, **kwargs
+    ) -> Dict[str, Any]:
         """
         图生图
 
         Args:
-            prompt: 提示词
-            image: 参考图（PIL Image）
+            prompt:   提示词
+            image:    参考图（PIL Image）
             strength: 修改强度（0-1）
-            width/height: 输出尺寸
-            engine: 指定引擎
+            width/height: 输出尺寸（默认参考图尺寸）
+            engine:   指定首选引擎
 
         Returns:
             {
@@ -322,36 +276,62 @@ class ImageGenerator:
             if image is None:
                 return {"status": "error", "error": "image 不能为空"}
 
+            if self._provider is None:
+                return {
+                    "status": "error",
+                    "error": "图像 provider 不可用（检查 .env 里的 API key）",
+                }
+
             width = kwargs.get("width", image.size[0])
             height = kwargs.get("height", image.size[1])
             steps = kwargs.get("steps", self.config["steps"])
             cfg = kwargs.get("cfg", self.config["cfg"])
             strength = kwargs.get("strength", 0.7)
             seed = kwargs.get("seed", random.randint(1, 2**32 - 1))
-            engine_name = kwargs.get("engine", self.config.get("engine"))
+            negative = kwargs.get("negative", self.config["negative_prompt"])
+            engine_name = kwargs.get("engine")
 
+            # ✅ 临时切换 primary（同 generate）
+            provider = self._provider
+            effective_engine = self._image_engine_provider
             if engine_name and engine_name != self._image_engine_provider:
-                self._switch_engine(engine_name)
+                from skills._provider_helper import build_image_provider
 
-            # ✅ 检查引擎是否支持图生图
-            if not hasattr(self._image_engine, "image_to_image"):
+                try:
+                    provider = build_image_provider(
+                        primary=engine_name,
+                        on_fallback=lambda f, t, e: logger.warning(
+                            f"⚠️ {f} 失败，切到 {t}: {str(e)[:80]}"
+                        ),
+                    )
+                    effective_engine = provider.primary
+                    logger.info(f"🔄 本次调用使用 provider: {effective_engine}")
+                except Exception as e:
+                    logger.warning(f"⚠️ 指定 provider {engine_name} 失败，用默认: {e}")
+
+            # ✅ 检查 provider 是否支持图生图
+            #    adapter 里如果没有 image_to_image 方法，调用会 AttributeError
+            if not hasattr(provider, "image_to_image"):
                 return {
                     "status": "error",
-                    "error": f"{self._image_engine_provider} 不支持图生图",
+                    "error": f"{effective_engine} 不支持图生图",
                 }
 
-            logger.info(f"🎨 使用引擎 {self._image_engine_provider} 图生图...")
+            from providers.base import ImageRequest
 
-            result_image = self._image_engine.image_to_image(
+            req = ImageRequest(
                 prompt=prompt,
-                image=image,
-                strength=strength,
+                negative=negative,
                 width=width,
                 height=height,
                 steps=steps,
                 cfg=cfg,
                 seed=seed,
+                reference=image,
+                strength=strength,
             )
+
+            result_image = provider.image_to_image(req)
 
             image_path = self._save_image(result_image, prompt, "img2img")
 
@@ -361,7 +341,7 @@ class ImageGenerator:
                     "image_path": image_path,
                     "width": result_image.size[0],
                     "height": result_image.size[1],
-                    "engine": self._image_engine_provider,
+                    "engine": effective_engine,
                     "strength": strength,
                     "seed": seed,
                     "prompt": prompt,
@@ -371,7 +351,7 @@ class ImageGenerator:
                 "metadata": {
                     "skill": self.name,
                     "version": self.version,
-                }
+                },
             }
 
         except Exception as e:
