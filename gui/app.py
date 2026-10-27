@@ -197,20 +197,7 @@ class ChatApp:
         #self.provider_combo.pack(side=tk.LEFT, padx=2)
         #self.provider_combo.bind('<<ComboboxSelected>>', self._on_provider_changed)
 
-        from providers import list_providers, get_meta
 
-        def _refresh_provider_list(self):
-            """从注册表读 provider 列表，按免费优先排序"""
-            names = list_providers()
-            # 免费/需 key 分组，GUI 更好看
-            def sort_key(n):
-                m = get_meta(n)
-                return (not m.get("free", False), m.get("requires_key", False), n)
-            names.sort(key=sort_key)
-
-            self.provider_combo["values"] = names
-            if self.provider_var.get() not in names and names:
-                self.provider_var.set(names[0])
 
         # 初始化时
         self.provider_combo = ttk.Combobox(
@@ -220,6 +207,8 @@ class ChatApp:
             width=18,
             state="readonly",
         )
+        self.provider_combo.pack(side=tk.LEFT, padx=2)
+        self.provider_combo.bind('<<ComboboxSelected>>', self._on_provider_changed)
         self._refresh_provider_list()
         
         self.mode_hint = ttk.Label(
@@ -2043,6 +2032,39 @@ class ChatApp:
         else:
             self._append_message("system", "⏸️ 没有正在播放的媒体")
             
+            
+    def _refresh_provider_list(self):
+        """从 providers 注册表读 image provider 列表，按免费优先排序。"""
+        try:
+            from providers import list_providers, get_meta
+        except Exception as e:
+            print(f"⚠️ 无法加载 providers: {e}")
+            return
+
+        # 只列支持 image 的 provider
+        names = list_providers("image")
+
+        if not names:
+            self.provider_combo["values"] = ["agnes"]
+            self.provider_var.set("agnes")
+            return
+
+        def sort_key(n):
+            m = get_meta(n)
+            return (
+                not m.get("free", False),
+                m.get("requires_key", False),
+                n,
+            )
+
+        names.sort(key=sort_key)
+        self.provider_combo["values"] = names
+
+        current = self.provider_var.get()
+        if current not in names:
+            self.provider_var.set(names[0])
+
+            
     # ============================================================
     # 模式切换
     # ============================================================
@@ -2059,7 +2081,10 @@ class ChatApp:
             self._append_message("system", f"☁️ 切换到 API 模式 ({self.provider_var.get()})")
             
             provider = self.provider_var.get()
-            config = self.settings.get_api_config().get(provider, {})
+            try:
+                config = self.settings.get_provider_config(provider)
+            except Exception:
+                config = {}
             no_key_providers = ["pollinations", "freeapi"]
             if provider in no_key_providers:
                 self._append_message("system", f"✅ {provider} 无需 API Key，可直接使用")
@@ -2105,7 +2130,10 @@ class ChatApp:
             self.mode_hint.config(text=f"☁️ API: {provider}", foreground="green")
             self._append_message("system", f"☁️ 切换到 {provider} API")
             
-            config = self.settings.get_api_config().get(provider, {})
+            try:
+                config = self.settings.get_provider_config(provider)
+            except Exception:
+                config = {}
             no_key_providers = ["pollinations", "freeapi"]
             if provider in no_key_providers:
                 self._append_message("system", f"✅ {provider} 无需 API Key，可直接使用")
