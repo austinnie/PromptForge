@@ -106,7 +106,7 @@ class PollinationsAdapter(BaseProvider):
         # 有 key 才创建旧引擎；无 key 完全走匿名 HTTP
         self._engine = None
         if self.api_key:
-            from api_engines.pollinations import PollinationsEngine
+            from providers._impl.pollinations import PollinationsEngine
             self._engine = PollinationsEngine(
                 api_key=self.api_key,
                 image_model=image_model,

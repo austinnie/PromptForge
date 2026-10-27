@@ -52,7 +52,7 @@ class AgnesAdapter(BaseProvider):
             from ..errors import ProviderConfigError
             raise ProviderConfigError("Agnes 需要 api_key (AGNES_API_KEY)")
         # 延迟导入，避免包加载顺序问题
-        from api_engines.agnes import AgnesEngine
+        from providers._impl.agnes import AgnesEngine
         self._engine = AgnesEngine(
             api_key=api_key,
             base_url=base_url,
