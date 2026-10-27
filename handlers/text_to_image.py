@@ -82,11 +82,78 @@ class TextToImageHandler(BaseHandler):
         
     # ==================== 分发 ====================    
     def handle(self, intent: Dict[str, Any]) -> None:
-        if self.app.settings.generation_mode == "api":
-            self._handle_api(intent)
-        else:
-            self._handle_local(intent)
-    
+        """统一的文生图处理入口（自动适配本地/API）"""
+        if self.is_generating:
+            self._reply("⏳ 正在生成中，请稍候...")
+            return
+
+        prompt = intent.get("prompt", "")
+        original_text = intent.get("original_text", "")
+        
+        if not prompt:
+            self._reply("❌ 请描述您想生成的图片内容")
+            return
+
+        # 安全检查
+        if self.app.settings.safe_mode:
+            is_safe, _ = SafetyChecker.check(prompt)
+            if not is_safe:
+                prompt = SafetyChecker.sanitize(prompt)
+                if not prompt:
+                    self._reply("🛡️ 检测到不安全内容，已阻止生成")
+                    return
+
+        params = self._estimate_params(original_text or prompt)
+        # 本地模式下，不要强制放大 2 倍，避免显存爆炸
+        multiplier = 1 if self.app.settings.generation_mode == "local" else 2
+        width = min(params["width"] * multiplier, 1024)
+        height = min(params["height"] * multiplier, 1024)
+        steps = max(params["steps"], 20)
+        cfg = params["cfg"]
+
+        self.is_generating = True
+        self.cancel_flag = False
+
+        try:
+            # ✅ 核心改造：通过 Backend 获取引擎
+            from core.backend import build_backend
+            backend = build_backend()
+            
+            self._update_status(f"🎨 {backend.get_name()} 生成中...")
+            
+            import random
+            req = ImageRequest(
+                prompt=prompt,
+                negative=self._build_negative(original_text),
+                width=width,
+                height=height,
+                steps=steps,
+                cfg=cfg,
+                seed=random.randint(1, 2**32 - 1),
+            )
+            
+            image = backend.text_to_image(req)
+            
+            # 保存
+            filepath = self._save_image(image, prompt[:50], backend.get_name().split()[0].lower())
+            
+            self._reply(f"✅ 图片已生成！\n📁 {os.path.basename(filepath)}")
+            self._update_status("✅ 生成完成")
+
+            if self.context:
+                self.context.update(
+                    {"type": "text_to_image", "prompt": prompt},
+                    {"image_path": filepath},
+                )
+
+        except Exception as e:
+            self._reply(f"❌ 生成失败: {e}")
+            self._update_status("❌ 生成失败")
+            import traceback
+            traceback.print_exc()
+        finally:
+            self.is_generating = False
+            
     def _handle_local(self, intent: Dict[str, Any]) -> None:
         """本地模式生成"""
         if not self._ensure_model_loaded():
