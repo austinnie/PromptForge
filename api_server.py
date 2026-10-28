@@ -27,6 +27,7 @@ except ImportError:
 
 
 from providers.base import TextRequest
+from providers.base import ImageRequest
 from providers.registry import create
     
 # 配置日志
@@ -51,6 +52,7 @@ analyzer = IntentAnalyzer()
 class ChatLLMRequest(BaseModel):
     text: str
     system_prompt: str = "You are a helpful assistant."
+    model: str = "qwen2.5:7b"   # ★ 新增：允许前端指定模型
 
 
 class ActionRequest(BaseModel):
@@ -105,15 +107,26 @@ async def run_video_generator(req: ActionRequest):
 @app.post("/api/chat_llm")
 async def chat_llm(req: ChatLLMRequest):
     try:
-        # 获取 Ollama provider (如果没有启动则抛错)
-        provider = create("ollama_local", config={"model": "qwen"})
+        provider = create("ollama_local", config={"model": req.model}) # ★ 使用前端传来的模型
         text_req = TextRequest(prompt=req.text, system_prompt=req.system_prompt)
         
-        # 防阻塞
         response_text = await run_in_threadpool(provider.chat, text_req)
         return {"status": "success", "response": response_text}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/llm_models")
+def get_llm_models():
+    """获取本地 Ollama 可用模型列表"""
+    try:
+        import requests
+        # 禁用代理
+        res = requests.get("http://127.0.0.1:11434/api/tags", timeout=5, proxies={"http": None, "https": None})
+        res.raise_for_status()
+        models = [m["name"] for m in res.json().get("models", [])]
+        return {"status": "success", "data": models}
+    except Exception as e:
+        return {"status": "error", "message": f"获取 Ollama 模型失败: {e}"}
         
 @app.get("/api/models")
 def get_models():

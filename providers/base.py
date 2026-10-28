@@ -59,7 +59,21 @@ class AudioRequest:
     output_format: str = "mp3"
     duration: Optional[float] = None
 
+@dataclass
+class TextRequest:
+    prompt: str
+    system_prompt: str = ""
+    temperature: float = 0.7
+    max_tokens: Optional[int] = None
+    stream: bool = False
 
+@runtime_checkable
+class TextProvider(Protocol):
+    """文本生成/对话能力"""
+    provider_name: str
+
+    def chat(self, req: TextRequest) -> str: ...
+    
 # ============================================================
 # Provider 协议
 # ============================================================

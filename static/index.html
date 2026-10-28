@@ -5,18 +5,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PromptForge 终极工作台</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <style>input, textarea, select { font-size: 16px !important; }</style>
+    <style>
+        input, textarea, select { font-size: 16px !important; }
+        /* 自定义滚动条 */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+    </style>
 </head>
 <body class="bg-gray-900 text-white min-h-screen p-4 flex flex-col gap-4 font-sans max-w-4xl mx-auto">
 
+    <!-- 顶部状态栏 -->
     <header class="text-center py-2 border-b border-gray-700 flex justify-between items-center">
         <h1 class="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">🔥 PromptForge</h1>
-        <span class="text-xs px-2 py-1 bg-green-900 text-green-300 rounded border border-green-700" id="status-text">已连接</span>
+        <span class="text-xs px-2 py-1 bg-green-900 text-green-300 rounded border border-green-700 shadow-sm" id="status-text">已连接</span>
     </header>
 
-    <!-- 顶部：模式切换 -->
-    <div class="flex bg-gray-800 rounded-lg p-1">
-        <button onclick="switchMode('image')" id="tab-image" class="flex-1 py-2 rounded-md bg-blue-600 text-sm font-bold transition">🎨 图像生成</button>
+    <!-- 模式切换 Tab -->
+    <div class="flex bg-gray-800 rounded-lg p-1 shadow-lg">
+        <button onclick="switchMode('image')" id="tab-image" class="flex-1 py-2 rounded-md bg-blue-600 text-sm font-bold transition shadow-md">🎨 图像生成</button>
         <button onclick="switchMode('chat')" id="tab-chat" class="flex-1 py-2 rounded-md text-gray-400 text-sm font-bold hover:bg-gray-700 transition">💬 文本对话</button>
     </div>
 
@@ -24,21 +32,32 @@
     <section id="image-config" class="bg-gray-800 rounded-xl p-4 shadow-lg grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
             <label class="text-sm text-gray-400 mb-1 block">🎨 预设风格</label>
-            <select id="preset-select" class="w-full bg-gray-700 rounded-lg p-2 text-sm">
+            <select id="preset-select" class="w-full bg-gray-700 rounded-lg p-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500">
                 <option value="">（不使用预设）</option>
             </select>
         </div>
         <div>
             <label class="text-sm text-gray-400 mb-1 block">🔌 生图引擎</label>
-            <select id="provider-select" class="w-full bg-gray-700 rounded-lg p-2 text-sm">
-                <option value="local_sd">本地算力</option>
-                <option value="agnes">云端 API</option>
+            <select id="provider-select" class="w-full bg-gray-700 rounded-lg p-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500">
+                <option value="local_sd">本地算力 (Local SD)</option>
+                <option value="agnes">云端 API (Agnes)</option>
+                <option value="pollinations">云端 API (Pollinations)</option>
             </select>
         </div>
         <div>
             <label class="text-sm text-gray-400 mb-1 block">🎨 本地模型</label>
-            <select id="model-select" class="w-full bg-gray-700 rounded-lg p-2 text-sm">
+            <select id="model-select" class="w-full bg-gray-700 rounded-lg p-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500">
                 <option value="">加载中...</option>
+            </select>
+        </div>
+    </section>
+
+    <!-- 文本对话配置区 -->
+    <section id="chat-config" class="hidden bg-gray-800 rounded-xl p-4 shadow-lg">
+        <div>
+            <label class="text-sm text-gray-400 mb-1 block">🧠 本地大模型 (Ollama)</label>
+            <select id="llm-model-select" class="w-full bg-gray-700 rounded-lg p-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500">
+                <option value="qwen2.5:7b">加载中...</option>
             </select>
         </div>
     </section>
@@ -49,7 +68,7 @@
             class="w-full bg-gray-700 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"></textarea>
         
         <div class="flex gap-2">
-            <button onclick="sendAction('chat')" id="btn-chat" class="hidden flex-1 bg-gray-600 hover:bg-gray-500 font-medium py-2 rounded-lg text-sm transition">
+            <button onclick="sendAction('chat')" id="btn-chat" class="hidden flex-1 bg-green-600 hover:bg-green-500 font-bold py-2 rounded-lg text-sm transition shadow-lg shadow-green-500/30">
                 💬 发送对话
             </button>
             <button onclick="sendAction('image')" id="btn-image" class="flex-[2] bg-blue-600 hover:bg-blue-500 font-bold py-2 rounded-lg text-sm transition shadow-lg shadow-blue-500/30">
@@ -61,13 +80,13 @@
     <!-- 结果展示区 -->
     <section class="flex-1 flex flex-col gap-4">
         <!-- 文本回复（用于对话或接口状态） -->
-        <div id="chat-result" class="hidden bg-gray-800 rounded-xl p-4 text-sm text-gray-200 whitespace-pre-wrap leading-relaxed"></div>
+        <div id="chat-result" class="hidden bg-gray-800 rounded-xl p-4 text-sm text-gray-200 whitespace-pre-wrap leading-relaxed shadow-lg border border-gray-700"></div>
         
         <!-- 图片显示 -->
-        <div id="image-container" class="hidden flex-1 flex flex-col bg-gray-800 rounded-xl p-2 relative min-h-[300px]">
-            <div id="loading" class="absolute inset-0 flex flex-col items-center justify-center bg-gray-800/80 hidden z-10">
+        <div id="image-container" class="hidden flex-1 flex flex-col bg-gray-800 rounded-xl p-2 relative min-h-[300px] shadow-lg border border-gray-700">
+            <div id="loading" class="absolute inset-0 flex flex-col items-center justify-center bg-gray-800/90 rounded-xl hidden z-10">
                 <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-500 mb-2"></div>
-                <p id="loading-text" class="text-xs text-blue-400">正在生成，请耐心等待...</p>
+                <p id="loading-text" class="text-xs text-blue-400 font-medium">正在生成，请耐心等待...</p>
             </div>
             <img id="result-image" class="w-full h-auto rounded-lg object-contain" src="" alt="生成的图片">
             <p id="image-caption" class="text-xs text-center text-gray-400 mt-2"></p>
@@ -84,19 +103,22 @@
             const tabImg = document.getElementById('tab-image');
             const tabChat = document.getElementById('tab-chat');
             const configImg = document.getElementById('image-config');
+            const configChat = document.getElementById('chat-config');
             const btnImg = document.getElementById('btn-image');
             const btnChat = document.getElementById('btn-chat');
 
             if (mode === 'image') {
-                tabImg.className = "flex-1 py-2 rounded-md bg-blue-600 text-sm font-bold transition";
+                tabImg.className = "flex-1 py-2 rounded-md bg-blue-600 text-sm font-bold transition shadow-md";
                 tabChat.className = "flex-1 py-2 rounded-md text-gray-400 text-sm font-bold hover:bg-gray-700 transition";
                 configImg.classList.remove('hidden');
+                configChat.classList.add('hidden');
                 btnImg.classList.remove('hidden');
                 btnChat.classList.add('hidden');
             } else {
-                tabChat.className = "flex-1 py-2 rounded-md bg-green-600 text-sm font-bold transition";
+                tabChat.className = "flex-1 py-2 rounded-md bg-green-600 text-sm font-bold transition shadow-md";
                 tabImg.className = "flex-1 py-2 rounded-md text-gray-400 text-sm font-bold hover:bg-gray-700 transition";
                 configImg.classList.add('hidden');
+                configChat.classList.remove('hidden');
                 btnImg.classList.add('hidden');
                 btnChat.classList.remove('hidden');
             }
@@ -109,6 +131,9 @@
         async function sendAction(type) {
             const prompt = document.getElementById('prompt-input').value.trim();
             if (!prompt && type === 'chat') return alert("请输入对话内容");
+            if (!prompt && type === 'image' && !document.getElementById('preset-select').value) {
+                return alert("请输入提示词或选择预设！");
+            }
 
             if (type === 'chat') {
                 await sendChatLLM(prompt);
@@ -117,17 +142,19 @@
             }
         }
 
-        // 对话
+        // ================= 文本对话 =================
         async function sendChatLLM(text) {
             const chatResult = document.getElementById('chat-result');
+            const model = document.getElementById('llm-model-select').value;
+            
             chatResult.classList.remove('hidden');
             document.getElementById('image-container').classList.add('hidden');
-            chatResult.textContent = "⏳ 正在思考...";
+            chatResult.textContent = `⏳ 正在使用 ${model} 思考...`;
 
             try {
                 const res = await fetch(`${API_BASE}/api/chat_llm`, {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text: text })
+                    body: JSON.stringify({ text: text, model: model })
                 });
                 const data = await res.json();
                 if (data.status === 'success') {
@@ -140,13 +167,11 @@
             }
         }
 
-        // 生图
+        // ================= 图像生成 =================
         async function generateImage(prompt) {
             const preset = document.getElementById('preset-select').value;
             const provider = document.getElementById('provider-select').value;
             const modelId = document.getElementById('model-select').value;
-
-            if (!prompt && !preset) return alert("请输入提示词或选择预设！");
 
             const imageContainer = document.getElementById('image-container');
             const loading = document.getElementById('loading');
@@ -159,6 +184,7 @@
             loading.classList.remove('hidden');
             imgEl.src = ''; caption.textContent = '';
 
+            // 计时器防超时提示
             let seconds = 0;
             const loadingText = document.getElementById('loading-text');
             loadingText.textContent = "正在生成，请耐心等待...";
@@ -193,9 +219,9 @@
             }
         }
 
-        // 加载模型与预设 (复用之前的代码)
+        // ================= 初始化数据加载 =================
         async function loadInitData() {
-            // 加载模型
+            // 1. 加载本地生图模型
             try {
                 const res = await fetch(`${API_BASE}/api/models`);
                 const data = await res.json();
@@ -208,10 +234,12 @@
                         opt.textContent = `[${m.base.toUpperCase()}] ${m.name}`;
                         select.appendChild(opt);
                     });
+                } else {
+                    select.innerHTML = '<option value="">无可用模型</option>';
                 }
-            } catch (err) { console.error(err); }
+            } catch (err) { console.error("本地模型加载失败", err); }
 
-            // 加载预设
+            // 2. 加载图像预设
             try {
                 const res = await fetch(`${API_BASE}/api/presets`);
                 const data = await res.json();
@@ -234,9 +262,31 @@
                         select.appendChild(optgroup);
                     });
                 }
-            } catch (err) { console.error(err); }
+            } catch (err) { console.error("预设加载失败", err); }
+
+            // 3. 加载 Ollama 文本模型
+            try {
+                const res = await fetch(`${API_BASE}/api/llm_models`);
+                const data = await res.json();
+                const select = document.getElementById('llm-model-select');
+                if (data.status === 'success' && data.data && data.data.length > 0) {
+                    select.innerHTML = '';
+                    data.data.forEach(m => {
+                        const opt = document.createElement('option');
+                        opt.value = m;
+                        opt.textContent = m;
+                        select.appendChild(opt);
+                    });
+                } else {
+                    select.innerHTML = '<option value="qwen2.5:7b">默认 (qwen2.5:7b)</option>';
+                }
+            } catch (err) { 
+                console.error("Ollama模型加载失败", err); 
+                document.getElementById('llm-model-select').innerHTML = '<option value="qwen2.5:7b">默认 (qwen2.5:7b)</option>';
+            }
         }
 
+        // 页面加载完成后初始化
         window.onload = loadInitData;
     </script>
 </body>
