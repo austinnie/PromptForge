@@ -1,3 +1,7 @@
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from skills._manifest import load_all_manifests, import_skill_class
 
 ms = load_all_manifests()
