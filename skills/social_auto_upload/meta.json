@@ -1,22 +1,82 @@
 {
   "name": "social_auto_upload",
   "display_name": "📤 多平台分发",
-  "class": "skills.SocialAutoUpload",
-  "keywords": ["一键分发", "上传到小红书", "上传到抖音", "发布到B站"],
+  "class": "skills.social_auto_upload.skill.SocialAutoUpload",
+  "keywords": [
+    "一键分发",
+    "上传到小红书",
+    "上传到抖音",
+    "发布到B站"
+  ],
   "system_hint": "📤 分发中...",
   "inputs": [
-    {"name": "platform", "type": "choice", "required": true,  "label": "平台",
-     "choices": ["douyin", "kuaishou", "xiaohongshu", "bilibili", "tencent", "alipay", "weibo", "hupu", "youtube", "baijiahao"]},
-    {"name": "images",   "type": "list",   "required": false, "label": "图片路径列表"},
-    {"name": "file",     "type": "file",   "required": false, "label": "视频文件"},
-    {"name": "title",    "type": "string", "required": true,  "label": "标题"},
-    {"name": "note",     "type": "string", "required": false, "label": "正文"},
-    {"name": "tags",     "type": "list",   "required": false, "label": "标签"},
-    {"name": "account",  "type": "string", "required": false, "label": "账号名", "default": "test"}
+    {
+      "name": "platform",
+      "type": "choice",
+      "required": true,
+      "label": "平台",
+      "choices": [
+        "douyin",
+        "kuaishou",
+        "xiaohongshu",
+        "bilibili",
+        "tencent",
+        "alipay",
+        "weibo",
+        "hupu",
+        "youtube",
+        "baijiahao"
+      ]
+    },
+    {
+      "name": "images",
+      "type": "list",
+      "required": false,
+      "label": "图片路径列表"
+    },
+    {
+      "name": "file",
+      "type": "file",
+      "required": false,
+      "label": "视频文件"
+    },
+    {
+      "name": "title",
+      "type": "string",
+      "required": true,
+      "label": "标题"
+    },
+    {
+      "name": "note",
+      "type": "string",
+      "required": false,
+      "label": "正文"
+    },
+    {
+      "name": "tags",
+      "type": "list",
+      "required": false,
+      "label": "标签"
+    },
+    {
+      "name": "account",
+      "type": "string",
+      "required": false,
+      "label": "账号名",
+      "default": "test"
+    }
   ],
   "outputs": [
-    {"name": "platform", "type": "str", "label": "平台"},
-    {"name": "file",     "type": "str", "label": "文件"}
+    {
+      "name": "platform",
+      "type": "str",
+      "label": "平台"
+    },
+    {
+      "name": "file",
+      "type": "str",
+      "label": "文件"
+    }
   ],
   "depends_on": [],
   "chainable": true,

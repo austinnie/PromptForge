@@ -1,17 +1,47 @@
 {
   "name": "search_engine",
   "display_name": "🔍 匿名搜索",
-  "class": "skills.SearchEngine",
-  "keywords": ["帮我搜图", "搜一下图片", "搜索图片", "找找图"],
+  "class": "skills.search_engine.skill.SearchEngine",
+  "keywords": [
+    "帮我搜图",
+    "搜一下图片",
+    "搜索图片",
+    "找找图"
+  ],
   "system_hint": "🔍 搜索中...",
   "inputs": [
-    {"name": "query", "type": "string", "required": true,  "label": "关键词"},
-    {"name": "kind",  "type": "choice", "required": false, "label": "类型",
-     "choices": ["images", "videos", "text"], "default": "images"},
-    {"name": "limit", "type": "int",    "required": false, "label": "数量", "default": 20}
+    {
+      "name": "query",
+      "type": "string",
+      "required": true,
+      "label": "关键词"
+    },
+    {
+      "name": "kind",
+      "type": "choice",
+      "required": false,
+      "label": "类型",
+      "choices": [
+        "images",
+        "videos",
+        "text"
+      ],
+      "default": "images"
+    },
+    {
+      "name": "limit",
+      "type": "int",
+      "required": false,
+      "label": "数量",
+      "default": 20
+    }
   ],
   "outputs": [
-    {"name": "count", "type": "int", "label": "结果数"}
+    {
+      "name": "count",
+      "type": "int",
+      "label": "结果数"
+    }
   ],
   "depends_on": [],
   "chainable": false,

@@ -1,21 +1,66 @@
 {
   "name": "daily_pipeline",
   "display_name": "📅 每日任务",
-  "class": "skills.DailyPipeline",
-  "keywords": ["每日任务", "每日生图", "执行每日", "今日生图"],
+  "class": "skills.daily_pipeline.skill.DailyPipeline",
+  "keywords": [
+    "每日任务",
+    "每日生图",
+    "执行每日",
+    "今日生图"
+  ],
   "system_hint": "📅 执行每日管线...",
   "inputs": [
-    {"name": "count",      "type": "int",    "required": false, "label": "张数", "default": 6},
-    {"name": "theme",      "type": "string", "required": false, "label": "排版主题", "default": "newspaper"},
-    {"name": "vary_preset","type": "bool",   "required": false, "label": "每张换预设", "default": false},
-    {"name": "publish",    "type": "bool",   "required": false, "label": "推送公众号", "default": true}
+    {
+      "name": "count",
+      "type": "int",
+      "required": false,
+      "label": "张数",
+      "default": 6
+    },
+    {
+      "name": "theme",
+      "type": "string",
+      "required": false,
+      "label": "排版主题",
+      "default": "newspaper"
+    },
+    {
+      "name": "vary_preset",
+      "type": "bool",
+      "required": false,
+      "label": "每张换预设",
+      "default": false
+    },
+    {
+      "name": "publish",
+      "type": "bool",
+      "required": false,
+      "label": "推送公众号",
+      "default": true
+    }
   ],
   "outputs": [
-    {"name": "image_dir",   "type": "dir",  "label": "图片目录"},
-    {"name": "article_dir", "type": "dir",  "label": "排版输出"},
-    {"name": "preview_path","type": "file", "label": "浏览器预览"}
+    {
+      "name": "image_dir",
+      "type": "dir",
+      "label": "图片目录"
+    },
+    {
+      "name": "article_dir",
+      "type": "dir",
+      "label": "排版输出"
+    },
+    {
+      "name": "preview_path",
+      "type": "file",
+      "label": "浏览器预览"
+    }
   ],
-  "depends_on": ["image_generator", "image_curator", "wechat_formatter"],
+  "depends_on": [
+    "image_generator",
+    "image_curator",
+    "wechat_formatter"
+  ],
   "chainable": true,
   "version": "1.0.0",
   "description": "一键生图 → 鉴赏 → 排版 → 推公众号草稿箱"

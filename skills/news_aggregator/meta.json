@@ -1,18 +1,56 @@
 {
   "name": "news_aggregator",
   "display_name": "📰 新闻简报",
-  "class": "skills.NewsAggregator",
-  "keywords": ["今日新闻", "新闻简报", "抓新闻", "看新闻", "新闻聚合"],
+  "class": "skills.news_aggregator.skill.NewsAggregator",
+  "keywords": [
+    "今日新闻",
+    "新闻简报",
+    "抓新闻",
+    "看新闻",
+    "新闻聚合"
+  ],
   "system_hint": "📰 正在抓取新闻...",
   "inputs": [
-    {"name": "category", "type": "choice", "required": false, "label": "分类",
-     "choices": ["tech", "business", "world", "china", "usa", "japan", "korea"], "default": "tech"},
-    {"name": "top_n",    "type": "int",    "required": false, "label": "最多条数", "default": 15}
+    {
+      "name": "category",
+      "type": "choice",
+      "required": false,
+      "label": "分类",
+      "choices": [
+        "tech",
+        "business",
+        "world",
+        "china",
+        "usa",
+        "japan",
+        "korea"
+      ],
+      "default": "tech"
+    },
+    {
+      "name": "top_n",
+      "type": "int",
+      "required": false,
+      "label": "最多条数",
+      "default": 15
+    }
   ],
   "outputs": [
-    {"name": "report_file",  "type": "file", "label": "简报文本"},
-    {"name": "total_fetched","type": "int",  "label": "抓取条数"},
-    {"name": "unique_count", "type": "int",  "label": "去重后"}
+    {
+      "name": "report_file",
+      "type": "file",
+      "label": "简报文本"
+    },
+    {
+      "name": "total_fetched",
+      "type": "int",
+      "label": "抓取条数"
+    },
+    {
+      "name": "unique_count",
+      "type": "int",
+      "label": "去重后"
+    }
   ],
   "depends_on": [],
   "chainable": true,

@@ -1,23 +1,58 @@
 {
   "name": "github_repo_daily",
   "display_name": "🐙 GitHub 日报",
-  "class": "skills.GitHubRepoDaily",
+  "class": "skills.github_repo_daily.skill.GitHubRepoDaily",
   "keywords": [
-    "github推荐", "github仓库", "github项目", "github trending",
-    "每日仓库", "推荐仓库", "推荐项目", "仓库推荐", "项目推荐",
-    "github 日报", "github日报", "开源项目推荐"
+    "github推荐",
+    "github仓库",
+    "github项目",
+    "github trending",
+    "每日仓库",
+    "推荐仓库",
+    "推荐项目",
+    "仓库推荐",
+    "项目推荐",
+    "github 日报",
+    "github日报",
+    "开源项目推荐"
   ],
   "system_hint": "🐙 正在抓取今日 GitHub 推荐仓库...",
   "inputs": [
-    {"name": "wechat_publish", "type": "bool",   "required": false, "label": "推送公众号草稿箱", "default": true},
-    {"name": "wechat_theme",   "type": "string", "required": false, "label": "排版主题",          "default": "newspaper"}
+    {
+      "name": "wechat_publish",
+      "type": "bool",
+      "required": false,
+      "label": "推送公众号草稿箱",
+      "default": true
+    },
+    {
+      "name": "wechat_theme",
+      "type": "string",
+      "required": false,
+      "label": "排版主题",
+      "default": "newspaper"
+    }
   ],
   "outputs": [
-    {"name": "repo",         "type": "str",  "label": "仓库名"},
-    {"name": "repo_url",     "type": "url",  "label": "仓库链接"},
-    {"name": "article_path", "type": "file", "label": "文章"}
+    {
+      "name": "repo",
+      "type": "str",
+      "label": "仓库名"
+    },
+    {
+      "name": "repo_url",
+      "type": "url",
+      "label": "仓库链接"
+    },
+    {
+      "name": "article_path",
+      "type": "file",
+      "label": "文章"
+    }
   ],
-  "depends_on": ["wechat_formatter"],
+  "depends_on": [
+    "wechat_formatter"
+  ],
   "chainable": true,
   "version": "1.1.0",
   "description": "每天从 GitHub Trending 选一个仓库，用 LLM 生成介绍文章，推送到公众号草稿箱"

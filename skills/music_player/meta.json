@@ -1,19 +1,67 @@
 {
   "name": "music_player",
   "display_name": "🎧 音乐播放",
-  "class": "skills.MusicPlayer",
-  "keywords": ["播放音乐", "听歌", "放首歌", "打开音乐"],
+  "class": "skills.music_player.skill.MusicPlayer",
+  "keywords": [
+    "播放音乐",
+    "听歌",
+    "放首歌",
+    "打开音乐"
+  ],
   "system_hint": "🎧 搜索音乐中...",
   "inputs": [
-    {"name": "action", "type": "choice", "required": true,  "label": "操作",
-     "choices": ["search", "play", "download", "scan", "playlist", "pause", "resume", "stop", "status"], "default": "search"},
-    {"name": "query",  "type": "string", "required": false, "label": "搜索关键词"},
-    {"name": "mood",   "type": "choice", "required": false, "label": "情绪（playlist 用）",
-     "choices": ["happy", "sad", "relax", "energetic", "focus", "romantic", "nostalgic"], "default": "relax"}
+    {
+      "name": "action",
+      "type": "choice",
+      "required": true,
+      "label": "操作",
+      "choices": [
+        "search",
+        "play",
+        "download",
+        "scan",
+        "playlist",
+        "pause",
+        "resume",
+        "stop",
+        "status"
+      ],
+      "default": "search"
+    },
+    {
+      "name": "query",
+      "type": "string",
+      "required": false,
+      "label": "搜索关键词"
+    },
+    {
+      "name": "mood",
+      "type": "choice",
+      "required": false,
+      "label": "情绪（playlist 用）",
+      "choices": [
+        "happy",
+        "sad",
+        "relax",
+        "energetic",
+        "focus",
+        "romantic",
+        "nostalgic"
+      ],
+      "default": "relax"
+    }
   ],
   "outputs": [
-    {"name": "total",  "type": "int",  "label": "本地曲目数"},
-    {"name": "saved",  "type": "file", "label": "下载文件"}
+    {
+      "name": "total",
+      "type": "int",
+      "label": "本地曲目数"
+    },
+    {
+      "name": "saved",
+      "type": "file",
+      "label": "下载文件"
+    }
   ],
   "depends_on": [],
   "chainable": false,

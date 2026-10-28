@@ -1,16 +1,41 @@
 {
   "name": "image_generator",
   "display_name": "🎨 图像生成",
-  "class": "skills.ImageGenerator",
-  "keywords": ["生成图片", "生成一张", "帮我画"],
+  "class": "skills.image_generator.skill.ImageGenerator",
+  "keywords": [
+    "生成图片",
+    "生成一张",
+    "帮我画"
+  ],
   "system_hint": "🎨 生成中...",
   "inputs": [
-    {"name": "prompt", "type": "string", "required": true,  "label": "提示词"},
-    {"name": "width",  "type": "int",    "required": false, "label": "宽度", "default": 1024},
-    {"name": "height", "type": "int",    "required": false, "label": "高度", "default": 1024}
+    {
+      "name": "prompt",
+      "type": "string",
+      "required": true,
+      "label": "提示词"
+    },
+    {
+      "name": "width",
+      "type": "int",
+      "required": false,
+      "label": "宽度",
+      "default": 1024
+    },
+    {
+      "name": "height",
+      "type": "int",
+      "required": false,
+      "label": "高度",
+      "default": 1024
+    }
   ],
   "outputs": [
-    {"name": "image_path", "type": "file", "label": "图片"}
+    {
+      "name": "image_path",
+      "type": "file",
+      "label": "图片"
+    }
   ],
   "depends_on": [],
   "chainable": true,

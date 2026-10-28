@@ -1,16 +1,42 @@
 {
   "name": "video_generator",
   "display_name": "🎬 视频生成",
-  "class": "skills.VideoGenerator",
-  "keywords": ["生成视频", "制作视频", "视频生成", "短视频"],
+  "class": "skills.video_generator.skill.VideoGenerator",
+  "keywords": [
+    "生成视频",
+    "制作视频",
+    "视频生成",
+    "短视频"
+  ],
   "system_hint": "🎬 视频生成中...",
   "inputs": [
-    {"name": "prompt",           "type": "string", "required": true,  "label": "提示词"},
-    {"name": "duration",         "type": "int",    "required": false, "label": "目标时长（秒）", "default": 60},
-    {"name": "segment_duration", "type": "int",    "required": false, "label": "单段时长（秒）", "default": 10}
+    {
+      "name": "prompt",
+      "type": "string",
+      "required": true,
+      "label": "提示词"
+    },
+    {
+      "name": "duration",
+      "type": "int",
+      "required": false,
+      "label": "目标时长（秒）",
+      "default": 60
+    },
+    {
+      "name": "segment_duration",
+      "type": "int",
+      "required": false,
+      "label": "单段时长（秒）",
+      "default": 10
+    }
   ],
   "outputs": [
-    {"name": "video_path", "type": "file", "label": "视频文件"}
+    {
+      "name": "video_path",
+      "type": "file",
+      "label": "视频文件"
+    }
   ],
   "depends_on": [],
   "chainable": true,

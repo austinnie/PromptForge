@@ -1,16 +1,40 @@
 {
   "name": "video_sniffer",
   "display_name": "🔍 网页视频提取",
-  "class": "skills.VideoSniffer",
-  "keywords": ["嗅探视频", "抓视频", "解析视频", "下载视频"],
+  "class": "skills.video_sniffer.skill.VideoSniffer",
+  "keywords": [
+    "嗅探视频",
+    "抓视频",
+    "解析视频",
+    "下载视频"
+  ],
   "system_hint": "🎯 嗅探中...",
   "inputs": [
-    {"name": "action", "type": "choice", "required": true,  "label": "操作",
-     "choices": ["analyze", "info", "related"], "default": "analyze"},
-    {"name": "url",    "type": "string", "required": true,  "label": "网页 URL"}
+    {
+      "name": "action",
+      "type": "choice",
+      "required": true,
+      "label": "操作",
+      "choices": [
+        "analyze",
+        "info",
+        "related"
+      ],
+      "default": "analyze"
+    },
+    {
+      "name": "url",
+      "type": "string",
+      "required": true,
+      "label": "网页 URL"
+    }
   ],
   "outputs": [
-    {"name": "items", "type": "list", "label": "视频列表"}
+    {
+      "name": "items",
+      "type": "list",
+      "label": "视频列表"
+    }
   ],
   "depends_on": [],
   "chainable": false,
