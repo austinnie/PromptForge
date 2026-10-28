@@ -2,13 +2,27 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PromptForge 全能调度中心</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>PromptForge 工作台</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- ================= PWA 配置区 ================= -->
+    <meta name="theme-color" content="#111827">
+    <link rel="manifest" href="/static/manifest.json">
+    <link rel="apple-touch-icon" href="/static/icon-192.png">
+    
+    <!-- 适配 iOS 添加到主屏幕后的全屏状态 -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="PromptForge">
+    <!-- ============================================= -->
+
     <style>
         input, textarea, select { font-size: 16px !important; }
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
+        /* 防止 iOS 全屏时顶部状态栏遮挡 */
+        body { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
     </style>
 </head>
 <body class="bg-gray-900 text-white min-h-screen p-4 flex flex-col gap-4 font-sans max-w-5xl mx-auto">
@@ -130,6 +144,15 @@
         const API_BASE = window.location.origin;
         let currentMode = 't2i';
 
+        // PWA Service Worker 注册
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/static/sw.js')
+                    .then(reg => console.log('PWA 注册成功!', reg.scope))
+                    .catch(err => console.log('PWA 注册失败:', err));
+            });
+        }
+
         function switchMode(mode) {
             currentMode = mode;
             const modes = ['t2i', 'i2i', 'chat', 'video', 'skills', 'gallery'];
@@ -159,7 +182,7 @@
             }
 
             if (mode === 'video') {
-                promptInput.classList.add('hidden'); // video 使用自己的配置区
+                promptInput.classList.add('hidden'); 
                 actionBtn.textContent = "🎬 生成视频";
                 actionBtn.className = "w-full bg-purple-600 hover:bg-purple-500 font-bold py-2 rounded-lg text-sm shadow-lg";
             } else if (mode === 'chat') {
@@ -207,6 +230,12 @@
             loading.classList.remove('hidden');
             imgEl.src = '';
 
+            let seconds = 0;
+            const timer = setInterval(() => {
+                seconds++;
+                document.getElementById('img-loading-text').textContent = `生成中 (${seconds}s)...`;
+            }, 1000);
+
             try {
                 const res = await fetch(`${API_BASE}/api/generate_image`, {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -216,6 +245,7 @@
                         model_id: document.getElementById('model-select').value
                     })
                 });
+                clearInterval(timer);
                 const data = await res.json();
                 loading.classList.add('hidden');
                 if (data.status === 'success') {
@@ -223,6 +253,7 @@
                     document.getElementById('image-caption').textContent = `来源: ${data.provider}`;
                 } else alert("失败: " + JSON.stringify(data));
             } catch (err) {
+                clearInterval(timer);
                 loading.classList.add('hidden');
                 alert("请求失败: " + err.message);
             }
@@ -233,7 +264,7 @@
             const prompt = document.getElementById('prompt-input').value.trim();
             const fileInput = document.getElementById('i2i-file');
             if (fileInput.files.length === 0) return alert("请先上传一张参考图！");
-            if (!prompt) return alert("请输入修改指令（例如：变成赛博朋克风格）！");
+            if (!prompt) return alert("请输入修改指令！");
 
             const container = document.getElementById('image-container');
             const loading = document.getElementById('img-loading');
@@ -343,13 +374,9 @@
                 const data = await res.json();
                 if (data.status === 'success') {
                     const resData = data.result;
-                    // 智能提取结果展示
                     let displayTxt = `✅ 技能 ${skillName} 执行成功！\n\n`;
-                    if (resData.result) {
-                        displayTxt += JSON.stringify(resData.result, null, 2);
-                    } else {
-                        displayTxt += JSON.stringify(resData, null, 2);
-                    }
+                    if (resData.result) displayTxt += JSON.stringify(resData.result, null, 2);
+                    else displayTxt += JSON.stringify(resData, null, 2);
                     resultDiv.textContent = displayTxt;
                 } else {
                     resultDiv.textContent = `❌ 失败: ${data.message}`;
@@ -393,7 +420,6 @@
 
         // 初始化
         async function loadInitData() {
-            // 预设和模型加载（复用之前的代码）
             try {
                 const resM = await fetch(`${API_BASE}/api/models`);
                 const dataM = await resM.json();

@@ -42,6 +42,8 @@ from pydantic import BaseModel
 import base64
 import io
 from PIL import Image
+
+from fastapi.staticfiles import StaticFiles
     
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -430,17 +432,38 @@ async def run_skill(req: SkillRequest):
         traceback.print_exc()
         return {"status": "error", "message": str(e)}
         
-# （可选）挂载静态文件目录，让前端可以直接访问生成的图片
-from fastapi.staticfiles import StaticFiles
-import os
+# ================= 静态文件挂载 =================
+
+# 1. 确保目录存在
 os.makedirs("output/api", exist_ok=True)
+os.makedirs("static", exist_ok=True)
+
+# 2. 挂载生成的图片目录（供前端读取）
 app.mount("/output", StaticFiles(directory="output"), name="output")
 
-# ★ 新增：挂载前端页面目录
-os.makedirs("static", exist_ok=True)
-app.mount("/", StaticFiles(directory="static", html=True), name="static")
+# 3. 挂载 PWA 所需的静态文件（manifest.json, sw.js, 图标）
+app.mount("/static", StaticFiles(directory="static"), name="static_files")
+
+# 4. 挂载前端首页（注意：必须放在所有 /api/ 和 /static/ 路由之后）
+# 这样当用户访问根路径 / 时，自动返回 static/index.html
+@app.get("/")
+async def read_index():
+    from fastapi.responses import FileResponse
+    return FileResponse("static/index.html")
+
+# 5. （可选）兼容未匹配到路由的 404 情况，或者 SPA 路由
+@app.get("/{full_path:path}")
+async def catch_all(full_path: str):
+    from fastapi.responses import FileResponse
+    import os
+    # 先尝试匹配 static 里的实际文件
+    file_path = os.path.join("static", full_path)
+    if os.path.isfile(file_path):
+        return FileResponse(file_path)
+    # 否则回退到首页
+    return FileResponse("static/index.html")
+
 
 if __name__ == "__main__":
     import uvicorn
-    # 0.0.0.0 允许局域网内的手机访问
     uvicorn.run(app, host="0.0.0.0", port=8000)
