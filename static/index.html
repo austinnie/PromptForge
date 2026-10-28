@@ -15,7 +15,13 @@
     </header>
 
     <!-- 配置区 -->
-    <section class="bg-gray-800 rounded-xl p-4 shadow-lg grid grid-cols-1 md:grid-cols-2 gap-4">
+    <section class="bg-gray-800 rounded-xl p-4 shadow-lg grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div>
+            <label class="text-sm text-gray-400 mb-1 block">🎨 预设风格 (Preset)</label>
+            <select id="preset-select" class="w-full bg-gray-700 rounded-lg p-2 text-sm focus:outline-none">
+                <option value="">（不使用预设）</option>
+            </select>
+        </div>
         <div>
             <label class="text-sm text-gray-400 mb-1 block">🔌 生图引擎 (Provider)</label>
             <select id="provider-select" class="w-full bg-gray-700 rounded-lg p-2 text-sm focus:outline-none">
@@ -34,7 +40,7 @@
 
     <!-- 输入区 -->
     <section class="bg-gray-800 rounded-xl p-4 shadow-lg flex flex-col gap-3">
-        <textarea id="prompt-input" rows="2" placeholder="输入指令或画面描述..." 
+        <textarea id="prompt-input" rows="2" placeholder="输入描述（如果选了预设，此处可以留空或写具体主体）..." 
             class="w-full bg-gray-700 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"></textarea>
         <div class="flex gap-2">
             <button onclick="sendChat()" class="flex-1 bg-gray-600 hover:bg-gray-500 font-medium py-2 rounded-lg text-sm transition">
@@ -65,7 +71,7 @@
     <script>
         const API_BASE = window.location.origin; 
 
-        // 1. 页面加载时获取模型列表
+        // 1. 加载本地模型
         async function loadModels() {
             try {
                 const res = await fetch(`${API_BASE}/api/models`);
@@ -90,15 +96,46 @@
             }
         }
 
-        // 2. 发送文本指令
+        // 2. 加载预设列表
+        async function loadPresets() {
+            try {
+                const res = await fetch(`${API_BASE}/api/presets`);
+                const data = await res.json();
+                const select = document.getElementById('preset-select');
+                
+                if (data.status === 'success' && data.data) {
+                    // 按分类分组
+                    const groups = {};
+                    data.data.forEach(p => {
+                        if (!groups[p.category]) groups[p.category] = [];
+                        groups[p.category].push(p);
+                    });
+
+                    // 插入 optgroup
+                    Object.keys(groups).forEach(cat => {
+                        const optgroup = document.createElement('optgroup');
+                        optgroup.label = cat;
+                        groups[cat].forEach(p => {
+                            const opt = document.createElement('option');
+                            opt.value = p.id;
+                            opt.textContent = p.name;
+                            optgroup.appendChild(opt);
+                        });
+                        select.appendChild(optgroup);
+                    });
+                }
+            } catch (err) {
+                console.error("预设加载失败", err);
+            }
+        }
+
+        // 3. 发送文本指令
         async function sendChat() {
             const text = document.getElementById('prompt-input').value.trim();
             if (!text) return;
             const chatResult = document.getElementById('chat-result');
             chatResult.classList.remove('hidden');
             chatResult.textContent = "⏳ 识别意图中...";
-            
-            // 顺便隐藏图片区
             document.getElementById('image-container').classList.add('hidden');
 
             try {
@@ -113,13 +150,17 @@
             }
         }
 
-        // 3. 生成图片
+        // 4. 生成图片
         async function generateImage() {
             const prompt = document.getElementById('prompt-input').value.trim();
-            if (!prompt) return alert("请输入提示词！");
-
+            const preset = document.getElementById('preset-select').value;
             const provider = document.getElementById('provider-select').value;
             const modelId = document.getElementById('model-select').value;
+
+            // 如果既没写提示词，又没选预设，禁止提交
+            if (!prompt && !preset) {
+                return alert("请输入提示词，或选择一个预设！");
+            }
 
             const imageContainer = document.getElementById('image-container');
             const loading = document.getElementById('loading');
@@ -139,7 +180,8 @@
                         prompt: prompt,
                         width: 768, height: 768, steps: 25,
                         primary_provider: provider,
-                        model_id: modelId
+                        model_id: modelId,
+                        preset: preset // ★ 新增传参
                     })
                 });
                 
@@ -158,7 +200,11 @@
             }
         }
 
-        window.onload = loadModels;
+        // 初始化
+        window.onload = () => {
+            loadModels();
+            loadPresets();
+        };
     </script>
 </body>
 </html>

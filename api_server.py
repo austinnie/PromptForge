@@ -19,6 +19,12 @@ from providers.fallback import FallbackImageProvider
 from providers import list_providers, get_meta
 from model_manager import list_checkpoints
 
+try:
+    from preset_bridge import preset_bridge
+    from presets_meta import get_display_name, get_category, CATEGORY_ORDER
+except ImportError:
+    preset_bridge = None
+    
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -51,6 +57,7 @@ class GenerateImageRequest(BaseModel):
     primary_provider: Optional[str] = None  # 可以指定优先用本地还是云端
     # ★ 新增：允许前端指定本地模型 ID
     model_id: Optional[str] = None
+    preset: Optional[str] = None
 # ==================== API 路由 ====================
 
 @app.get("/api/models")
@@ -69,6 +76,36 @@ def get_providers():
         result.append({"id": p, "name": meta.get("description", p), "free": meta.get("free", False)})
     return {"status": "success", "data": result}
 
+
+@app.get("/api/presets")
+def get_presets():
+    """获取所有预设列表"""
+    if not preset_bridge:
+        return {"status": "error", "message": "Preset bridge 不可用"}
+    
+    try:
+        all_presets = preset_bridge.list_presets()
+        # 按分类排序
+        sorted_presets = sorted(
+            all_presets,
+            key=lambda p: (
+                CATEGORY_ORDER.index(get_category(p)) if get_category(p) in CATEGORY_ORDER else 999,
+                p,
+            )
+        )
+        
+        data = []
+        for p in sorted_presets:
+            data.append({
+                "id": p,
+                "name": get_display_name(p),
+                "category": get_category(p)
+            })
+            
+        return {"status": "success", "data": data}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+        
 @app.post("/api/chat")
 async def chat_endpoint(req: ChatRequest):
     """
@@ -114,6 +151,20 @@ async def generate_image(req: GenerateImageRequest):
         on_fallback=lambda frm, to, err: logger.warning(f"⚠️ {frm} 失败，切换到 {to}")
     )
 
+    final_prompt = req.prompt
+    
+    # ★ 如果传了 preset，调用 Preset 逻辑构建提示词
+    if req.preset:
+        try:
+            from preset_bridge import preset_bridge
+            # 这里模拟 GUI 里 PresetHandler 的提示词生成逻辑
+            # 实际中你可以调用 preset_bridge 的方法生成六层提示词
+            # 为了演示，如果只传了空 prompt，就给它个默认主体
+            if not final_prompt:
+                final_prompt = "masterpiece, best quality"
+        except Exception as e:
+            logger.warning(f"预设处理失败: {e}")
+            
     # 4. 组装请求
     image_req = ImageRequest(
         prompt=req.prompt,
