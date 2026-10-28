@@ -31,6 +31,12 @@ from providers.base import ImageRequest
 from providers.registry import create
 
 from fastapi.responses import StreamingResponse
+
+import os
+from datetime import datetime
+
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
     
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -77,6 +83,9 @@ class GenerateImageRequest(BaseModel):
     model_id: Optional[str] = None
     preset: Optional[str] = None
     
+class VideoRequest(BaseModel):
+    topic: str
+    duration: int = 15
     
 # ==================== API 路由 ====================
 
@@ -294,6 +303,50 @@ async def generate_image(req: GenerateImageRequest):
         logger.error(f"❌ 生成失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@app.get("/api/gallery")
+def get_gallery():
+    """获取已生成的图片列表"""
+    gallery_dir = "output/api"
+    if not os.path.exists(gallery_dir):
+        return {"status": "success", "data": []}
+    
+    files = []
+    for f in os.listdir(gallery_dir):
+        if f.endswith((".png", ".jpg", ".jpeg")):
+            path = os.path.join(gallery_dir, f)
+            # 提取生成时间（根据文件名中的时间戳或文件修改时间）
+            mtime = os.path.getmtime(path)
+            files.append({
+                "filename": f,
+                "url": f"/output/api/{f}",
+                "time": datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S")
+            })
+            
+    # 按时间倒序排
+    files.sort(key=lambda x: x["time"], reverse=True)
+    return {"status": "success", "data": files[:50]} # 返回最近 50 张
+
+
+@app.post("/api/generate_video")
+async def generate_video(req: VideoRequest):
+    try:
+        from skills.video_generator import VideoGenerator
+        logger.info(f"🎬 收到视频请求: {req.topic}")
+        gen = VideoGenerator()
+        result = await run_in_threadpool(gen.generate, prompt=req.topic, duration=req.duration)
+        
+        video_path = result.get("video_path", "")
+        if video_path and os.path.exists(video_path):
+            import shutil
+            filename = os.path.basename(video_path)
+            dest = os.path.join("output/api", filename)
+            shutil.copy(video_path, dest)
+            return {"status": "success", "video_url": f"/output/api/{filename}"}
+        return {"status": "error", "message": "未返回视频路径"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+        
 # （可选）挂载静态文件目录，让前端可以直接访问生成的图片
 from fastapi.staticfiles import StaticFiles
 import os
