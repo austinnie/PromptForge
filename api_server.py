@@ -24,6 +24,10 @@ try:
     from presets_meta import get_display_name, get_category, CATEGORY_ORDER
 except ImportError:
     preset_bridge = None
+
+
+from providers.base import TextRequest
+from providers.registry import create
     
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -43,6 +47,16 @@ app.add_middleware(
 # 初始化意图分析器
 analyzer = IntentAnalyzer()
 
+
+class ChatLLMRequest(BaseModel):
+    text: str
+    system_prompt: str = "You are a helpful assistant."
+
+
+class ActionRequest(BaseModel):
+    action: str
+    payload: dict = {}
+    
 # ==================== 请求模型定义 ====================
 
 class ChatRequest(BaseModel):
@@ -58,8 +72,49 @@ class GenerateImageRequest(BaseModel):
     # ★ 新增：允许前端指定本地模型 ID
     model_id: Optional[str] = None
     preset: Optional[str] = None
+    
+    
 # ==================== API 路由 ====================
 
+@app.post("/api/skill/image_curator")
+async def run_image_curator(req: ActionRequest):
+    """图片鉴赏任务"""
+    try:
+        from skills.image_curator import ImageCurator
+        # 假设你传了目录路径
+        folder = req.payload.get("folder", "output")
+        curator = ImageCurator({})
+        # 防止阻塞
+        result = await run_in_threadpool(curator.curate, folder, "鉴赏报告")
+        return {"status": "success", "result": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/skill/video_generator")
+async def run_video_generator(req: ActionRequest):
+    """视频生成任务"""
+    try:
+        from skills.video_generator import VideoGenerator
+        topic = req.payload.get("topic", "默认主题")
+        gen = VideoGenerator()
+        result = await run_in_threadpool(gen.generate, prompt=topic, duration=15)
+        return {"status": "success", "result": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+        
+@app.post("/api/chat_llm")
+async def chat_llm(req: ChatLLMRequest):
+    try:
+        # 获取 Ollama provider (如果没有启动则抛错)
+        provider = create("ollama_local", config={"model": "qwen"})
+        text_req = TextRequest(prompt=req.text, system_prompt=req.system_prompt)
+        
+        # 防阻塞
+        response_text = await run_in_threadpool(provider.chat, text_req)
+        return {"status": "success", "response": response_text}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+        
 @app.get("/api/models")
 def get_models():
     """获取所有本地模型列表（供手机端下拉框使用）"""
