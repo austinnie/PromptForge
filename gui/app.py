@@ -2270,62 +2270,31 @@ class ChatApp:
     # ============================================================
     # 模型加载
     # ============================================================
+    # gui/app.py（替换 _load_model 方法体，其余不变）
+
     def _load_model(self):
+        """加载模型 = 预热 backend（不再自己建 pipeline）"""
         if self.is_model_loaded:
             return
-        
-        model_path = self.settings.get_model_path()
-        if not model_path:
-            messagebox.showerror("错误", "未配置模型路径，请在 settings.py 中设置")
-            return
-        
+
         self.load_btn.config(state=tk.DISABLED)
         self.status_var.set("📦 正在加载模型...")
-        
+
         def load_thread():
             try:
-                from diffusers import StableDiffusionPipeline
-                import torch
-                
-                self._update_status_progress(0.1, "加载中...")
-                print(f"📦 加载模型: {model_path}")
-                
-                pipe = StableDiffusionPipeline.from_single_file(
-                    model_path,
-                    torch_dtype=torch.float32,
-                    safety_checker=None,
-                    requires_safety_checker=False,
-                    use_safetensors=True,
-                    low_cpu_mem_usage=True
-                )
-                pipe.to("cpu")
-                
-                try:
-                    if hasattr(pipe.vae, 'enable_slicing'):
-                        pipe.vae.enable_slicing()
-                    elif hasattr(pipe, 'enable_vae_slicing'):
-                        pipe.enable_vae_slicing()
-                except Exception as e:
-                    print(f"⚠️ VAE slicing 设置失败: {e}")
-                
-                try:
-                    if hasattr(pipe, 'enable_attention_slicing'):
-                        pipe.enable_attention_slicing()
-                except Exception as e:
-                    print(f"⚠️ Attention slicing 设置失败: {e}")
-                
-                self.pipe = pipe
+                from core.backend import build_backend, reset_backend
+                reset_backend()                    # 确保拿到新配置
+                backend = build_backend()
+                backend.preload()                  # 触发懒加载
                 self.is_model_loaded = True
                 self.root.after(0, self._on_load_complete)
             except Exception as err:
-                error_msg = str(err)
-                print(f"❌ 加载失败: {error_msg}")
                 import traceback
                 traceback.print_exc()
-                self.root.after(0, lambda msg=error_msg: self._on_load_error(msg))
-        
+                self.root.after(0, lambda m=str(err): self._on_load_error(m))
+
         threading.Thread(target=load_thread, daemon=True).start()
-    
+        
     def _on_load_complete(self):
         self.load_btn.config(state=tk.NORMAL)
         self.model_status.config(text="🟢 已加载", foreground="green")

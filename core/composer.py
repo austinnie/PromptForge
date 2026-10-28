@@ -197,6 +197,8 @@ class PromptComposer:
 
     # ==================== 动态提示词 (Ollama) ====================
 
+# core/composer.py（只改这一处）
+
     def generate_prompt_with_ollama(
         self,
         user_desc: str,
@@ -204,12 +206,13 @@ class PromptComposer:
         style_hint: str = "general",
         retry: int = 2,
     ) -> str:
-        """使用 LLM 生成高质量 SD 提示词。
+        """[DEPRECATED] 使用 LLM 生成高质量 SD 提示词。
 
-        优先 Agnes，Ollama 兜底（可通过 LLM_BACKENDS 环境变量覆盖）。
-        model 参数保留兼容，但实际生效的模型由 LLMClient 决定。
+        实际已改走 core.llm_client.LLMClient（Agnes 优先，Ollama 兜底）。
+        保留方法名是为了兼容旧调用方，新代码建议直接用 get_default_client。
         """
         from core.llm_client import get_default_client
+        import time
 
         SYSTEM_PROMPTS = {
             "general": "你是一个Stable Diffusion提示词专家。将用户描述转换为英文AI绘画提示词。要求：包含主体、环境、光影、画质修饰词，以逗号分隔。只输出提示词，不要解释。",
@@ -218,7 +221,6 @@ class PromptComposer:
             "sketch": "你是一个素描/线稿提示词专家。将用户描述转换为铅笔素描或白描风格的提示词。强调线条、留白、黑白对比。只输出英文提示词。",
             "mecha": "你是一个机甲/科幻提示词专家。将用户描述转换为机甲机械风格的提示词。包含机械细节、材质、科技感。只输出英文提示词。",
         }
-
         QUALITY_TAGS = {
             "general": "masterpiece, best quality, 8k",
             "anime": "anime style, masterpiece, high quality, vibrant colors, detailed",
@@ -233,21 +235,17 @@ class PromptComposer:
         if len(user_desc.strip()) < 5:
             user_desc = f"a beautiful scene with {user_desc}"
 
-        prompt = f"""{system_prompt}
-
-    用户描述：{user_desc}
-
-    要求：
-    1. 提示词用英文，逗号分隔
-    2. 包含：主体描述 + 环境/背景 + 光影氛围 + 画质修饰词
-    3. 长度控制在 30-80 词之间
-    4. 只输出提示词，不要有其他内容
-
-    自动追加质量词：{quality_tag}
-    """
+        prompt = (
+            f"用户描述：{user_desc}\n\n"
+            f"要求：\n"
+            f"1. 提示词用英文，逗号分隔\n"
+            f"2. 包含：主体描述 + 环境/背景 + 光影氛围 + 画质修饰词\n"
+            f"3. 长度控制在 30-80 词之间\n"
+            f"4. 只输出提示词，不要有其他内容\n\n"
+            f"自动追加质量词：{quality_tag}\n"
+        )
 
         llm = get_default_client(temperature=0.7, max_tokens=300, timeout=60)
-
         for attempt in range(retry + 1):
             result = llm.generate(prompt, system=system_prompt)
             if result:
@@ -258,8 +256,6 @@ class PromptComposer:
             if attempt < retry:
                 time.sleep(2)
 
-        # 兜底
-        fallback = f"{user_desc}, {quality_tag}"
         print(f"   ⚠️ LLM 不可用，使用备用提示词")
-        return fallback
-    
+        return f"{user_desc}, {quality_tag}"
+        
