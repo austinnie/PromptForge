@@ -1,0 +1,21 @@
+{
+  "name": "radio_player",
+  "display_name": "📻 网络广播",
+  "class": "skills.RadioPlayer",
+  "keywords": ["听广播", "打开收音机", "听电台", "放电台"],
+  "system_hint": "📻 打开电台...",
+  "inputs": [
+    {"name": "action",   "type": "choice", "required": true,  "label": "操作",
+     "choices": ["play", "stop", "pause", "resume", "list", "search", "favorite", "favorites"], "default": "play"},
+    {"name": "station",  "type": "string", "required": false, "label": "电台名"},
+    {"name": "category", "type": "choice", "required": false, "label": "分类",
+     "choices": ["japan", "china", "korea", "international", "music", "web"], "default": "china"}
+  ],
+  "outputs": [
+    {"name": "station", "type": "obj", "label": "当前电台"}
+  ],
+  "depends_on": [],
+  "chainable": false,
+  "version": "2.0.0",
+  "description": "网络广播：6 大分类电台库 + 收藏持久化"
+}

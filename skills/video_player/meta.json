@@ -1,0 +1,22 @@
+{
+  "name": "video_player",
+  "display_name": "📺 视频播放",
+  "class": "skills.VideoPlayer",
+  "keywords": ["播放视频", "看视频", "放视频", "打开视频"],
+  "system_hint": "▶️ 搜索视频中...",
+  "inputs": [
+    {"name": "action", "type": "choice", "required": true,  "label": "操作",
+     "choices": ["search", "play", "pause", "resume", "stop", "replay", "status", "history"], "default": "search"},
+    {"name": "query",  "type": "string", "required": false, "label": "搜索关键词"},
+    {"name": "url",    "type": "string", "required": false, "label": "直接播放 URL"},
+    {"name": "source", "type": "choice", "required": false, "label": "来源",
+     "choices": ["bilibili", "youtube", "niconico", "soundcloud", "dailymotion", "all"], "default": "bilibili"}
+  ],
+  "outputs": [
+    {"name": "results", "type": "list", "label": "搜索结果"}
+  ],
+  "depends_on": [],
+  "chainable": false,
+  "version": "1.0.0",
+  "description": "视频播放：B站/YouTube/ニコニコ + 边播边存 + 直接 URL"
+}
