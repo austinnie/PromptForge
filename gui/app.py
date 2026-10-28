@@ -210,6 +210,19 @@ class ChatApp:
         self.provider_combo.pack(side=tk.LEFT, padx=2)
         self.provider_combo.bind('<<ComboboxSelected>>', self._on_provider_changed)
         self._refresh_provider_list()
+
+        # ==================== ★ 新增：本地模型选择 ====================
+        ttk.Label(toolbar_row1, text="本地模型:").pack(side=tk.LEFT, padx=5)
+        
+        self.model_var = tk.StringVar()
+        self.model_combo = ttk.Combobox(
+            toolbar_row1, textvariable=self.model_var,
+            values=[], width=25, state="readonly"
+        )
+        self.model_combo.pack(side=tk.LEFT, padx=2)
+        self.model_combo.bind('<<ComboboxSelected>>', self._on_model_changed)
+        self._refresh_local_models()
+        # ==============================================================
         
         self.mode_hint = ttk.Label(
             toolbar_row1,
@@ -337,6 +350,56 @@ class ChatApp:
         self._load_presets()        
 
 
+    def _refresh_local_models(self):
+        """从 model_manager 拉取本地模型列表"""
+        try:
+            from model_manager import list_checkpoints
+            models = list_checkpoints()
+            if not models:
+                self.model_combo["values"] = ["无可用模型"]
+                return
+            
+            # 格式化显示： [SD15] 模型名 (id)
+            display_names = [f"[{m.get('base', 'SD').upper()}] {m['name']} ({m['id']})" for m in models]
+            self.model_combo["values"] = display_names
+            
+            # 尝试选中当前 settings 里的默认模型，否则选第一个
+            from config.settings import settings
+            default_id = getattr(settings, "default_local_model_id", None)
+            selected_idx = 0
+            if default_id:
+                for i, m in enumerate(models):
+                    if m["id"] == default_id:
+                        selected_idx = i
+                        break
+            self.model_combo.current(selected_idx)
+        except Exception as e:
+            print(f"⚠️ 加载本地模型列表失败: {e}")
+
+    def _on_model_changed(self, event=None):
+        """切换本地模型"""
+        val = self.model_var.get()
+        if not val or "无可用模型" in val:
+            return
+            
+        # 从 "[SD15] aiiiiii01 (sd_v1_5_aiiiiii01_v10)" 提取 id
+        import re
+        match = re.search(r"\(([^)]+)\)$", val)
+        if match:
+            model_id = match.group(1)
+            self.settings.default_local_model_id = model_id
+            self._append_message("system", f"✅ 已切换本地模型至: {model_id}")
+            
+            # 清空 Provider 缓存，下次生图会重新加载
+            try:
+                from providers.registry import clear_cache
+                clear_cache()
+                self._api_engine = None
+                from core.backend import reset_backend
+                reset_backend()  # ★ 新增                
+            except Exception:
+                pass
+                
     def _load_presets(self):
         """同步加载预设列表（99 个 glob 很快，不开线程）"""
         try:
@@ -2071,6 +2134,10 @@ class ChatApp:
     def _on_mode_changed(self, event=None):
         mode = self.mode_var.get()
         self.settings.generation_mode = mode
+
+        # ★ 新增：切换模式时强制重置后端
+        from core.backend import reset_backend
+        reset_backend()
         
         if mode == "api":
             self.mode_hint.config(
@@ -2273,7 +2340,7 @@ class ChatApp:
     # gui/app.py（替换 _load_model 方法体，其余不变）
 
     def _load_model(self):
-        """加载模型 = 预热 backend（不再自己建 pipeline）"""
+        """加载模型 = 预热 backend"""
         if self.is_model_loaded:
             return
 

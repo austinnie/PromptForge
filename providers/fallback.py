@@ -78,6 +78,15 @@ class FallbackImageProvider:
                     try: self.on_fallback(name, next_name, e)
                     except Exception: pass
         raise last_error or RuntimeError(f"所有 provider 都失败: {self.chain}")
+
+    def get_name(self) -> str:
+        """用于上层回显当前引擎名称"""
+        return f"Fallback ({self.primary})"
+
+    # 如果你在 GUI 里也想展示当前真实的引擎（比如降级后），可以再补个属性
+    @property
+    def current_provider(self):
+        return self.primary
         
 class FallbackVideoProvider:
     """按顺序尝试多个 provider，直到视频任务创建成功。
