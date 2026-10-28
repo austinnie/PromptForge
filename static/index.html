@@ -171,8 +171,21 @@
             chatResult.classList.add('hidden');
             imageContainer.classList.remove('hidden');
             loading.classList.remove('hidden');
-            imgEl.src = ''; caption.textContent = '';
+            imgEl.src = ''; 
+			caption.textContent = '';
 
+            // ★ 新增：计时器提示
+            let seconds = 0;
+            const loadingText = loading.querySelector('p');
+            if (loadingText) loadingText.textContent = "正在生成，请耐心等待...";
+            
+            const timer = setInterval(() => {
+                seconds++;
+                if (loadingText) {
+                    loadingText.textContent = `正在生成 (${seconds} 秒)，本地推理较慢，请勿刷新页面...`;
+                }
+            }, 1000);
+			
             try {
                 const res = await fetch(`${API_BASE}/api/generate_image`, {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -184,7 +197,8 @@
                         preset: preset // ★ 新增传参
                     })
                 });
-                
+				
+                clearInterval(timer); // ★ 停止计时
                 const data = await res.json();
                 loading.classList.add('hidden');
 
@@ -195,6 +209,7 @@
                     alert("生成失败：" + JSON.stringify(data));
                 }
             } catch (err) {
+			    clearInterval(timer); // ★ 停止计时
                 loading.classList.add('hidden');
                 alert("请求失败：" + err.message);
             }
