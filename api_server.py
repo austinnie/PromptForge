@@ -220,22 +220,33 @@ async def generate_image(req: GenerateImageRequest):
     )
 
     final_prompt = req.prompt
-    
-    # ★ 如果传了 preset，调用 Preset 逻辑构建提示词
     if req.preset:
         try:
             from preset_bridge import preset_bridge
-            # 这里模拟 GUI 里 PresetHandler 的提示词生成逻辑
-            # 实际中你可以调用 preset_bridge 的方法生成六层提示词
-            # 为了演示，如果只传了空 prompt，就给它个默认主体
+            # ★ 核心：如果你的 preset_bridge 有获取完整 6 层 prompt 的方法，在这里调用
+            # 这里写一个兼容逻辑，如果没提供 prompt，就给它一个默认主体
+            base_subject = req.prompt if req.prompt else "masterpiece, best quality"
+            
+            # 假设你的 bridge 提供了类似 build_full_prompt 的方法：
+            if hasattr(preset_bridge, "build_full_prompt"):
+                final_prompt = preset_bridge.build_full_prompt(req.preset, base_subject)
+            else:
+                # 如果没这个方法，退而求其次，直接使用预设名作为风格词
+                final_prompt = f"{base_subject}, {req.preset} style"
+                
+            logger.info(f"🎨 预设 {req.preset} 解析完成，最终 Prompt: {final_prompt[:100]}...")
+        except Exception as e:
+            logger.error(f"❌ 预设解析失败: {e}")
             if not final_prompt:
                 final_prompt = "masterpiece, best quality"
-        except Exception as e:
-            logger.warning(f"预设处理失败: {e}")
+
+    # 如果依然为空，给个最终兜底
+    if not final_prompt or final_prompt.strip() == "":
+        final_prompt = "masterpiece, best quality, highly detailed"
             
     # 4. 组装请求
     image_req = ImageRequest(
-        prompt=req.prompt,
+        prompt=final_prompt,
         width=req.width,
         height=req.height,
         steps=req.steps

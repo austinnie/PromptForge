@@ -173,6 +173,11 @@
             const provider = document.getElementById('provider-select').value;
             const modelId = document.getElementById('model-select').value;
 
+            // ★ 核心修复：只要有预设，就算没写提示词，也允许生成
+            if (!prompt && !preset) {
+                return alert("请输入提示词，或至少选择一个预设！");
+            }
+			
             const imageContainer = document.getElementById('image-container');
             const loading = document.getElementById('loading');
             const imgEl = document.getElementById('result-image');
