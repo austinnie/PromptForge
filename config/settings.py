@@ -21,6 +21,8 @@ logger = logging.getLogger(__name__)
 
 _PROVIDER_CACHE: dict[str, dict] = {}
 
+DEFAULT_LOCAL_MODEL_ID = "sd_v1_5_aiiiiii01_v10"  # 默认本地模型
+
 # ------------------------------------------------------------
 # 加载 .env
 # ------------------------------------------------------------

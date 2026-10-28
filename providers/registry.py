@@ -107,3 +107,11 @@ def get_meta(name: str) -> dict:
 
 def all_meta() -> dict[str, dict]:
     return {k: dict(v) for k, v in _META.items()}
+    
+
+# providers/registry.py 的最后加上
+def clear_cache():
+    """清空 Provider 实例缓存，下次 create 时会重新加载"""
+    global _INSTANCE_CACHE
+    _INSTANCE_CACHE.clear()
+    logger.info("🗑️ Provider 实例缓存已清空")  
