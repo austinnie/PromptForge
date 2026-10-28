@@ -52,10 +52,6 @@ class GenerateImageRequest(BaseModel):
 
 # ==================== API 路由 ====================
 
-@app.get("/")
-def read_root():
-    return {"status": "ok", "service": "PromptForge API"}
-
 @app.get("/api/models")
 def get_models():
     """获取所有本地模型列表（供手机端下拉框使用）"""
@@ -154,6 +150,10 @@ from fastapi.staticfiles import StaticFiles
 import os
 os.makedirs("output/api", exist_ok=True)
 app.mount("/output", StaticFiles(directory="output"), name="output")
+
+# ★ 新增：挂载前端页面目录
+os.makedirs("static", exist_ok=True)
+app.mount("/", StaticFiles(directory="static", html=True), name="static")
 
 if __name__ == "__main__":
     import uvicorn

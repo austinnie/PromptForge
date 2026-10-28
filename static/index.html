@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PromptForge 移动端</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 防止 iOS 输入框放大 */
+        input, textarea { font-size: 16px !important; }
+    </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen p-4 flex flex-col gap-4 font-sans">
+
+    <!-- 头部 -->
+    <header class="text-center py-2 border-b border-gray-700">
+        <h1 class="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">
+            🔥 PromptForge
+        </h1>
+        <p class="text-xs text-gray-400 mt-1" id="status-text">等待连接后端...</p>
+    </header>
+
+    <!-- 模型选择 -->
+    <section class="bg-gray-800 rounded-xl p-4 shadow-lg">
+        <label class="text-sm text-gray-400 mb-2 block">🎨 本地模型</label>
+        <select id="model-select" class="w-full bg-gray-700 text-white rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <option value="">加载中...</option>
+        </select>
+    </section>
+
+    <!-- 输入区 -->
+    <section class="bg-gray-800 rounded-xl p-4 shadow-lg flex flex-col gap-3">
+        <textarea id="prompt-input" rows="3" placeholder="描述你想生成的画面，或者输入指令（例如：切换模型 ov_int8_sd15）" 
+            class="w-full bg-gray-700 text-white rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"></textarea>
+        
+        <div class="flex gap-2">
+            <button onclick="sendChat()" class="flex-1 bg-gray-600 hover:bg-gray-500 text-white font-medium py-2 rounded-lg text-sm transition">
+                💬 发送指令
+            </button>
+            <button onclick="generateImage()" class="flex-[2] bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 rounded-lg text-sm transition shadow-lg shadow-blue-500/30">
+                ✨ 生成图片
+            </button>
+        </div>
+    </section>
+
+    <!-- 结果展示区 -->
+    <section id="result-area" class="flex-1 flex flex-col gap-4">
+        <!-- 对话结果 -->
+        <div id="chat-result" class="hidden bg-gray-800 rounded-xl p-4 text-sm font-mono text-green-400 break-all"></div>
+        <!-- 图片结果 -->
+        <div id="image-container" class="hidden flex-1 flex flex-col bg-gray-800 rounded-xl p-2 relative min-h-[300px]">
+            <div id="loading" class="absolute inset-0 flex flex-col items-center justify-center bg-gray-800/80 hidden z-10">
+                <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-500 mb-2"></div>
+                <p class="text-xs text-blue-400">正在生成，请耐心等待...</p>
+            </div>
+            <img id="result-image" class="w-full h-auto rounded-lg object-contain" src="" alt="生成的图片">
+            <p id="image-caption" class="text-xs text-center text-gray-400 mt-2"></p>
+        </div>
+    </section>
+
+    <script>
+        // ★ 核心：如果你在电脑上打开，用 127.0.0.1；如果在手机上打开，请把这里改成你电脑的局域网 IP
+        // 比如： const API_BASE = "http://192.168.1.100:8000";
+        const API_BASE = window.location.origin; 
+
+        // 1. 页面加载时获取模型列表
+        async function loadModels() {
+            try {
+                const res = await fetch(`${API_BASE}/api/models`);
+                const data = await res.json();
+                const select = document.getElementById('model-select');
+                select.innerHTML = '';
+                
+                if (data.data && data.data.length > 0) {
+                    data.data.forEach(m => {
+                        const opt = document.createElement('option');
+                        opt.value = m.id;
+                        opt.textContent = `[${m.base.toUpperCase()}] ${m.name}`;
+                        select.appendChild(opt);
+                    });
+                    document.getElementById('status-text').textContent = "✅ 后端已连接";
+                } else {
+                    select.innerHTML = '<option value="">无可用模型</option>';
+                }
+            } catch (err) {
+                document.getElementById('status-text').textContent = "❌ 后端连接失败";
+                document.getElementById('status-text').classList.add('text-red-500');
+            }
+        }
+
+        // 2. 发送文本指令
+        async function sendChat() {
+            const text = document.getElementById('prompt-input').value.trim();
+            if (!text) return;
+
+            const chatResult = document.getElementById('chat-result');
+            chatResult.classList.remove('hidden');
+            chatResult.textContent = "⏳ 识别意图中...";
+
+            try {
+                const res = await fetch(`${API_BASE}/api/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: text, has_image: false })
+                });
+                const data = await res.json();
+                chatResult.textContent = JSON.stringify(data, null, 2);
+            } catch (err) {
+                chatResult.textContent = `❌ 请求失败: ${err.message}`;
+            }
+        }
+
+        // 3. 生成图片
+        async function generateImage() {
+            const prompt = document.getElementById('prompt-input').value.trim();
+            if (!prompt) {
+                alert("请输入提示词！");
+                return;
+            }
+
+            const imageContainer = document.getElementById('image-container');
+            const loading = document.getElementById('loading');
+            const imgEl = document.getElementById('result-image');
+            const caption = document.getElementById('image-caption');
+            const chatResult = document.getElementById('chat-result');
+
+            // 隐藏文本结果，显示图片容器
+            chatResult.classList.add('hidden');
+            imageContainer.classList.remove('hidden');
+            loading.classList.remove('hidden');
+            imgEl.src = '';
+            caption.textContent = '';
+
+            try {
+                const res = await fetch(`${API_BASE}/api/generate_image`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        prompt: prompt,
+                        width: 768,
+                        height: 768,
+                        steps: 25
+                    })
+                });
+                
+                const data = await res.json();
+                loading.classList.add('hidden');
+
+                if (data.status === 'success') {
+                    // 拼接完整的图片 URL
+                    imgEl.src = `${API_BASE}${data.image_url}`;
+                    caption.textContent = `来源: ${data.provider}`;
+                } else {
+                    alert("生成失败：" + JSON.stringify(data));
+                }
+            } catch (err) {
+                loading.classList.add('hidden');
+                alert("请求失败：" + err.message);
+            }
+        }
+
+        // 初始化
+        window.onload = loadModels;
+    </script>
+</body>
+</html>
