@@ -49,12 +49,19 @@ def scan_models(force_refresh: bool = False) -> Dict[str, Any]:
             
         # 其他是 safetensors 文件
         for f in p.rglob("*.safetensors"):
-            # 提取 id，例如 sd15_aiiiiii01_v10
             model_id = f"{folder}_{f.stem}".replace("-", "_").lower()
             base_type = "sdxl" if "sdxl" in folder.lower() or "xl" in f.stem.lower() else "sd15"
+            
+            # 简单美化显示名
+            display_name = f.stem.replace("_", " ").title()
+            if "realistic" in display_name.lower():
+                display_name += " (写实)"
+            elif "anime" in display_name.lower():
+                display_name += " (二次元)"
+                
             manifest["checkpoints"][model_id] = {
                 "id": model_id,
-                "name": f.stem,
+                "name": display_name,  # ★ 使用美化后的名字
                 "path": str(f),
                 "type": "diffusers",
                 "base": base_type

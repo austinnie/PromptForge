@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional, Callable, Union
 
+
 SKILL_ROUTES: Dict[str, Dict[str, Any]] = {
 
     # ============ GitHub 每日 ============
@@ -179,6 +180,21 @@ SKILL_ROUTES: Dict[str, Dict[str, Any]] = {
             "url": intent.get("prompt") or intent.get("original_text", ""),
         },
     },
+    # ============ 模型管理 ============
+    "local_model_manage": {
+        "keywords": [
+            "切换模型", "换个模型", "换模型", 
+            "模型列表", "有哪些模型", "列出模型", "查看模型", 
+            "列出所有", "所有模型", "本地模型"  # ★ 新增
+        ],
+        "system_hint": "📦 正在处理模型管理...",
+        "module": "handlers.model_handler",
+        "class": "ModelHandler",
+        "kwargs_builder": lambda intent: {
+            "action": intent.get("params", {}).get("action", "list"),
+            "model_id": intent.get("params", {}).get("model_id")
+        },
+    },    
 }
 
 

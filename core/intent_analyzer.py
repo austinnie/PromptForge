@@ -124,7 +124,47 @@ class IntentAnalyzer:
     
     def __init__(self):
         self._safety = None
-    
+
+    def _analyze_model_intent(self, text: str) -> IntentResult:
+        """解析模型管理意图"""
+        text_lower = text.lower()
+        
+        # 提取模型 ID (如果用户输入包含模型 ID)
+        from model_manager import list_checkpoints
+        available_models = list_checkpoints()
+        
+        target_model_id = None
+        for m in available_models:
+            # 如果用户输入的文本包含模型 ID 或 显示名称
+            if m["id"].lower() in text_lower or m["name"].lower() in text_lower:
+                target_model_id = m["id"]
+                break
+                
+        if "列表" in text_lower or "有哪些" in text_lower:
+            return IntentResult(
+                type="model_manage",
+                params={"action": "list"},
+                original_text=text,
+                confidence=1.0
+            )
+            
+        # 如果提取到了模型 ID，触发切换
+        if target_model_id:
+            return IntentResult(
+                type="model_manage",
+                params={"action": "switch", "model_id": target_model_id},
+                original_text=text,
+                confidence=1.0
+            )
+            
+        # 如果用户只是说“换个模型”，没给具体名字
+        return IntentResult(
+            type="model_manage",
+            params={"action": "list", "hint": "请指定要切换的模型 ID"},
+            original_text=text,
+            confidence=0.8
+        )
+        
     def analyze(self, text: str, has_image: bool = False, 
                 has_multiple: bool = False, image_count: int = 0) -> IntentResult:
         """
@@ -153,6 +193,32 @@ class IntentAnalyzer:
                 # 清理后为空，返回 chat
                 return self._safe_fallback(text)
 
+
+        # ★ 优先拦截模型管理意图
+        if any(k in text_lower for k in ["切换模型", "换个模型", "换模型", "模型列表", "有哪些模型", "列出模型", "查看模型", "列出所有", "所有模型", "本地模型"]):
+            from model_manager import list_checkpoints
+            available_models = list_checkpoints()
+            
+            target_model_id = None
+            for m in available_models:
+                if m["id"].lower() in text_lower or m["name"].lower() in text_lower:
+                    target_model_id = m["id"]
+                    break
+
+            action = "switch" if target_model_id else "list"
+            
+            return IntentResult(
+                type="skill",
+                prompt=text,
+                original_text=text,
+                confidence=1.0,
+                params={
+                    "skill": "local_model_manage",
+                    "action": action,
+                    "model_id": target_model_id
+                },
+                system_hint="📦 正在处理模型管理..."
+            )
 
         # ✅ 通用 Skill 意图（优先于视频/图生图/chat）
         hit = match_skill(text)

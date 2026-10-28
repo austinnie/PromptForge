@@ -19,6 +19,42 @@ from model_manager import get_checkpoint
 
 logger = logging.getLogger(__name__)
 
+
+# providers/adapters/local.py
+from model_manager import list_checkpoints, get_checkpoint
+
+# 添加一个默认配置读取逻辑
+try:
+    from config.settings import settings
+    DEFAULT_LOCAL_MODEL_ID = getattr(settings, "default_local_model_id", None)
+except ImportError:
+    DEFAULT_LOCAL_MODEL_ID = None
+
+@register("local_sd", ...)
+class LocalSDAdapter(BaseProvider):
+    
+    @classmethod
+    def from_config(cls, config: dict):
+        # ★ 核心逻辑：如果传了 model_id 就用传的，没传就去配置/清单里找
+        model_id = config.get("model_id")
+        if not model_id:
+            models = list_checkpoints()
+            if not models:
+                raise ProviderUnavailable("清单中无本地模型")
+            
+            # 尝试用默认配置，如果配置里没有或模型被删了，用第一个
+            if DEFAULT_LOCAL_MODEL_ID and any(m["id"] == DEFAULT_LOCAL_MODEL_ID for m in models):
+                model_id = DEFAULT_LOCAL_MODEL_ID
+            else:
+                model_id = models[0]["id"]
+                
+        return cls(
+            model_id=model_id, 
+            device=config.get("device", "CPU"),
+            engine_type=config.get("engine_type", "auto")
+        )
+        
+        
 # ============================================================
 # 本地引擎基类与实现（保持不变）
 # ============================================================
