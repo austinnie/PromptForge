@@ -1,7 +1,7 @@
 {
   "name": "image_curator",
   "display_name": "🖼️ 图片鉴赏",
-  "class": "skills.image_curator.ImageCurator",
+  "class": "skills.image_curator.skill.ImageCurator",
   "keywords": ["图片鉴赏", "鉴赏图片", "图片点评", "写图集", "图片配文"],
   "system_hint": "🖼️ 图片鉴赏中...",
   "inputs": [
