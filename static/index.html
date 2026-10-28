@@ -3,218 +3,277 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PromptForge 终极工作台</title>
+    <title>PromptForge 全能调度中心</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         input, textarea, select { font-size: 16px !important; }
         ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
-        ::-webkit-scrollbar-thumb:hover { background: #6b7280; }
     </style>
 </head>
-<body class="bg-gray-900 text-white min-h-screen p-4 flex flex-col gap-4 font-sans max-w-4xl mx-auto">
+<body class="bg-gray-900 text-white min-h-screen p-4 flex flex-col gap-4 font-sans max-w-5xl mx-auto">
 
-    <!-- 顶部状态栏 -->
-    <header class="text-center py-2 border-b border-gray-700 flex justify-between items-center">
+    <!-- 顶部 -->
+    <header class="flex justify-between items-center border-b border-gray-700 pb-2">
         <h1 class="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">🔥 PromptForge</h1>
-        <span class="text-xs px-2 py-1 bg-green-900 text-green-300 rounded border border-green-700 shadow-sm" id="status-text">已连接</span>
+        <span class="text-xs px-2 py-1 bg-green-900 text-green-300 rounded border border-green-700">已连接</span>
     </header>
 
-    <!-- 模式切换 Tab (新增：视频生成 与 历史图库) -->
-    <div class="flex bg-gray-800 rounded-lg p-1 shadow-lg overflow-x-auto whitespace-nowrap">
-        <button onclick="switchMode('image')" id="tab-image" class="flex-1 py-2 px-2 rounded-md bg-blue-600 text-sm font-bold transition shadow-md">🎨 图像生成</button>
-        <button onclick="switchMode('chat')" id="tab-chat" class="flex-1 py-2 px-2 rounded-md text-gray-400 text-sm font-bold hover:bg-gray-700 transition">💬 文本对话</button>
-        <button onclick="switchMode('video')" id="tab-video" class="flex-1 py-2 px-2 rounded-md text-gray-400 text-sm font-bold hover:bg-gray-700 transition">🎬 视频生成</button>
-        <button onclick="switchMode('gallery')" id="tab-gallery" class="flex-1 py-2 px-2 rounded-md text-gray-400 text-sm font-bold hover:bg-gray-700 transition">📁 历史图库</button>
+    <!-- Tab 栏 -->
+    <div class="flex bg-gray-800 rounded-lg p-1 shadow-lg overflow-x-auto whitespace-nowrap gap-1">
+        <button onclick="switchMode('t2i')" id="tab-t2i" class="flex-1 py-2 px-2 rounded-md bg-blue-600 text-sm font-bold shadow">🎨 文生图</button>
+        <button onclick="switchMode('i2i')" id="tab-i2i" class="flex-1 py-2 px-2 rounded-md text-gray-400 text-sm hover:bg-gray-700">🖼️ 图生图</button>
+        <button onclick="switchMode('chat')" id="tab-chat" class="flex-1 py-2 px-2 rounded-md text-gray-400 text-sm hover:bg-gray-700">💬 对话</button>
+        <button onclick="switchMode('video')" id="tab-video" class="flex-1 py-2 px-2 rounded-md text-gray-400 text-sm hover:bg-gray-700">🎬 视频</button>
+        <button onclick="switchMode('skills')" id="tab-skills" class="flex-1 py-2 px-2 rounded-md text-gray-400 text-sm hover:bg-gray-700">🧰 技能面板</button>
+        <button onclick="switchMode('gallery')" id="tab-gallery" class="flex-1 py-2 px-2 rounded-md text-gray-400 text-sm hover:bg-gray-700">📁 图库</button>
     </div>
 
-    <!-- ================= 图像生成配置区 ================= -->
-    <section id="image-config" class="bg-gray-800 rounded-xl p-4 shadow-lg grid grid-cols-1 md:grid-cols-3 gap-4">
+    <!-- ====== 配置区 ====== -->
+    
+    <!-- 文生图配置 -->
+    <section id="t2i-config" class="bg-gray-800 rounded-xl p-4 grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
-            <label class="text-sm text-gray-400 mb-1 block">🎨 预设风格</label>
-            <select id="preset-select" class="w-full bg-gray-700 rounded-lg p-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500">
-                <option value="">（不使用预设）</option>
-            </select>
+            <label class="text-xs text-gray-400 block mb-1">预设风格</label>
+            <select id="preset-select" class="w-full bg-gray-700 rounded-lg p-2 text-sm"></select>
         </div>
         <div>
-            <label class="text-sm text-gray-400 mb-1 block">🔌 生图引擎</label>
-            <select id="provider-select" class="w-full bg-gray-700 rounded-lg p-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500">
-                <option value="local_sd">本地算力 (Local SD)</option>
+            <label class="text-xs text-gray-400 block mb-1">生图引擎</label>
+            <select id="provider-select" class="w-full bg-gray-700 rounded-lg p-2 text-sm">
+                <option value="local_sd">本地算力</option>
                 <option value="agnes">云端 API (Agnes)</option>
                 <option value="pollinations">云端 API (Pollinations)</option>
             </select>
         </div>
         <div>
-            <label class="text-sm text-gray-400 mb-1 block">🎨 本地模型</label>
-            <select id="model-select" class="w-full bg-gray-700 rounded-lg p-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500">
-                <option value="">加载中...</option>
+            <label class="text-xs text-gray-400 block mb-1">本地模型</label>
+            <select id="model-select" class="w-full bg-gray-700 rounded-lg p-2 text-sm"></select>
+        </div>
+    </section>
+
+    <!-- 图生图配置 -->
+    <section id="i2i-config" class="hidden bg-gray-800 rounded-xl p-4 flex flex-col gap-3">
+        <div>
+            <label class="text-xs text-gray-400 block mb-1">上传参考图片</label>
+            <input type="file" id="i2i-file" accept="image/*" class="w-full bg-gray-700 rounded-lg p-2 text-sm file:mr-4 file:py-1 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-500">
+        </div>
+        <div>
+            <label class="text-xs text-gray-400 block mb-1">生图引擎</label>
+            <select id="i2i-provider" class="w-full bg-gray-700 rounded-lg p-2 text-sm">
+                <option value="local_sd">本地算力</option>
+                <option value="agnes">云端 API (Agnes)</option>
             </select>
         </div>
     </section>
 
-    <!-- ================= 文本对话配置区 ================= -->
-    <section id="chat-config" class="hidden bg-gray-800 rounded-xl p-4 shadow-lg">
-        <div>
-            <label class="text-sm text-gray-400 mb-1 block">🧠 本地大模型 (Ollama)</label>
-            <select id="llm-model-select" class="w-full bg-gray-700 rounded-lg p-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500">
-                <option value="qwen2.5:7b">加载中...</option>
-            </select>
+    <!-- 对话配置 -->
+    <section id="chat-config" class="hidden bg-gray-800 rounded-xl p-4">
+        <label class="text-xs text-gray-400 block mb-1">本地大模型 (Ollama)</label>
+        <select id="llm-model-select" class="w-full bg-gray-700 rounded-lg p-2 text-sm"></select>
+    </section>
+
+    <!-- 视频配置 -->
+    <section id="video-config" class="hidden bg-gray-800 rounded-xl p-4">
+        <label class="text-xs text-gray-400 block mb-1">视频主题描述</label>
+        <textarea id="video-prompt" rows="2" class="w-full bg-gray-700 rounded-lg p-2 text-sm"></textarea>
+    </section>
+
+    <!-- 技能面板配置 -->
+    <section id="skills-config" class="hidden bg-gray-800 rounded-xl p-4">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <button onclick="runSkill('news_aggregator', {})" class="bg-gray-700 hover:bg-gray-600 p-2 rounded text-sm text-left truncate">📰 抓取新闻简报</button>
+            <button onclick="runSkill('daily_pipeline', {})" class="bg-gray-700 hover:bg-gray-600 p-2 rounded text-sm text-left truncate">📅 执行每日任务</button>
+            <button onclick="runSkill('github_repo_daily', {})" class="bg-gray-700 hover:bg-gray-600 p-2 rounded text-sm text-left truncate">🐙 GitHub 日报</button>
+            <button onclick="runSkill('tech_hot_article', {})" class="bg-gray-700 hover:bg-gray-600 p-2 rounded text-sm text-left truncate">📄 生成技术文章</button>
+            <button onclick="runSkill('novel_writer', {genre:'科幻', title:'测试', outline:'测试', characters:'主角', chapter_count: 1, words_per_chapter: 500})" class="bg-gray-700 hover:bg-gray-600 p-2 rounded text-sm text-left truncate">📝 写小说</button>
+            <button onclick="runSkill('music_generator', {topic:'星空', emotion:'peaceful', duration: 15})" class="bg-gray-700 hover:bg-gray-600 p-2 rounded text-sm text-left truncate">🎵 生成音乐</button>
         </div>
     </section>
 
-    <!-- ================= 视频生成配置区 ================= -->
-    <section id="video-config" class="hidden bg-gray-800 rounded-xl p-4 shadow-lg">
-        <div>
-            <label class="text-sm text-gray-400 mb-1 block">🎬 视频主题 (耗时较长，请耐心等待)</label>
-            <input type="text" id="video-prompt" placeholder="例如：赛博朋克城市的夜晚，霓虹灯闪烁..." class="w-full bg-gray-700 rounded-lg p-2 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500">
-        </div>
+    <!-- 图库配置 -->
+    <section id="gallery-config" class="hidden bg-gray-800 rounded-xl p-4 flex-1">
+        <div id="gallery-grid" class="grid grid-cols-2 md:grid-cols-4 gap-4"></div>
     </section>
 
-    <!-- ================= 历史图库区 ================= -->
-    <section id="gallery-config" class="hidden bg-gray-800 rounded-xl p-4 shadow-lg flex-1">
-        <h2 class="text-lg font-bold mb-4 border-b border-gray-700 pb-2">📁 最近生成的图片</h2>
-        <div id="gallery-grid" class="grid grid-cols-2 md:grid-cols-3 gap-4">
-            <!-- 图片通过 JS 动态加载 -->
-        </div>
+    <!-- 统一输入区 -->
+    <section id="input-section" class="bg-gray-800 rounded-xl p-4 flex flex-col gap-3">
+        <textarea id="prompt-input" rows="2" placeholder="输入需求或提示词..." class="w-full bg-gray-700 rounded-lg p-3 text-sm resize-none focus:ring-2 focus:ring-blue-500"></textarea>
+        <button onclick="sendAction()" id="action-btn" class="w-full bg-blue-600 hover:bg-blue-500 font-bold py-2 rounded-lg text-sm transition shadow-lg shadow-blue-500/30">
+            ✨ 开始生成
+        </button>
     </section>
 
-    <!-- ================= 统一输入区 ================= -->
-    <section id="input-section" class="bg-gray-800 rounded-xl p-4 shadow-lg flex flex-col gap-3">
-        <textarea id="prompt-input" rows="3" placeholder="输入你的需求..." 
-            class="w-full bg-gray-700 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"></textarea>
-        
-        <div class="flex gap-2">
-            <button onclick="sendAction('chat')" id="btn-chat" class="hidden flex-1 bg-green-600 hover:bg-green-500 font-bold py-2 rounded-lg text-sm transition shadow-lg shadow-green-500/30">
-                💬 发送对话
-            </button>
-            <button onclick="sendAction('image')" id="btn-image" class="flex-[2] bg-blue-600 hover:bg-blue-500 font-bold py-2 rounded-lg text-sm transition shadow-lg shadow-blue-500/30">
-                ✨ 生成图片
-            </button>
-            <button onclick="sendAction('video')" id="btn-video" class="hidden flex-1 bg-purple-600 hover:bg-purple-500 font-bold py-2 rounded-lg text-sm transition shadow-lg shadow-purple-500/30">
-                🎬 生成视频
-            </button>
-        </div>
-    </section>
-
-    <!-- ================= 结果展示区 ================= -->
+    <!-- 结果展示区 -->
     <section class="flex-1 flex flex-col gap-4">
-        <!-- 文本回复 -->
-        <div id="chat-result" class="hidden bg-gray-800 rounded-xl p-4 text-sm text-gray-200 whitespace-pre-wrap leading-relaxed shadow-lg border border-gray-700"></div>
+        <div id="text-result" class="hidden bg-gray-800 rounded-xl p-4 text-sm text-gray-200 whitespace-pre-wrap leading-relaxed"></div>
         
-        <!-- 图片显示 -->
-        <div id="image-container" class="hidden flex-1 flex flex-col bg-gray-800 rounded-xl p-2 relative min-h-[300px] shadow-lg border border-gray-700">
-            <div id="loading" class="absolute inset-0 flex flex-col items-center justify-center bg-gray-800/90 rounded-xl hidden z-10">
-                <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-500 mb-2"></div>
-                <p id="loading-text" class="text-xs text-blue-400 font-medium">正在生成，请耐心等待...</p>
+        <div id="image-container" class="hidden flex-1 flex flex-col bg-gray-800 rounded-xl p-2 relative min-h-[300px]">
+            <div id="img-loading" class="absolute inset-0 flex flex-col items-center justify-center bg-gray-800/90 hidden z-10">
+                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mb-2"></div>
+                <p id="img-loading-text" class="text-xs text-blue-400">正在生成...</p>
             </div>
-            <img id="result-image" class="w-full h-auto rounded-lg object-contain" src="" alt="生成的图片">
+            <img id="result-image" class="w-full h-auto rounded-lg object-contain" src="">
             <p id="image-caption" class="text-xs text-center text-gray-400 mt-2"></p>
         </div>
 
-        <!-- 视频显示 -->
-        <div id="video-container" class="hidden flex-1 flex flex-col bg-gray-800 rounded-xl p-2 relative min-h-[300px] shadow-lg border border-gray-700">
-            <div id="video-loading" class="absolute inset-0 flex flex-col items-center justify-center bg-gray-800/90 rounded-xl hidden z-10">
-                <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-purple-500 mb-2"></div>
-                <p class="text-xs text-purple-400 font-medium">视频渲染中，可能需要几分钟...</p>
-            </div>
-            <video id="result-video" controls class="w-full h-auto rounded-lg object-contain hidden"></video>
-            <p id="video-caption" class="text-xs text-center text-gray-400 mt-2"></p>
+        <div id="video-container" class="hidden bg-gray-800 rounded-xl p-2 relative">
+            <video id="result-video" controls class="w-full rounded-lg"></video>
         </div>
     </section>
 
-    <!-- 全屏图片预览模态框 -->
+    <!-- 全屏预览 -->
     <div id="image-modal" class="fixed inset-0 bg-black/90 hidden z-50 flex items-center justify-center p-4" onclick="closeModal()">
-        <img id="modal-image" src="" class="max-w-full max-h-full object-contain rounded-lg shadow-2xl">
+        <img id="modal-image" src="" class="max-w-full max-h-full object-contain">
     </div>
 
     <script>
         const API_BASE = window.location.origin;
-        let currentMode = 'image';
+        let currentMode = 't2i';
 
-        // 切换模式
         function switchMode(mode) {
             currentMode = mode;
-            const modes = ['image', 'chat', 'video', 'gallery'];
+            const modes = ['t2i', 'i2i', 'chat', 'video', 'skills', 'gallery'];
             
             modes.forEach(m => {
                 const tab = document.getElementById(`tab-${m}`);
                 const config = document.getElementById(`${m}-config`);
-                const btn = document.getElementById(`btn-${m}`);
-
+                
                 if (m === mode) {
-                    // 激活状态
-                    tab.className = "flex-1 py-2 px-2 rounded-md bg-blue-600 text-sm font-bold transition shadow-md";
-                    config.classList.remove('hidden');
+                    tab.className = "flex-1 py-2 px-2 rounded-md bg-blue-600 text-sm font-bold shadow";
+                    if(config) config.classList.remove('hidden');
                 } else {
-                    // 非激活状态
-                    tab.className = "flex-1 py-2 px-2 rounded-md text-gray-400 text-sm font-bold hover:bg-gray-700 transition";
-                    config.classList.add('hidden');
+                    tab.className = "flex-1 py-2 px-2 rounded-md text-gray-400 text-sm hover:bg-gray-700";
+                    if(config) config.classList.add('hidden');
                 }
             });
 
-            // 按钮和输入框控制
+            // 控制输入区和按钮
             const inputSec = document.getElementById('input-section');
-            if (mode === 'image') {
-                inputSec.classList.remove('hidden');
-                document.getElementById('btn-image').classList.remove('hidden');
-                document.getElementById('btn-chat').classList.add('hidden');
-                document.getElementById('btn-video').classList.add('hidden');
-            } else if (mode === 'chat') {
-                inputSec.classList.remove('hidden');
-                document.getElementById('btn-image').classList.add('hidden');
-                document.getElementById('btn-chat').classList.remove('hidden');
-                document.getElementById('btn-video').classList.add('hidden');
-            } else if (mode === 'video') {
-                inputSec.classList.remove('hidden');
-                document.getElementById('btn-image').classList.add('hidden');
-                document.getElementById('btn-chat').classList.add('hidden');
-                document.getElementById('btn-video').classList.remove('hidden');
-                // 隐藏输入框，用配置区的 input
-                document.getElementById('prompt-input').classList.add('hidden');
-            } else {
-                // gallery 模式隐藏整个输入区
+            const promptInput = document.getElementById('prompt-input');
+            const actionBtn = document.getElementById('action-btn');
+
+            if (mode === 'skills' || mode === 'gallery') {
                 inputSec.classList.add('hidden');
-                loadGallery(); // 加载图库数据
+            } else {
+                inputSec.classList.remove('hidden');
             }
 
-            // 每次切换隐藏结果
-            document.getElementById('chat-result').classList.add('hidden');
+            if (mode === 'video') {
+                promptInput.classList.add('hidden'); // video 使用自己的配置区
+                actionBtn.textContent = "🎬 生成视频";
+                actionBtn.className = "w-full bg-purple-600 hover:bg-purple-500 font-bold py-2 rounded-lg text-sm shadow-lg";
+            } else if (mode === 'chat') {
+                promptInput.classList.remove('hidden');
+                actionBtn.textContent = "💬 发送对话";
+                actionBtn.className = "w-full bg-green-600 hover:bg-green-500 font-bold py-2 rounded-lg text-sm shadow-lg";
+            } else {
+                promptInput.classList.remove('hidden');
+                actionBtn.textContent = "✨ 生成图片";
+                actionBtn.className = "w-full bg-blue-600 hover:bg-blue-500 font-bold py-2 rounded-lg text-sm shadow-lg";
+            }
+
+            // 隐藏所有结果区
+            document.getElementById('text-result').classList.add('hidden');
             document.getElementById('image-container').classList.add('hidden');
             document.getElementById('video-container').classList.add('hidden');
             
-            // 恢复提示词输入框（针对 video 模式）
-            if (mode === 'video') document.getElementById('prompt-input').classList.add('hidden');
-            else document.getElementById('prompt-input').classList.remove('hidden');
+            if (mode === 'gallery') loadGallery();
         }
 
         // 动作分发
-        async function sendAction(type) {
-            if (type === 'chat') {
-                const prompt = document.getElementById('prompt-input').value.trim();
-                if (!prompt) return alert("请输入对话内容");
-                await sendChatLLM(prompt);
-            } else if (type === 'image') {
-                const prompt = document.getElementById('prompt-input').value.trim();
-                const preset = document.getElementById('preset-select').value;
-                if (!prompt && !preset) return alert("请输入提示词或选择预设！");
-                await generateImage(prompt);
-            } else if (type === 'video') {
-                const topic = document.getElementById('video-prompt').value.trim();
-                if (!topic) return alert("请输入视频主题！");
-                await generateVideo(topic);
+        async function sendAction() {
+            if (currentMode === 't2i') {
+                await generateImage();
+            } else if (currentMode === 'i2i') {
+                await generateImg2Img();
+            } else if (currentMode === 'chat') {
+                await sendChatLLM();
+            } else if (currentMode === 'video') {
+                await generateVideo();
             }
         }
 
-        // ================= 文本对话 (流式) =================
-        async function sendChatLLM(text) {
-            const chatResult = document.getElementById('chat-result');
+        // ====== 1. 文生图 ======
+        async function generateImage() {
+            const prompt = document.getElementById('prompt-input').value.trim();
+            const preset = document.getElementById('preset-select').value;
+            if (!prompt && !preset) return alert("请输入提示词或选择预设！");
+
+            const container = document.getElementById('image-container');
+            const loading = document.getElementById('img-loading');
+            const imgEl = document.getElementById('result-image');
+            
+            container.classList.remove('hidden');
+            loading.classList.remove('hidden');
+            imgEl.src = '';
+
+            try {
+                const res = await fetch(`${API_BASE}/api/generate_image`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        prompt: prompt, preset: preset,
+                        primary_provider: document.getElementById('provider-select').value,
+                        model_id: document.getElementById('model-select').value
+                    })
+                });
+                const data = await res.json();
+                loading.classList.add('hidden');
+                if (data.status === 'success') {
+                    imgEl.src = `${API_BASE}${data.image_url}`;
+                    document.getElementById('image-caption').textContent = `来源: ${data.provider}`;
+                } else alert("失败: " + JSON.stringify(data));
+            } catch (err) {
+                loading.classList.add('hidden');
+                alert("请求失败: " + err.message);
+            }
+        }
+
+        // ====== 2. 图生图 ======
+        async function generateImg2Img() {
+            const prompt = document.getElementById('prompt-input').value.trim();
+            const fileInput = document.getElementById('i2i-file');
+            if (fileInput.files.length === 0) return alert("请先上传一张参考图！");
+            if (!prompt) return alert("请输入修改指令（例如：变成赛博朋克风格）！");
+
+            const container = document.getElementById('image-container');
+            const loading = document.getElementById('img-loading');
+            const imgEl = document.getElementById('result-image');
+            
+            container.classList.remove('hidden');
+            loading.classList.remove('hidden');
+            imgEl.src = '';
+
+            const formData = new FormData();
+            formData.append('prompt', prompt);
+            formData.append('provider', document.getElementById('i2i-provider').value);
+            formData.append('image', fileInput.files[0]);
+
+            try {
+                const res = await fetch(`${API_BASE}/api/image_to_image`, {
+                    method: 'POST', body: formData
+                });
+                const data = await res.json();
+                loading.classList.add('hidden');
+                if (data.status === 'success') {
+                    imgEl.src = `${API_BASE}${data.image_url}`;
+                    document.getElementById('image-caption').textContent = `来源: ${data.provider}`;
+                } else alert("失败: " + JSON.stringify(data));
+            } catch (err) {
+                loading.classList.add('hidden');
+                alert("请求失败: " + err.message);
+            }
+        }
+
+        // ====== 3. 文本对话 (流式) ======
+        async function sendChatLLM() {
+            const text = document.getElementById('prompt-input').value.trim();
+            if (!text) return alert("请输入对话内容");
+
+            const resultDiv = document.getElementById('text-result');
             const model = document.getElementById('llm-model-select').value;
             
-            chatResult.classList.remove('hidden');
-            document.getElementById('image-container').classList.add('hidden');
-            document.getElementById('video-container').classList.add('hidden');
-            chatResult.textContent = `⏳ 正在使用 ${model} 思考...`;
+            resultDiv.classList.remove('hidden');
+            resultDiv.textContent = `⏳ 正在使用 ${model} 思考...`;
 
             try {
                 const response = await fetch(`${API_BASE}/api/chat_llm_stream`, {
@@ -222,9 +281,7 @@
                     body: JSON.stringify({ text: text, model: model })
                 });
                 
-                if (!response.ok) throw new Error("请求失败");
-                
-                chatResult.textContent = "";
+                resultDiv.textContent = "";
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder("utf-8");
                 let buffer = "";
@@ -235,136 +292,97 @@
                     buffer += decoder.decode(value, { stream: true });
                     const lines = buffer.split('\n\n');
                     buffer = lines.pop();
-                    
                     for (const line of lines) {
-                        if (line.startsWith('data: ')) {
-                            chatResult.textContent += line.slice(6);
-                        }
+                        if (line.startsWith('data: ')) resultDiv.textContent += line.slice(6);
                     }
                 }
             } catch (err) {
-                chatResult.textContent = `❌ 请求失败: ${err.message}`;
+                resultDiv.textContent = `❌ 请求失败: ${err.message}`;
             }
         }
 
-        // ================= 图像生成 =================
-        async function generateImage(prompt) {
-            const preset = document.getElementById('preset-select').value;
-            const provider = document.getElementById('provider-select').value;
-            const modelId = document.getElementById('model-select').value;
+        // ====== 4. 视频生成 ======
+        async function generateVideo() {
+            const topic = document.getElementById('video-prompt').value.trim();
+            if (!topic) return alert("请输入视频主题！");
 
-            const imageContainer = document.getElementById('image-container');
-            const loading = document.getElementById('loading');
-            const imgEl = document.getElementById('result-image');
-            const caption = document.getElementById('image-caption');
-            const chatResult = document.getElementById('chat-result');
-
-            chatResult.classList.add('hidden');
-            imageContainer.classList.remove('hidden');
-            document.getElementById('video-container').classList.add('hidden');
-            loading.classList.remove('hidden');
-            imgEl.src = ''; caption.textContent = '';
-
-            let seconds = 0;
-            const loadingText = document.getElementById('loading-text');
-            loadingText.textContent = "正在生成，请耐心等待...";
-            const timer = setInterval(() => {
-                seconds++;
-                loadingText.textContent = `正在生成 (${seconds} 秒)，本地推理较慢，请勿刷新...`;
-            }, 1000);
-
-            try {
-                const res = await fetch(`${API_BASE}/api/generate_image`, {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        prompt: prompt, width: 768, height: 768, steps: 25,
-                        primary_provider: provider, model_id: modelId, preset: preset
-                    })
-                });
-                
-                clearInterval(timer);
-                const data = await res.json();
-                loading.classList.add('hidden');
-
-                if (data.status === 'success') {
-                    imgEl.src = `${API_BASE}${data.image_url}`;
-                    caption.textContent = `来源: ${data.provider}`;
-                } else {
-                    alert("生成失败：" + JSON.stringify(data));
-                }
-            } catch (err) {
-                clearInterval(timer);
-                loading.classList.add('hidden');
-                alert("请求失败：" + err.message);
-            }
-        }
-
-        // ================= 视频生成 =================
-        async function generateVideo(topic) {
             const container = document.getElementById('video-container');
-            const loading = document.getElementById('video-loading');
             const videoEl = document.getElementById('result-video');
-            const caption = document.getElementById('video-caption');
-
-            document.getElementById('chat-result').classList.add('hidden');
-            document.getElementById('image-container').classList.add('hidden');
+            
             container.classList.remove('hidden');
-            loading.classList.remove('hidden');
             videoEl.classList.add('hidden');
-            videoEl.src = ''; caption.textContent = '';
 
             try {
                 const res = await fetch(`${API_BASE}/api/generate_video`, {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ topic: topic, duration: 15 })
                 });
-                
                 const data = await res.json();
-                loading.classList.add('hidden');
-
                 if (data.status === 'success') {
                     videoEl.src = `${API_BASE}${data.video_url}`;
                     videoEl.classList.remove('hidden');
                     videoEl.play();
-                    caption.textContent = "视频生成完成";
+                } else alert("失败: " + data.message);
+            } catch (err) { alert("请求失败: " + err.message); }
+        }
+
+        // ====== 5. 技能执行 ======
+        async function runSkill(skillName, kwargs) {
+            const resultDiv = document.getElementById('text-result');
+            resultDiv.classList.remove('hidden');
+            resultDiv.textContent = `⏳ 正在执行技能: ${skillName} ... (可能耗时较长)`;
+            
+            document.getElementById('image-container').classList.add('hidden');
+            document.getElementById('video-container').classList.add('hidden');
+
+            try {
+                const res = await fetch(`${API_BASE}/api/run_skill`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ skill_name: skillName, kwargs: kwargs })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    const resData = data.result;
+                    // 智能提取结果展示
+                    let displayTxt = `✅ 技能 ${skillName} 执行成功！\n\n`;
+                    if (resData.result) {
+                        displayTxt += JSON.stringify(resData.result, null, 2);
+                    } else {
+                        displayTxt += JSON.stringify(resData, null, 2);
+                    }
+                    resultDiv.textContent = displayTxt;
                 } else {
-                    alert("视频生成失败：" + data.message);
+                    resultDiv.textContent = `❌ 失败: ${data.message}`;
                 }
             } catch (err) {
-                loading.classList.add('hidden');
-                alert("请求超时或失败：" + err.message);
+                resultDiv.textContent = `❌ 请求失败: ${err.message}`;
             }
         }
 
-        // ================= 图库加载 =================
+        // ====== 6. 图库 ======
         async function loadGallery() {
             const grid = document.getElementById('gallery-grid');
-            grid.innerHTML = '<p class="text-gray-500 text-sm">加载中...</p>';
+            grid.innerHTML = '加载中...';
             try {
                 const res = await fetch(`${API_BASE}/api/gallery`);
                 const data = await res.json();
                 grid.innerHTML = '';
-                
                 if (!data.data || data.data.length === 0) {
-                    grid.innerHTML = '<p class="text-gray-500 text-sm">暂无生成记录</p>';
+                    grid.innerHTML = '<p class="text-gray-500">暂无生成记录</p>';
                     return;
                 }
-                
                 data.data.forEach(item => {
                     const div = document.createElement('div');
                     div.className = "bg-gray-700 rounded-lg overflow-hidden relative group cursor-pointer shadow-md";
                     div.innerHTML = `
-                        <img src="${API_BASE}${item.url}" class="w-full h-40 object-cover group-hover:opacity-80 transition" onclick="showModal('${API_BASE}${item.url}')">
-                        <div class="p-2 text-xs text-center text-gray-400 border-t border-gray-600">${item.time}</div>
+                        <img src="${API_BASE}${item.url}" class="w-full h-32 object-cover" onclick="showModal('${API_BASE}${item.url}')">
+                        <div class="p-1 text-xs text-center text-gray-400">${item.time}</div>
                     `;
                     grid.appendChild(div);
                 });
-            } catch (err) {
-                grid.innerHTML = `<p class="text-red-500 text-sm">加载失败: ${err.message}</p>`;
-            }
+            } catch (err) { grid.innerHTML = '加载失败'; }
         }
 
-        // 全屏预览
         function showModal(url) {
             document.getElementById('modal-image').src = url;
             document.getElementById('image-modal').classList.remove('hidden');
@@ -373,67 +391,43 @@
             document.getElementById('image-modal').classList.add('hidden');
         }
 
-        // ================= 初始化数据加载 =================
+        // 初始化
         async function loadInitData() {
-            // 1. 加载本地生图模型
+            // 预设和模型加载（复用之前的代码）
             try {
-                const res = await fetch(`${API_BASE}/api/models`);
-                const data = await res.json();
-                const select = document.getElementById('model-select');
-                select.innerHTML = '';
-                if (data.data && data.data.length > 0) {
-                    data.data.forEach(m => {
-                        const opt = document.createElement('option');
-                        opt.value = m.id;
-                        opt.textContent = `[${m.base.toUpperCase()}] ${m.name}`;
-                        select.appendChild(opt);
-                    });
-                }
-            } catch (err) { console.error("本地模型加载失败", err); }
+                const resM = await fetch(`${API_BASE}/api/models`);
+                const dataM = await resM.json();
+                const selM = document.getElementById('model-select');
+                if(dataM.data) dataM.data.forEach(m => selM.add(new Option(`[${m.base.toUpperCase()}] ${m.name}`, m.id)));
+            } catch(e){}
 
-            // 2. 加载图像预设
             try {
-                const res = await fetch(`${API_BASE}/api/presets`);
-                const data = await res.json();
-                const select = document.getElementById('preset-select');
-                if (data.status === 'success' && data.data) {
+                const resP = await fetch(`${API_BASE}/api/presets`);
+                const dataP = await resP.json();
+                const selP = document.getElementById('preset-select');
+                if (dataP.status === 'success') {
                     const groups = {};
-                    data.data.forEach(p => {
+                    dataP.data.forEach(p => {
                         if (!groups[p.category]) groups[p.category] = [];
                         groups[p.category].push(p);
                     });
                     Object.keys(groups).forEach(cat => {
-                        const optgroup = document.createElement('optgroup');
-                        optgroup.label = cat;
-                        groups[cat].forEach(p => {
-                            const opt = document.createElement('option');
-                            opt.value = p.id;
-                            opt.textContent = p.name;
-                            optgroup.appendChild(opt);
-                        });
-                        select.appendChild(optgroup);
+                        const og = document.createElement('optgroup');
+                        og.label = cat;
+                        groups[cat].forEach(p => og.appendChild(new Option(p.name, p.id)));
+                        selP.appendChild(og);
                     });
                 }
-            } catch (err) { console.error("预设加载失败", err); }
+            } catch(e){}
 
-            // 3. 加载 Ollama 文本模型
             try {
-                const res = await fetch(`${API_BASE}/api/llm_models`);
-                const data = await res.json();
-                const select = document.getElementById('llm-model-select');
-                if (data.status === 'success' && data.data && data.data.length > 0) {
-                    select.innerHTML = '';
-                    data.data.forEach(m => {
-                        const opt = document.createElement('option');
-                        opt.value = m;
-                        opt.textContent = m;
-                        select.appendChild(opt);
-                    });
-                }
-            } catch (err) { console.error("Ollama模型加载失败", err); }
+                const resL = await fetch(`${API_BASE}/api/llm_models`);
+                const dataL = await resL.json();
+                const selL = document.getElementById('llm-model-select');
+                if(dataL.data) dataL.data.forEach(m => selL.add(new Option(m, m)));
+            } catch(e){}
         }
 
-        // 页面加载完成后初始化
         window.onload = loadInitData;
     </script>
 </body>

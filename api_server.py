@@ -6,7 +6,7 @@ PromptForge 多端 API 服务端
 
 import logging
 from typing import Optional
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
@@ -33,10 +33,15 @@ from providers.registry import create
 from fastapi.responses import StreamingResponse
 
 import os
+import time
 from datetime import datetime
 
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+
+import base64
+import io
+from PIL import Image
     
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -346,6 +351,84 @@ async def generate_video(req: VideoRequest):
         return {"status": "error", "message": "未返回视频路径"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ================= 图生图接口 =================
+@app.post("/api/image_to_image")
+async def image_to_image(
+    prompt: str = Form(""),
+    provider: str = Form("local_sd"),
+    image: UploadFile = File(...)
+):
+    try:
+        # 1. 读取上传的图片
+        contents = await image.read()
+        init_img = Image.open(io.BytesIO(contents)).convert("RGB")
+        
+        # 2. 组装 Provider
+        from providers.fallback import FallbackImageProvider
+        primary = provider
+        pool = [p for p in list_providers("image") if p != primary]
+        
+        configs = {p: ({"device": "CPU"} if p == "local_sd" else settings.get_provider_config(p)) for p in [primary] + pool}
+        prov = FallbackImageProvider(primary=primary, fallback=pool, configs=configs)
+        
+        # 3. 构建图生图请求
+        req = ImageRequest(
+            prompt=prompt if prompt else "masterpiece, high quality",
+            reference=init_img,
+            strength=0.7,
+            width=768, height=768, steps=25
+        )
+        
+        # 4. 执行
+        result_img = await run_in_threadpool(prov.image_to_image, req)
+        
+        # 5. 保存
+        filename = f"img2img_{int(time.time())}.png"
+        filepath = os.path.join("output/api", filename)
+        result_img.save(filepath)
+        
+        return {"status": "success", "image_url": f"/output/api/{filename}", "provider": prov.get_name()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ================= 通用技能执行接口 =================
+class SkillRequest(BaseModel):
+    skill_name: str
+    kwargs: dict = {}
+
+@app.post("/api/run_skill")
+async def run_skill(req: SkillRequest):
+    """在后台运行指定的 Skill"""
+    try:
+        from core.skill_routes import SKILL_ROUTES
+        from handlers.skill_handler import SkillHandler
+        
+        if req.skill_name not in SKILL_ROUTES:
+            return {"status": "error", "message": f"未知的技能: {req.skill_name}"}
+            
+        cfg = SKILL_ROUTES[req.skill_name]
+        module_path = cfg.get("module")
+        class_name = cfg.get("class")
+        
+        # 动态导入类
+        import importlib
+        mod = importlib.import_module(module_path)
+        skill_cls = getattr(mod, class_name)
+        
+        # 实例化并执行
+        skill = skill_cls()
+        # 合并参数，注意不同 skill 需要的参数名不同，这里做一次解包
+        result = await run_in_threadpool(skill.execute, **req.kwargs)
+        
+        return {"status": "success", "result": result}
+    except Exception as e:
+        logger.error(f"技能 {req.skill_name} 执行失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"status": "error", "message": str(e)}
         
 # （可选）挂载静态文件目录，让前端可以直接访问生成的图片
 from fastapi.staticfiles import StaticFiles
