@@ -1,40 +1,22 @@
 {
   "name": "daily_pipeline",
-  "version": "1.0.0",
-  "description": "每日自动化任务：生成图片 → AI 鉴赏写文章 → 追加二维码 → 微信排版 → 推送草稿箱。主题与预设智能匹配，支持自定义主题池。",
-  "author": "PromptForge",
-  "inputs": {
-    "topic": "主题（默认随机）",
-    "preset": "预设名（默认随机）",
-    "preset_category": "限定预设分类：机甲/国风/人像/动漫/素描/动物/设计/风景",
-    "vary_preset": "每张图从同分类换一个预设（bool）",
-    "count": "生成张数（默认 6）",
-    "theme": "微信排版主题（默认 newspaper）",
-    "output_root": "生图输出根目录（默认 output/daily）",
-    "qr": "文末二维码路径",
-    "publish": "是否推送草稿箱（默认 true）",
-    "open_browser": "完成后打开浏览器（默认 false）",
-    "skip_curate": "只生图，跳过鉴赏（bool）",
-    "skip_generate": "跳过生图（bool，需 image_dir）",
-    "image_dir": "已有图片目录"
-  },
-  "outputs": {
-    "topic": "实际使用的主题",
-    "preset": "实际使用的预设",
-    "image_dir": "图片目录绝对路径",
-    "md_path": "文章 Markdown 路径",
-    "article_dir": "微信排版输出目录",
-    "preview_path": "preview.html 绝对路径",
-    "clipboard_path": "clipboard.html 绝对路径",
-    "published": "是否成功推送草稿箱（bool）"
-  },
-  "engines": ["agnes"],
+  "display_name": "📅 每日任务",
+  "class": "skills.DailyPipeline",
+  "keywords": ["每日任务", "每日生图", "执行每日", "今日生图"],
+  "system_hint": "📅 执行每日管线...",
+  "inputs": [
+    {"name": "count",      "type": "int",    "required": false, "label": "张数", "default": 6},
+    {"name": "theme",      "type": "string", "required": false, "label": "排版主题", "default": "newspaper"},
+    {"name": "vary_preset","type": "bool",   "required": false, "label": "每张换预设", "default": false},
+    {"name": "publish",    "type": "bool",   "required": false, "label": "推送公众号", "default": true}
+  ],
+  "outputs": [
+    {"name": "image_dir",   "type": "dir",  "label": "图片目录"},
+    {"name": "article_dir", "type": "dir",  "label": "排版输出"},
+    {"name": "preview_path","type": "file", "label": "浏览器预览"}
+  ],
   "depends_on": ["image_generator", "image_curator", "wechat_formatter"],
-  "class_name": "DailyPipeline",
-  "examples": [
-    "python scripts/daily_task.py",
-    "python scripts/daily_task.py --vary-preset --count 8",
-    "python scripts/daily_task.py --topic '月下松林' --no-publish --open",
-    "python -m skills.daily_pipeline.skill --list-presets"
-  ]
+  "chainable": true,
+  "version": "1.0.0",
+  "description": "一键生图 → 鉴赏 → 排版 → 推公众号草稿箱"
 }

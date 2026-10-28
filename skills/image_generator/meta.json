@@ -1,62 +1,19 @@
 {
   "name": "image_generator",
-  "version": "1.0.0",
-  "description": "图像生成 Skill，支持文生图和图生图",
-  "tags": ["image", "generation", "text-to-image", "image-to-image"],
-  "dependencies": ["Pillow", "requests"],
+  "display_name": "🎨 图像生成",
+  "class": "skills.ImageGenerator",
+  "keywords": ["生成图片", "生成一张", "帮我画"],
+  "system_hint": "🎨 生成中...",
   "inputs": [
-    {
-      "name": "prompt",
-      "type": "string",
-      "description": "提示词",
-      "required": true
-    },
-    {
-      "name": "width",
-      "type": "integer",
-      "description": "宽度",
-      "required": false,
-      "default": 1024
-    },
-    {
-      "name": "height",
-      "type": "integer",
-      "description": "高度",
-      "required": false,
-      "default": 1024
-    },
-    {
-      "name": "steps",
-      "type": "integer",
-      "description": "推理步数",
-      "required": false,
-      "default": 25
-    },
-    {
-      "name": "cfg",
-      "type": "float",
-      "description": "引导强度",
-      "required": false,
-      "default": 7.5
-    },
-    {
-      "name": "seed",
-      "type": "integer",
-      "description": "随机种子",
-      "required": false
-    },
-    {
-      "name": "engine",
-      "type": "string",
-      "description": "引擎名称 (agnes/pollinations/huggingface)",
-      "required": false,
-      "default": "agnes"
-    }
+    {"name": "prompt", "type": "string", "required": true,  "label": "提示词"},
+    {"name": "width",  "type": "int",    "required": false, "label": "宽度", "default": 1024},
+    {"name": "height", "type": "int",    "required": false, "label": "高度", "default": 1024}
   ],
   "outputs": [
-    {"name": "image_path", "description": "生成的图片路径"},
-    {"name": "engine", "description": "使用的引擎"},
-    {"name": "seed", "description": "使用的种子"}
+    {"name": "image_path", "type": "file", "label": "图片"}
   ],
-  "class_name": "ImageGenerator"
+  "depends_on": [],
+  "chainable": true,
+  "version": "1.1.0",
+  "description": "文生图、图生图，走 FallbackImageProvider"
 }

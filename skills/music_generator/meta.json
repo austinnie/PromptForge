@@ -1,50 +1,22 @@
 {
-  "name": "AI音乐大师",
-  "description": "从文字到天籁之音，自动写词、谱曲，智能适配硬件",
-  "version": "2.0.0",
+  "name": "music_generator",
+  "display_name": "🎵 音乐生成",
+  "class": "skills.music_generator.skill.MusicMaestro",
+  "keywords": ["生成音乐", "作曲", "编曲", "生成一首歌", "配乐"],
+  "system_hint": "🎵 音乐生成中...",
   "inputs": [
-    {
-      "name": "topic",
-      "type": "string",
-      "description": "歌曲主题",
-      "required": true,
-      "default": "星辰大海"
-    },
-    {
-      "name": "emotion",
-      "type": "string",
-      "description": "情绪基调",
-      "required": false,
-      "default": "epic",
-      "enum": ["joyful", "melancholic", "epic", "peaceful", "mysterious"]
-    },
-    {
-      "name": "language",
-      "type": "string",
-      "description": "歌词语言",
-      "required": false,
-      "default": "zh"
-    },
-    {
-      "name": "duration",
-      "type": "integer",
-      "description": "时长(秒)",
-      "required": false,
-      "default": 30
-    },
-    {
-      "name": "force_mode",
-      "type": "string",
-      "description": "强制模式 (midi/musicgen)",
-      "required": false
-    }
+    {"name": "topic",    "type": "string", "required": true,  "label": "主题"},
+    {"name": "emotion",  "type": "choice", "required": false, "label": "情绪",
+     "choices": ["peaceful", "melancholic", "joyful", "epic", "mysterious", "romantic", "energetic"], "default": "peaceful"},
+    {"name": "duration", "type": "int",    "required": false, "label": "时长（秒）", "default": 30},
+    {"name": "language", "type": "string", "required": false, "label": "语言", "default": "zh"}
   ],
   "outputs": [
-    {"name": "audio_file", "description": "生成的音频文件"},
-    {"name": "lyrics", "description": "歌词"},
-    {"name": "mode_used", "description": "使用的生成模式"}
+    {"name": "audio_file", "type": "file", "label": "音频"},
+    {"name": "mode_used",  "type": "str",  "label": "引擎"}
   ],
-  "dependencies": ["midiutil", "requests"],
-  "optional_dependencies": ["torch", "transformers", "scipy"],
-  "tags": ["music", "ai", "creative"]
+  "depends_on": [],
+  "chainable": false,
+  "version": "2.0.0",
+  "description": "自适应音乐生成：MIDI / MusicGen 双引擎，自动写词谱曲"
 }
