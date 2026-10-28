@@ -10,8 +10,6 @@
     <meta name="theme-color" content="#111827">
     <link rel="manifest" href="/static/manifest.json">
     <link rel="apple-touch-icon" href="/static/icon-192.png">
-    
-    <!-- 适配 iOS 添加到主屏幕后的全屏状态 -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="PromptForge">
@@ -21,7 +19,6 @@
         input, textarea, select { font-size: 16px !important; }
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
-        /* 防止 iOS 全屏时顶部状态栏遮挡 */
         body { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
     </style>
 </head>
@@ -30,7 +27,7 @@
     <!-- 顶部 -->
     <header class="flex justify-between items-center border-b border-gray-700 pb-2">
         <h1 class="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">🔥 PromptForge</h1>
-        <span class="text-xs px-2 py-1 bg-green-900 text-green-300 rounded border border-green-700">已连接</span>
+        <span class="text-xs px-2 py-1 bg-green-900 text-green-300 rounded border border-green-700" id="conn-status">已连接</span>
     </header>
 
     <!-- Tab 栏 -->
@@ -142,9 +139,27 @@
 
     <script>
         const API_BASE = window.location.origin;
+        
+        // ★ 核心安全配置：必须与后端 api_server.py 里的 API_SECRET_KEY 保持一致
+        const SECRET_KEY = "promptforge_secret_2026"; 
+
         let currentMode = 't2i';
 
-        // PWA Service Worker 注册
+        // ================= 安全的请求封装 =================
+        async function fetchAuth(url, options = {}) {
+            if (!options.headers) options.headers = {};
+            options.headers['X-API-Key'] = SECRET_KEY;
+            const response = await fetch(url, options);
+            if (response.status === 401) {
+                document.getElementById('conn-status').textContent = "未授权";
+                document.getElementById('conn-status').className = "text-xs px-2 py-1 bg-red-900 text-red-300 rounded border border-red-700";
+                alert("安全验证失败：密钥错误或未授权！");
+                throw new Error("Unauthorized");
+            }
+            return response;
+        }
+
+        // 注册 PWA Service Worker
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('/static/sw.js')
@@ -237,7 +252,7 @@
             }, 1000);
 
             try {
-                const res = await fetch(`${API_BASE}/api/generate_image`, {
+                const res = await fetchAuth(`${API_BASE}/api/generate_image`, {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         prompt: prompt, preset: preset,
@@ -280,7 +295,8 @@
             formData.append('image', fileInput.files[0]);
 
             try {
-                const res = await fetch(`${API_BASE}/api/image_to_image`, {
+                // 注意：FormData 请求不用手动加 Content-Type，浏览器会自动加 boundary
+                const res = await fetchAuth(`${API_BASE}/api/image_to_image`, {
                     method: 'POST', body: formData
                 });
                 const data = await res.json();
@@ -307,7 +323,7 @@
             resultDiv.textContent = `⏳ 正在使用 ${model} 思考...`;
 
             try {
-                const response = await fetch(`${API_BASE}/api/chat_llm_stream`, {
+                const response = await fetchAuth(`${API_BASE}/api/chat_llm_stream`, {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ text: text, model: model })
                 });
@@ -344,7 +360,7 @@
             videoEl.classList.add('hidden');
 
             try {
-                const res = await fetch(`${API_BASE}/api/generate_video`, {
+                const res = await fetchAuth(`${API_BASE}/api/generate_video`, {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ topic: topic, duration: 15 })
                 });
@@ -367,7 +383,7 @@
             document.getElementById('video-container').classList.add('hidden');
 
             try {
-                const res = await fetch(`${API_BASE}/api/run_skill`, {
+                const res = await fetchAuth(`${API_BASE}/api/run_skill`, {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ skill_name: skillName, kwargs: kwargs })
                 });
@@ -391,7 +407,7 @@
             const grid = document.getElementById('gallery-grid');
             grid.innerHTML = '加载中...';
             try {
-                const res = await fetch(`${API_BASE}/api/gallery`);
+                const res = await fetchAuth(`${API_BASE}/api/gallery`);
                 const data = await res.json();
                 grid.innerHTML = '';
                 if (!data.data || data.data.length === 0) {
@@ -421,14 +437,14 @@
         // 初始化
         async function loadInitData() {
             try {
-                const resM = await fetch(`${API_BASE}/api/models`);
+                const resM = await fetchAuth(`${API_BASE}/api/models`);
                 const dataM = await resM.json();
                 const selM = document.getElementById('model-select');
                 if(dataM.data) dataM.data.forEach(m => selM.add(new Option(`[${m.base.toUpperCase()}] ${m.name}`, m.id)));
             } catch(e){}
 
             try {
-                const resP = await fetch(`${API_BASE}/api/presets`);
+                const resP = await fetchAuth(`${API_BASE}/api/presets`);
                 const dataP = await resP.json();
                 const selP = document.getElementById('preset-select');
                 if (dataP.status === 'success') {
@@ -447,7 +463,7 @@
             } catch(e){}
 
             try {
-                const resL = await fetch(`${API_BASE}/api/llm_models`);
+                const resL = await fetchAuth(`${API_BASE}/api/llm_models`);
                 const dataL = await resL.json();
                 const selL = document.getElementById('llm-model-select');
                 if(dataL.data) dataL.data.forEach(m => selL.add(new Option(m, m)));
