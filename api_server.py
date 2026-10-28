@@ -49,7 +49,8 @@ class GenerateImageRequest(BaseModel):
     height: int = 1024
     steps: int = 25
     primary_provider: Optional[str] = None  # 可以指定优先用本地还是云端
-
+    # ★ 新增：允许前端指定本地模型 ID
+    model_id: Optional[str] = None
 # ==================== API 路由 ====================
 
 @app.get("/api/models")
@@ -84,13 +85,8 @@ async def chat_endpoint(req: ChatRequest):
 
 @app.post("/api/generate_image")
 async def generate_image(req: GenerateImageRequest):
-    """
-    统一生图接口（核心！手机端直接调这个）
-    自动走本地优先，云端兜底。
-    """
-    logger.info(f"📥 收到生图请求: {req.prompt[:20]}...")
+    logger.info(f"📥 收到生图请求: {req.prompt[:20]}... (模型: {req.model_id}, 引擎: {req.primary_provider})")
     
-    # 1. 设定 primary 和 fallback
     primary = req.primary_provider or "local_sd"
     all_image_providers = list_providers("image")
     
@@ -103,7 +99,10 @@ async def generate_image(req: GenerateImageRequest):
     configs = {}
     for p in [primary] + pool:
         if p == "local_sd":
-            configs[p] = {"device": "CPU"}  # 具体 model_id 会由 Adapter 内部去 settings 兜底
+            # ★ 将前端传过来的模型 ID 注入给适配器
+            configs[p] = {"device": "CPU"}
+            if req.model_id:
+                configs[p]["model_id"] = req.model_id
         else:
             configs[p] = settings.get_provider_config(p)
 

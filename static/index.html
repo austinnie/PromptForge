@@ -3,51 +3,55 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PromptForge 移动端</title>
+    <title>PromptForge 工作台</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        /* 防止 iOS 输入框放大 */
-        input, textarea { font-size: 16px !important; }
-    </style>
+    <style>input, textarea, select { font-size: 16px !important; }</style>
 </head>
-<body class="bg-gray-900 text-white min-h-screen p-4 flex flex-col gap-4 font-sans">
+<body class="bg-gray-900 text-white min-h-screen p-4 flex flex-col gap-4 font-sans max-w-4xl mx-auto">
 
-    <!-- 头部 -->
-    <header class="text-center py-2 border-b border-gray-700">
-        <h1 class="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">
-            🔥 PromptForge
-        </h1>
-        <p class="text-xs text-gray-400 mt-1" id="status-text">等待连接后端...</p>
+    <header class="text-center py-2 border-b border-gray-700 flex justify-between items-center">
+        <h1 class="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">🔥 PromptForge</h1>
+        <span class="text-xs px-2 py-1 bg-green-900 text-green-300 rounded border border-green-700" id="status-text">等待连接...</span>
     </header>
 
-    <!-- 模型选择 -->
-    <section class="bg-gray-800 rounded-xl p-4 shadow-lg">
-        <label class="text-sm text-gray-400 mb-2 block">🎨 本地模型</label>
-        <select id="model-select" class="w-full bg-gray-700 text-white rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-            <option value="">加载中...</option>
-        </select>
+    <!-- 配置区 -->
+    <section class="bg-gray-800 rounded-xl p-4 shadow-lg grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+            <label class="text-sm text-gray-400 mb-1 block">🔌 生图引擎 (Provider)</label>
+            <select id="provider-select" class="w-full bg-gray-700 rounded-lg p-2 text-sm focus:outline-none">
+                <option value="local_sd">本地算力 (Local SD)</option>
+                <option value="agnes">云端 API (Agnes)</option>
+                <option value="pollinations">云端 API (Pollinations)</option>
+            </select>
+        </div>
+        <div>
+            <label class="text-sm text-gray-400 mb-1 block">🎨 本地模型 (Model)</label>
+            <select id="model-select" class="w-full bg-gray-700 rounded-lg p-2 text-sm focus:outline-none">
+                <option value="">加载中...</option>
+            </select>
+        </div>
     </section>
 
     <!-- 输入区 -->
     <section class="bg-gray-800 rounded-xl p-4 shadow-lg flex flex-col gap-3">
-        <textarea id="prompt-input" rows="3" placeholder="描述你想生成的画面，或者输入指令（例如：切换模型 ov_int8_sd15）" 
-            class="w-full bg-gray-700 text-white rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"></textarea>
-        
+        <textarea id="prompt-input" rows="2" placeholder="输入指令或画面描述..." 
+            class="w-full bg-gray-700 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"></textarea>
         <div class="flex gap-2">
-            <button onclick="sendChat()" class="flex-1 bg-gray-600 hover:bg-gray-500 text-white font-medium py-2 rounded-lg text-sm transition">
-                💬 发送指令
+            <button onclick="sendChat()" class="flex-1 bg-gray-600 hover:bg-gray-500 font-medium py-2 rounded-lg text-sm transition">
+                💬 发送指令 (Chat)
             </button>
-            <button onclick="generateImage()" class="flex-[2] bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 rounded-lg text-sm transition shadow-lg shadow-blue-500/30">
-                ✨ 生成图片
+            <button onclick="generateImage()" class="flex-[2] bg-blue-600 hover:bg-blue-500 font-bold py-2 rounded-lg text-sm transition shadow-lg shadow-blue-500/30">
+                ✨ 生成图片 (Image)
             </button>
         </div>
     </section>
 
     <!-- 结果展示区 -->
-    <section id="result-area" class="flex-1 flex flex-col gap-4">
-        <!-- 对话结果 -->
-        <div id="chat-result" class="hidden bg-gray-800 rounded-xl p-4 text-sm font-mono text-green-400 break-all"></div>
-        <!-- 图片结果 -->
+    <section class="flex-1 flex flex-col gap-4">
+        <!-- 文本输出 -->
+        <div id="chat-result" class="hidden bg-gray-800 rounded-xl p-4 text-sm font-mono text-green-400 break-all whitespace-pre-wrap"></div>
+        
+        <!-- 图片输出 -->
         <div id="image-container" class="hidden flex-1 flex flex-col bg-gray-800 rounded-xl p-2 relative min-h-[300px]">
             <div id="loading" class="absolute inset-0 flex flex-col items-center justify-center bg-gray-800/80 hidden z-10">
                 <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-500 mb-2"></div>
@@ -59,8 +63,6 @@
     </section>
 
     <script>
-        // ★ 核心：如果你在电脑上打开，用 127.0.0.1；如果在手机上打开，请把这里改成你电脑的局域网 IP
-        // 比如： const API_BASE = "http://192.168.1.100:8000";
         const API_BASE = window.location.origin; 
 
         // 1. 页面加载时获取模型列表
@@ -78,13 +80,13 @@
                         opt.textContent = `[${m.base.toUpperCase()}] ${m.name}`;
                         select.appendChild(opt);
                     });
-                    document.getElementById('status-text').textContent = "✅ 后端已连接";
+                    document.getElementById('status-text').textContent = "✅ 已连接";
                 } else {
                     select.innerHTML = '<option value="">无可用模型</option>';
                 }
             } catch (err) {
-                document.getElementById('status-text').textContent = "❌ 后端连接失败";
-                document.getElementById('status-text').classList.add('text-red-500');
+                document.getElementById('status-text').textContent = "❌ 断线";
+                document.getElementById('status-text').className = "text-xs px-2 py-1 bg-red-900 text-red-300 rounded border border-red-700";
             }
         }
 
@@ -92,19 +94,20 @@
         async function sendChat() {
             const text = document.getElementById('prompt-input').value.trim();
             if (!text) return;
-
             const chatResult = document.getElementById('chat-result');
             chatResult.classList.remove('hidden');
             chatResult.textContent = "⏳ 识别意图中...";
+            
+            // 顺便隐藏图片区
+            document.getElementById('image-container').classList.add('hidden');
 
             try {
                 const res = await fetch(`${API_BASE}/api/chat`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text: text, has_image: false })
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: text })
                 });
                 const data = await res.json();
-                chatResult.textContent = JSON.stringify(data, null, 2);
+                chatResult.textContent = "意图解析结果:\n" + JSON.stringify(data, null, 2);
             } catch (err) {
                 chatResult.textContent = `❌ 请求失败: ${err.message}`;
             }
@@ -113,10 +116,10 @@
         // 3. 生成图片
         async function generateImage() {
             const prompt = document.getElementById('prompt-input').value.trim();
-            if (!prompt) {
-                alert("请输入提示词！");
-                return;
-            }
+            if (!prompt) return alert("请输入提示词！");
+
+            const provider = document.getElementById('provider-select').value;
+            const modelId = document.getElementById('model-select').value;
 
             const imageContainer = document.getElementById('image-container');
             const loading = document.getElementById('loading');
@@ -124,22 +127,19 @@
             const caption = document.getElementById('image-caption');
             const chatResult = document.getElementById('chat-result');
 
-            // 隐藏文本结果，显示图片容器
             chatResult.classList.add('hidden');
             imageContainer.classList.remove('hidden');
             loading.classList.remove('hidden');
-            imgEl.src = '';
-            caption.textContent = '';
+            imgEl.src = ''; caption.textContent = '';
 
             try {
                 const res = await fetch(`${API_BASE}/api/generate_image`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         prompt: prompt,
-                        width: 768,
-                        height: 768,
-                        steps: 25
+                        width: 768, height: 768, steps: 25,
+                        primary_provider: provider,
+                        model_id: modelId
                     })
                 });
                 
@@ -147,7 +147,6 @@
                 loading.classList.add('hidden');
 
                 if (data.status === 'success') {
-                    // 拼接完整的图片 URL
                     imgEl.src = `${API_BASE}${data.image_url}`;
                     caption.textContent = `来源: ${data.provider}`;
                 } else {
@@ -159,7 +158,6 @@
             }
         }
 
-        // 初始化
         window.onload = loadModels;
     </script>
 </body>
