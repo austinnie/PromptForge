@@ -56,12 +56,13 @@ _QUALITY_MARKERS = (
 
 
 @register(
-    "pollinations",
+    name="pollinations",
     capabilities=["image", "audio", "video", "text"],
-    requires_key=True,     # 图像必须 key + pollen 余额
-    free=False,            # 图像不免费了（chat 免费）
-    description="Pollinations AI（图像需 pollen 余额，chat 免费）",
+    requires_key=True,
+    free=False,
+    description="Pollinations AI（图像需 pollen 余额，chat 免费）"
 )
+
 class PollinationsAdapter(BaseProvider):
 
     # ============================================================

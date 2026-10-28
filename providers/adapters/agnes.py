@@ -17,12 +17,13 @@ from ..registry import register
 
 
 @register(
-    "agnes",
+    name="agnes",
     capabilities=["image", "video", "text", "vision"],
     requires_key=True,
     free=True,
-    description="Agnes AI，注册免费，支持图像/视频/文本/视觉",
+    description="Agnes AI，注册免费，支持图像/视频/文本/视觉"
 )
+
 class AgnesAdapter(BaseProvider):
 
     @classmethod
