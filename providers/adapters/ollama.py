@@ -62,3 +62,32 @@ class OllamaAdapter(BaseProvider):
         except Exception as e:
             logger.error(f"❌ Ollama 请求失败: {e}")
             raise ProviderUnavailable(f"Ollama 连接失败: {e}")
+            
+
+    def chat_stream(self, req: TextRequest):
+        url = f"{self.base_url}/api/chat"
+        messages = []
+        if req.system_prompt:
+            messages.append({"role": "system", "content": req.system_prompt})
+        messages.append({"role": "user", "content": req.prompt})
+
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "stream": True,  # ★ 开启流式
+            "options": {"temperature": req.temperature}
+        }
+        
+        try:
+            # requests 结合 stream=True 迭代读取
+            with requests.post(url, json=payload, stream=True, timeout=60, proxies={"http": None, "https": None}) as res:
+                res.raise_for_status()
+                import json
+                for line in res.iter_lines():
+                    if line:
+                        chunk = json.loads(line)
+                        if "message" in chunk:
+                            yield chunk["message"]["content"]
+        except Exception as e:
+            logger.error(f"Ollama 流式请求失败: {e}")
+            yield f"[Error: {e}]"            

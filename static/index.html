@@ -152,21 +152,41 @@
             chatResult.textContent = `⏳ 正在使用 ${model} 思考...`;
 
             try {
-                const res = await fetch(`${API_BASE}/api/chat_llm`, {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                const response = await fetch(`${API_BASE}/api/chat_llm_stream`, {
+                    method: 'POST', 
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ text: text, model: model })
                 });
-                const data = await res.json();
-                if (data.status === 'success') {
-                    chatResult.textContent = data.response;
-                } else {
-                    chatResult.textContent = `❌ 错误: ${data.detail}`;
+                
+                if (!response.ok) throw new Error("请求失败");
+                
+                // 清空加载提示，准备接收文字
+                chatResult.textContent = "";
+                
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder("utf-8");
+                let buffer = "";
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n\n');
+                    buffer = lines.pop(); // 把最后可能不完整的一段留着
+                    
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const chunk = line.slice(6); // 去掉 'data: '
+                            chatResult.textContent += chunk;
+                        }
+                    }
                 }
             } catch (err) {
                 chatResult.textContent = `❌ 请求失败: ${err.message}`;
             }
         }
-
+		
         // ================= 图像生成 =================
         async function generateImage(prompt) {
             const preset = document.getElementById('preset-select').value;

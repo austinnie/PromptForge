@@ -29,6 +29,8 @@ except ImportError:
 from providers.base import TextRequest
 from providers.base import ImageRequest
 from providers.registry import create
+
+from fastapi.responses import StreamingResponse
     
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -115,6 +117,24 @@ async def chat_llm(req: ChatLLMRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+# 新增一个路由（保留原来的 /api/chat_llm 作为非流式备用）
+@app.post("/api/chat_llm_stream")
+async def chat_llm_stream(req: ChatLLMRequest):
+    provider = create("ollama_local", config={"model": req.model})
+    text_req = TextRequest(prompt=req.text, system_prompt=req.system_prompt)
+    
+    # 用一个生成器包装流式输出
+    def event_generator():
+        try:
+            for chunk in provider.chat_stream(text_req):
+                # SSE 标准格式： "data: 你的内容\n\n"
+                yield f"data: {chunk}\n\n"
+        except Exception as e:
+            yield f"data: [Error: {str(e)}]\n\n"
+            
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+    
 @app.get("/api/llm_models")
 def get_llm_models():
     """获取本地 Ollama 可用模型列表"""
