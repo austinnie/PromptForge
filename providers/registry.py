@@ -26,6 +26,7 @@ _REGISTRY: dict[str, type] = {}
 # name -> metadata（供 GUI 展示）
 _META: dict[str, dict] = {}
 
+_INSTANCE_CACHE: dict[str, Any] = {}  # ★ 新增：单例缓存
 
 def register(
     name: str,
@@ -66,27 +67,23 @@ def register(
     return deco
 
 
-def create(name: str, config: dict) -> Any:
-    """
-    按名称创建 provider 实例。
+def create(name: str, config: dict = None, force_new: bool = False) -> Any:
+    """按名称创建（或获取） provider 实例。"""
+    # ★ 如果已经有缓存且不需要强刷，直接返回
+    if name in _INSTANCE_CACHE and not force_new:
+        return _INSTANCE_CACHE[name]
 
-    Raises:
-        ProviderConfigError: 未注册 或 配置不足
-    """
     cls = _REGISTRY.get(name)
     if cls is None:
-        raise ProviderConfigError(
-            f"未知 provider: '{name}'。已注册: {list_providers()}"
-        )
+        raise ProviderConfigError(f"未知 provider: '{name}'。已注册: {list_providers()}")
 
     try:
-        return cls.from_config(config) if hasattr(cls, "from_config") else cls(**config)
+        config = config or {}
+        instance = cls.from_config(config) if hasattr(cls, "from_config") else cls(**config)
+        _INSTANCE_CACHE[name] = instance  # ★ 写入缓存
+        return instance
     except TypeError as e:
-        # 各 provider 的 __init__ 签名不统一时，这里会暴露
-        raise ProviderConfigError(
-            f"provider '{name}' 配置构造失败: {e}\n"
-            f"  传入配置: {list(config.keys())}"
-        ) from e
+        raise ProviderConfigError(f"provider '{name}' 配置构造失败: {e}") from e
 
 
 def get(name: str) -> type:

@@ -1,86 +1,69 @@
 # handlers/text_to_image.py
-"""文生图处理器 - 支持本地和 API 两种模式"""
+"""文生图处理器 - 统一的本地/API 双路调度 (基于 Provider 架构)"""
 
 import os
 import random
-import torch
-from typing import Dict, Any, Optional
-from PIL import Image
+from typing import Dict, Any
 
 from .base import BaseHandler
 from core.prompt_builder import PromptBuilder
 from core.safety import SafetyChecker
 
-# ✅ 新增导入（A 阶段）
 from providers import list_providers, get_meta
 from providers.base import ImageRequest
 from providers.fallback import FallbackImageProvider
+from providers.errors import ProviderUnavailable, ProviderAuthError
 
-from providers.errors import (
-    ProviderUnavailable,
-    ProviderAuthError,
-)
 
 class TextToImageHandler(BaseHandler):
     """文生图处理器"""
-    
+
     def __init__(self, app):
         super().__init__(app)
         self.prompt_builder = PromptBuilder()
         self.is_generating = False
         self.cancel_flag = False
-        self._api_engine = None
-    
-    # ==================== API 引擎 ====================
-    def _get_api_engine(self):
-        """
-        返回 FallbackImageProvider（带自动回退）。
-        A 阶段：primary = settings.api_provider，
-                fallback = 其它所有 image provider（free 优先）。
-        """
-        if self._api_engine is not None:
-            return self._api_engine
+        self._backend = None
+
+    def _get_backend(self) -> FallbackImageProvider:
+        """构建并返回统一的后台调度器（带单例缓存）"""
+        if self._backend is not None:
+            return self._backend
 
         settings = self.app.settings
-        primary = settings.api_provider
+        primary = getattr(settings, "api_provider", "local_sd")
 
-        if primary not in list_providers("image"):
-            print(f"⚠️ provider '{primary}' 不支持图像，回退到 agnes")
-            primary = "agnes" if "agnes" in list_providers("image") else list_providers("image")[0]
+        # 1. 验证 primary 是否存在
+        all_image_providers = list_providers("image")
+        if primary not in all_image_providers:
+            print(f"⚠️ Provider '{primary}' 不存在或不支持图像，自动选择第一个可用的。")
+            primary = all_image_providers[0] if all_image_providers else "agnes"
 
-        # 候选池：其它 image provider，free 优先，名字稳定排序
-        pool = [p for p in list_providers("image") if p != primary]
+        # 2. 构建 Fallback 候选池（排除 primary，免费优先）
+        pool = [p for p in all_image_providers if p != primary]
         pool.sort(key=lambda p: (not get_meta(p).get("free", False), p))
 
-        # 收集所有配置（A 阶段：get_provider_config 自动扫 .env）
-        configs = {
-            p: settings.get_provider_config(p)
-            for p in [primary] + pool
-        }
+        # 3. 读取所有 Provider 的配置
+        configs = {p: settings.get_provider_config(p) for p in [primary] + pool}
 
-        def _format_fallback_reason(err: Exception) -> str:
-            """把 fallback 的异常原因转成人话。"""
+        def _format_error(err: Exception) -> str:
             if isinstance(err, ProviderUnavailable):
-                # ProviderUnavailable 的 message 已经是友好的（比如"余额不足"）
-                # 取第一行就够了，不要整个堆栈
-                first_line = str(err).split("\n")[0].strip()
-                return first_line or "服务暂时不可用"
+                return str(err).split("\n")[0]
             if isinstance(err, ProviderAuthError):
                 return "认证失败"
-            return str(err).split("\n")[0][:80] or "未知错误"
-    
-        self._api_engine = FallbackImageProvider(
+            return str(err)[:80]
+
+        self._backend = FallbackImageProvider(
             primary=primary,
             fallback=pool,
             configs=configs,
             on_fallback=lambda frm, to, err: self._reply(
-                f"⚠️ {frm} 不可用（{_format_fallback_reason(err)}），切换到 {to}..."
+                f"⚠️ {frm} 不可用（{_format_error(err)}），自动切换到 {to}..."
             ),
         )
-        print(f"✅ API 引擎链: {[primary] + pool}")
-        return self._api_engine
-        
-    # ==================== 分发 ====================    
+        print(f"✅ 后台引擎链: {[primary] + pool}")
+        return self._backend
+
     def handle(self, intent: Dict[str, Any]) -> None:
         """统一的文生图处理入口（自动适配本地/API）"""
         if self.is_generating:
@@ -94,8 +77,8 @@ class TextToImageHandler(BaseHandler):
             self._reply("❌ 请描述您想生成的图片内容")
             return
 
-        # 安全检查
-        if self.app.settings.safe_mode:
+        # 1. 安全检查
+        if getattr(self.app.settings, "safe_mode", False):
             is_safe, _ = SafetyChecker.check(prompt)
             if not is_safe:
                 prompt = SafetyChecker.sanitize(prompt)
@@ -103,11 +86,10 @@ class TextToImageHandler(BaseHandler):
                     self._reply("🛡️ 检测到不安全内容，已阻止生成")
                     return
 
+        # 2. 自动估算参数 (尺寸统一拉满，具体由底层 Engine 去截断/适配)
         params = self._estimate_params(original_text or prompt)
-        # 本地模式下，不要强制放大 2 倍，避免显存爆炸
-        multiplier = 1 if self.app.settings.generation_mode == "local" else 2
-        width = min(params["width"] * multiplier, 1024)
-        height = min(params["height"] * multiplier, 1024)
+        width = params["width"]
+        height = params["height"]
         steps = max(params["steps"], 20)
         cfg = params["cfg"]
 
@@ -115,13 +97,9 @@ class TextToImageHandler(BaseHandler):
         self.cancel_flag = False
 
         try:
-            # ✅ 核心改造：通过 Backend 获取引擎
-            from core.backend import build_backend
-            backend = build_backend()
+            backend = self._get_backend()
+            self._update_status(f"🎨 使用 {backend.get_name()} 生成中...")
             
-            self._update_status(f"🎨 {backend.get_name()} 生成中...")
-            
-            import random
             req = ImageRequest(
                 prompt=prompt,
                 negative=self._build_negative(original_text),
@@ -134,8 +112,9 @@ class TextToImageHandler(BaseHandler):
             
             image = backend.text_to_image(req)
             
-            # 保存
-            filepath = self._save_image(image, prompt[:50], backend.get_name().split()[0].lower())
+            # 保存（生成来源标签自动从 backend 名字提取）
+            tag = backend.get_name().split()[0].lower()
+            filepath = self._save_image(image, prompt[:50], tag)
             
             self._reply(f"✅ 图片已生成！\n📁 {os.path.basename(filepath)}")
             self._update_status("✅ 生成完成")
@@ -147,191 +126,22 @@ class TextToImageHandler(BaseHandler):
                 )
 
         except Exception as e:
-            self._reply(f"❌ 生成失败: {e}")
-            self._update_status("❌ 生成失败")
-            import traceback
-            traceback.print_exc()
-        finally:
-            self.is_generating = False
-            
-    def _handle_local(self, intent: Dict[str, Any]) -> None:
-        """本地模式生成"""
-        if not self._ensure_model_loaded():
-            return
-        
-        if self.is_generating:
-            self._reply("⏳ 正在生成中，请稍候...")
-            return
-        
-        prompt = intent.get("prompt", "")
-        original_text = intent.get("original_text", "")
-        
-        if not prompt:
-            self._reply("❌ 请描述您想生成的图片内容")
-            return
-        
-        # 安全检查
-        if self.app.settings.safe_mode:
-            is_unsafe, matched = SafetyChecker.check(prompt)
-            if is_unsafe:
-                # 记录触发词（用于日志）
-                self._append_log(f"⚠️ 安全拦截: {matched}")
-                
-                # 尝试清理
-                cleaned_prompt = SafetyChecker.sanitize(prompt)
-                
-                # 如果清理后为空，或者评分过高，强制拦截
-                if not cleaned_prompt or SafetyChecker.get_score(prompt) > 30:
-                    self._reply("🛡️ 检测到不安全内容，已阻止生成")
-                    self._reply("💡 请修改描述，避免使用敏感词汇")
-                    self._update_status("⛔ 安全拦截")
-                    return
-                
-                # 使用清理后的提示词，并告知用户
-                prompt = cleaned_prompt
-                self._append_message("system", f"⚠️ 已自动过滤敏感词，生成安全版本")
-        
-        params = self._estimate_params(original_text or prompt)
-        steps = max(params["steps"], 25)
-        cfg = params["cfg"]
-        width = params["width"]
-        height = params["height"]
-        
-        self._update_status(f"🎨 本地生成中... ({width}x{height}, {steps}步)")
-        self.is_generating = True
-        self.cancel_flag = False
-        
-        try:
-            pipe = self._get_pipeline()
-            if pipe is None:
-                self._reply("❌ 模型未加载")
-                self.is_generating = False
-                return
-            
-            seed = random.randint(1, 2**32 - 1)
-            generator = torch.Generator("cpu").manual_seed(seed)
-            negative = self._build_negative(original_text or prompt)
-            
-            result = pipe(
-                prompt=prompt,
-                negative_prompt=negative,
-                num_inference_steps=steps,
-                guidance_scale=cfg,
-                height=height,
-                width=width,
-                generator=generator,
-                num_images_per_prompt=1
-            )
-            
-            image = result.images[0]
-            filepath = self._save_image(image, prompt[:50], "local")
-            
-            self._reply(f"✅ 图片已生成！\n📁 {os.path.basename(filepath)}")
-            self._update_status(f"✅ 本地生成完成 (种子: {seed})")
-            
-            if self.context:
-                self.context.update(
-                    {"type": "text_to_image", "prompt": prompt},
-                    {"image_path": filepath}
-                )
-            
-        except Exception as e:
             if self.cancel_flag:
-                self._reply("⏹️ 已取消生成")
+                self._reply("⏹️ 已取消")
             else:
-                self._reply(f"❌ 生成失败: {str(e)}")
+                self._reply(f"❌ 生成失败: {e}")
                 self._update_status("❌ 生成失败")
-            import traceback
-            traceback.print_exc()
-        finally:
-            self.is_generating = False    
-
-
-    def _handle_api(self, intent: Dict[str, Any]) -> None:
-        if self.is_generating:
-            self._reply("⏳ 正在生成中，请稍候...")
-            return
-
-        # 图生图交给专门方法
-        intent_type = intent.get("type", "text_to_image")
-        is_img2img = (
-            intent_type == "image_to_image"
-            or intent.get("params", {}).get("mode") == "reference"
-        )
-        if is_img2img:
-            self._handle_api_img2img(intent)
-            return
-
-        prompt = intent.get("prompt", "")
-        original_text = intent.get("original_text", "")
-        if not prompt:
-            self._reply("❌ 请描述您想生成的图片内容")
-            return
-
-        # 安全检查
-        if self.app.settings.safe_mode:
-            is_unsafe, _ = SafetyChecker.check(prompt)
-            if is_unsafe:
-                prompt = SafetyChecker.sanitize(prompt)
-                if not prompt:
-                    self._reply("🛡️ 内容被安全过滤")
-                    return
-
-        engine = self._get_api_engine()
-        if engine is None:
-            self._reply("❌ API 引擎初始化失败，请检查 API 密钥配置")
-            return
-
-        params = self._estimate_params(original_text or prompt)
-        width = min(params["width"] * 2, 1024)
-        height = min(params["height"] * 2, 1024)
-        steps = max(params["steps"], 20)
-        cfg = params["cfg"]
-
-        self._update_status(f"☁️ API 生成中... ({width}x{height})")
-        self.is_generating = True
-        self.cancel_flag = False
-
-        try:
-            # ✅ 统一构造请求，prompt 简化由各 adapter 内部处理
-            req = ImageRequest(
-                prompt=prompt,
-                negative=self._build_negative(original_text),
-                width=width,
-                height=height,
-                steps=steps,
-                cfg=cfg,
-                seed=random.randint(1, 2**32 - 1),
-            )
-
-            self._update_status(f"☁️ 调用 {self.app.settings.api_provider} API...")
-            image = engine.text_to_image(req)
-
-            filepath = self._save_image(image, prompt[:50], "api")
-            self._reply(f"✅ 图片已生成！\n📁 {os.path.basename(filepath)}")
-            self._update_status("✅ API 生成完成")
-
-            if self.context:
-                self.context.update(
-                    {"type": "text_to_image", "prompt": prompt},
-                    {"image_path": filepath},
-                )
-
-        except Exception as e:
-            if self.cancel_flag:
-                self._reply("⏹️ 已取消生成")
-            else:
-                self._reply(f"❌ API 生成失败: {e}")
-                self._update_status("❌ API 生成失败")
-            import traceback
-            traceback.print_exc()
+                import traceback
+                traceback.print_exc()
         finally:
             self.is_generating = False
 
-    # ==================== API 图生图 ====================
 
-    def _handle_api_img2img(self, intent: Dict[str, Any]) -> None:
-        if not hasattr(self.app, "uploaded_images") or not self.app.uploaded_images:
+    # ==================== 图生图（统一入口） ====================
+
+    def handle_image_to_image(self, intent: Dict[str, Any]) -> None:
+        """图生图统一处理入口"""
+        if not getattr(self.app, "uploaded_images", None):
             self._reply("❌ 图生图需要上传一张参考图片")
             return
 
@@ -341,31 +151,28 @@ class TextToImageHandler(BaseHandler):
             self._reply("❌ 请描述您想如何修改这张图片")
             return
 
-        if self.app.settings.safe_mode:
-            is_unsafe, _ = SafetyChecker.check(prompt)
-            if is_unsafe:
+        # 安全检查
+        if getattr(self.app.settings, "safe_mode", False):
+            is_safe, _ = SafetyChecker.check(prompt)
+            if not is_safe:
                 prompt = SafetyChecker.sanitize(prompt)
                 if not prompt:
                     self._reply("🛡️ 内容被安全过滤")
                     return
 
-        engine = self._get_api_engine()
-        if engine is None:
-            self._reply("❌ API 引擎初始化失败，请检查 API 密钥配置")
-            return
-
         params = self._estimate_params(original_text or prompt)
         width = min(params["width"], 1024)
         height = min(params["height"], 1024)
-        steps = max(params["steps"], 20)
-        cfg = params["cfg"]
-
-        self._update_status("☁️ API 图生图中...")
+        
+        self._update_status("🎨 图生图中...")
         self.is_generating = True
         self.cancel_flag = False
 
         try:
+            backend = self._get_backend()
             init_image = self.app.uploaded_images[0].copy().convert("RGB")
+            
+            # 复用你的高质量提示词构建逻辑
             full_prompt = self._build_quality_prompt(original_text, intent.get("keywords", {}))
 
             req = ImageRequest(
@@ -373,17 +180,19 @@ class TextToImageHandler(BaseHandler):
                 negative=self._build_negative(original_text),
                 width=width,
                 height=height,
-                steps=steps,
-                cfg=cfg,
+                steps=params["steps"],
+                cfg=params["cfg"],
                 seed=random.randint(1, 2**32 - 1),
                 reference=init_image,
                 strength=0.7,
             )
-            image = engine.image_to_image(req)
-
-            filepath = self._save_image(image, prompt[:50], "img2img_api")
+            
+            image = backend.image_to_image(req)
+            tag = backend.get_name().split()[0].lower()
+            filepath = self._save_image(image, prompt[:50], f"img2img_{tag}")
+            
             self._reply(f"✅ 图生图完成！\n📁 {os.path.basename(filepath)}")
-            self._update_status("✅ API 图生图完成")
+            self._update_status("✅ 图生图完成")
 
             if self.context:
                 self.context.update(
@@ -391,18 +200,21 @@ class TextToImageHandler(BaseHandler):
                     {"image_path": filepath},
                 )
 
+        except NotImplementedError:
+            self._reply("❌ 当前引擎不支持图生图，请切换到云端 API 提供商。")
         except Exception as e:
             if self.cancel_flag:
                 self._reply("⏹️ 已取消")
             else:
-                self._reply(f"❌ API 图生图失败: {e}")
-                self._update_status("❌ API 图生图失败")
+                self._reply(f"❌ 图生图失败: {e}")
+                self._update_status("❌ 图生图失败")
             import traceback
             traceback.print_exc()
         finally:
             self.is_generating = False
 
-
+    # ==================== 提示词工程辅助工具 ====================
+    
     def _build_quality_prompt(self, text: str, keywords: Dict) -> str:
         """构建高质量提示词 - 以用户描述为核心"""
         quality = "masterpiece, best quality, 8k, highly detailed"

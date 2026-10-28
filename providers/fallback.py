@@ -55,31 +55,28 @@ class FallbackImageProvider:
     def image_to_image(self, req: ImageRequest) -> Image.Image:
         return self._try(lambda p: p.image_to_image(req), "image_to_image")
 
+# providers/fallback.py
+
     def _try(self, call, op_name: str):
         last_error: Exception | None = None
         for i, name in enumerate(self.chain):
             try:
                 cfg = self.configs.get(name, {})
-                provider = create(name, cfg)
+                # ★ 这里 create 会自动走缓存，不会重复加载本地模型
+                provider = create(name, cfg) 
                 logger.info(f"[{op_name}] 尝试 provider: {name}")
                 return call(provider)
-            except (ProviderAuthError, ProviderConfigError):
-                # 认证/配置错误：切下一个没意义
+            except ProviderAuthError:
                 raise
             except Exception as e:
                 last_error = e
                 if i == len(self.chain) - 1:
                     break
                 next_name = self.chain[i + 1]
-                logger.warning(
-                    f"[{op_name}] provider {name} 失败: {e}，"
-                    f"切换到 {next_name}"
-                )
+                logger.warning(f"[{op_name}] provider {name} 失败: {e}，切换到 {next_name}")
                 if self.on_fallback:
-                    try:
-                        self.on_fallback(name, next_name, e)
-                    except Exception:
-                        pass
+                    try: self.on_fallback(name, next_name, e)
+                    except Exception: pass
         raise last_error or RuntimeError(f"所有 provider 都失败: {self.chain}")
         
 class FallbackVideoProvider:

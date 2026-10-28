@@ -1,0 +1,898 @@
+{
+  "checkpoints": {
+    "sd_v1_5_aiiiiii01_v10": {
+      "id": "sd_v1_5_aiiiiii01_v10",
+      "name": "aiiiiii01_v10",
+      "path": "E:\\SD_OpenVINO\\models\\sd-v1-5\\aiiiiii01_v10.safetensors",
+      "type": "diffusers",
+      "base": "sd15"
+    },
+    "sd_v1_5_anycharactermixbaked_v20bakedvae": {
+      "id": "sd_v1_5_anycharactermixbaked_v20bakedvae",
+      "name": "anycharactermixBaked_v20BakedVae",
+      "path": "E:\\SD_OpenVINO\\models\\sd-v1-5\\anycharactermixBaked_v20BakedVae.safetensors",
+      "type": "diffusers",
+      "base": "sd15"
+    },
+    "sd_v1_5_anytimerealistic_v10": {
+      "id": "sd_v1_5_anytimerealistic_v10",
+      "name": "anytimeRealistic_v10",
+      "path": "E:\\SD_OpenVINO\\models\\sd-v1-5\\anytimeRealistic_v10.safetensors",
+      "type": "diffusers",
+      "base": "sd15"
+    },
+    "sd_v1_5_asianrealisticsdlife_v40": {
+      "id": "sd_v1_5_asianrealisticsdlife_v40",
+      "name": "asianrealisticSdlife_v40",
+      "path": "E:\\SD_OpenVINO\\models\\sd-v1-5\\asianrealisticSdlife_v40.safetensors",
+      "type": "diffusers",
+      "base": "sd15"
+    },
+    "sd_v1_5_detailasianrealistic_v60x21b": {
+      "id": "sd_v1_5_detailasianrealistic_v60x21b",
+      "name": "detailAsianRealistic_v60X21b",
+      "path": "E:\\SD_OpenVINO\\models\\sd-v1-5\\detailAsianRealistic_v60X21b.safetensors",
+      "type": "diffusers",
+      "base": "sd15"
+    },
+    "sd_v1_5_dreamshaper_8_pruned": {
+      "id": "sd_v1_5_dreamshaper_8_pruned",
+      "name": "DreamShaper_8_pruned",
+      "path": "E:\\SD_OpenVINO\\models\\sd-v1-5\\DreamShaper_8_pruned.safetensors",
+      "type": "diffusers",
+      "base": "sd15"
+    },
+    "sd_v1_5_evalisenniarealisticeastasian_v40": {
+      "id": "sd_v1_5_evalisenniarealisticeastasian_v40",
+      "name": "evalisenniaRealisticEastAsian_v40",
+      "path": "E:\\SD_OpenVINO\\models\\sd-v1-5\\evalisenniaRealisticEastAsian_v40.safetensors",
+      "type": "diffusers",
+      "base": "sd15"
+    },
+    "sd_v1_5_evalisenniasd15ultra_v20": {
+      "id": "sd_v1_5_evalisenniasd15ultra_v20",
+      "name": "evalisenniaSD15Ultra_v20",
+      "path": "E:\\SD_OpenVINO\\models\\sd-v1-5\\evalisenniaSD15Ultra_v20.safetensors",
+      "type": "diffusers",
+      "base": "sd15"
+    },
+    "sd_v1_5_fantasticchixhr_v10fp16noema": {
+      "id": "sd_v1_5_fantasticchixhr_v10fp16noema",
+      "name": "fantasticchixHR_v10Fp16NoEma",
+      "path": "E:\\SD_OpenVINO\\models\\sd-v1-5\\fantasticchixHR_v10Fp16NoEma.safetensors",
+      "type": "diffusers",
+      "base": "sd15"
+    },
+    "sd_v1_5_girlmix_v2": {
+      "id": "sd_v1_5_girlmix_v2",
+      "name": "girlMix_V2",
+      "path": "E:\\SD_OpenVINO\\models\\sd-v1-5\\girlMix_V2.safetensors",
+      "type": "diffusers",
+      "base": "sd15"
+    },
+    "sd_v1_5_henmixrealv10_henmixrealv10": {
+      "id": "sd_v1_5_henmixrealv10_henmixrealv10",
+      "name": "henmixrealV10_henmixrealV10",
+      "path": "E:\\SD_OpenVINO\\models\\sd-v1-5\\henmixrealV10_henmixrealV10.safetensors",
+      "type": "diffusers",
+      "base": "sd15"
+    },
+    "sd_v1_5_nexblendapex04asian_v10": {
+      "id": "sd_v1_5_nexblendapex04asian_v10",
+      "name": "nexblendApex04Asian_v10",
+      "path": "E:\\SD_OpenVINO\\models\\sd-v1-5\\nexblendApex04Asian_v10.safetensors",
+      "type": "diffusers",
+      "base": "sd15"
+    },
+    "sd_v1_5_nexblendmixvividasian_v10": {
+      "id": "sd_v1_5_nexblendmixvividasian_v10",
+      "name": "nexblendmixVividAsian_v10",
+      "path": "E:\\SD_OpenVINO\\models\\sd-v1-5\\nexblendmixVividAsian_v10.safetensors",
+      "type": "diffusers",
+      "base": "sd15"
+    },
+    "sd_v1_5_nextphoto_v30": {
+      "id": "sd_v1_5_nextphoto_v30",
+      "name": "nextphoto_v30",
+      "path": "E:\\SD_OpenVINO\\models\\sd-v1-5\\nextphoto_v30.safetensors",
+      "type": "diffusers",
+      "base": "sd15"
+    },
+    "sd_v1_5_realisticmix_iiv12version12": {
+      "id": "sd_v1_5_realisticmix_iiv12version12",
+      "name": "realisticmix_iiV12Version12",
+      "path": "E:\\SD_OpenVINO\\models\\sd-v1-5\\realisticmix_iiV12Version12.safetensors",
+      "type": "diffusers",
+      "base": "sd15"
+    },
+    "sd_v1_5_real_asia": {
+      "id": "sd_v1_5_real_asia",
+      "name": "real_asia",
+      "path": "E:\\SD_OpenVINO\\models\\sd-v1-5\\real_asia.safetensors",
+      "type": "diffusers",
+      "base": "sd15"
+    },
+    "sd_v1_5_sd_v1_5_inpainting_tiny": {
+      "id": "sd_v1_5_sd_v1_5_inpainting_tiny",
+      "name": "sd-v1-5-inpainting-tiny",
+      "path": "E:\\SD_OpenVINO\\models\\sd-v1-5\\sd-v1-5-inpainting-tiny.safetensors",
+      "type": "diffusers",
+      "base": "sd15"
+    },
+    "sd_v1_5_sd_v1_5_tiny": {
+      "id": "sd_v1_5_sd_v1_5_tiny",
+      "name": "sd-v1-5-tiny",
+      "path": "E:\\SD_OpenVINO\\models\\sd-v1-5\\sd-v1-5-tiny.safetensors",
+      "type": "diffusers",
+      "base": "sd15"
+    },
+    "sd_v1_5_shmrealistic_v40": {
+      "id": "sd_v1_5_shmrealistic_v40",
+      "name": "shmRealistic_v40",
+      "path": "E:\\SD_OpenVINO\\models\\sd-v1-5\\shmRealistic_v40.safetensors",
+      "type": "diffusers",
+      "base": "sd15"
+    },
+    "sd_v1_5_t3_sdver3": {
+      "id": "sd_v1_5_t3_sdver3",
+      "name": "t3_sdVer3",
+      "path": "E:\\SD_OpenVINO\\models\\sd-v1-5\\t3_sdVer3.safetensors",
+      "type": "diffusers",
+      "base": "sd15"
+    },
+    "sd_v1_5_ultimixfantastic_v11": {
+      "id": "sd_v1_5_ultimixfantastic_v11",
+      "name": "ultimixFantastic_v11",
+      "path": "E:\\SD_OpenVINO\\models\\sd-v1-5\\ultimixFantastic_v11.safetensors",
+      "type": "diffusers",
+      "base": "sd15"
+    },
+    "sd_v1_5_zemihr_v2": {
+      "id": "sd_v1_5_zemihr_v2",
+      "name": "zemihr_v2",
+      "path": "E:\\SD_OpenVINO\\models\\sd-v1-5\\zemihr_v2.safetensors",
+      "type": "diffusers",
+      "base": "sd15"
+    },
+    "sd_v1_5_zenityxmix.inpainting": {
+      "id": "sd_v1_5_zenityxmix.inpainting",
+      "name": "zenityXmix.inpainting",
+      "path": "E:\\SD_OpenVINO\\models\\sd-v1-5\\zenityXmix.inpainting.safetensors",
+      "type": "diffusers",
+      "base": "sd15"
+    },
+    "sd_v1_5_v1_5_pruned_emaonly": {
+      "id": "sd_v1_5_v1_5_pruned_emaonly",
+      "name": "v1-5-pruned-emaonly",
+      "path": "E:\\SD_OpenVINO\\models\\sd-v1-5\\official\\v1-5-pruned-emaonly.safetensors",
+      "type": "diffusers",
+      "base": "sd15"
+    },
+    "sdxl_perfectionasianilxl_v10": {
+      "id": "sdxl_perfectionasianilxl_v10",
+      "name": "perfectionAsianILXL_v10",
+      "path": "E:\\SD_OpenVINO\\models\\sdxl\\perfectionAsianILXL_v10.safetensors",
+      "type": "diffusers",
+      "base": "sdxl"
+    },
+    "sdxl_sdxl_lightning_1step_x0": {
+      "id": "sdxl_sdxl_lightning_1step_x0",
+      "name": "sdxl_lightning_1step_x0",
+      "path": "E:\\SD_OpenVINO\\models\\sdxl\\sdxl_lightning_1step_x0.safetensors",
+      "type": "diffusers",
+      "base": "sdxl"
+    },
+    "sdxl_sdxl_lightning_2step": {
+      "id": "sdxl_sdxl_lightning_2step",
+      "name": "sdxl_lightning_2step",
+      "path": "E:\\SD_OpenVINO\\models\\sdxl\\sdxl_lightning_2step.safetensors",
+      "type": "diffusers",
+      "base": "sdxl"
+    },
+    "sdxl_sdxl_lightning_4step": {
+      "id": "sdxl_sdxl_lightning_4step",
+      "name": "sdxl_lightning_4step",
+      "path": "E:\\SD_OpenVINO\\models\\sdxl\\sdxl_lightning_4step.safetensors",
+      "type": "diffusers",
+      "base": "sdxl"
+    },
+    "sdxl_xlasianrealisticmixnhipnhchu_v10": {
+      "id": "sdxl_xlasianrealisticmixnhipnhchu_v10",
+      "name": "xlAsianRealisticMixNhiPNhChU_v10",
+      "path": "E:\\SD_OpenVINO\\models\\sdxl\\xlAsianRealisticMixNhiPNhChU_v10.safetensors",
+      "type": "diffusers",
+      "base": "sdxl"
+    },
+    "ov_int8_sd15": {
+      "id": "ov_int8_sd15",
+      "name": "OpenVINO 加速版 SD1.5",
+      "path": "E:\\SD_OpenVINO\\models\\sd-v1-5-ov-int8",
+      "type": "openvino",
+      "base": "sd15"
+    }
+  },
+  "lora": {
+    "airi_shadowstrike": {
+      "name": "airi_shadowstrike",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\airi_shadowstrike.safetensors"
+    },
+    "akiryomai_realistic": {
+      "name": "akiryomai_realistic",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\akiryomai_realistic.safetensors"
+    },
+    "alessandra": {
+      "name": "alessandra",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\alessandra.safetensors"
+    },
+    "AMechaSSS": {
+      "name": "AMechaSSS",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\AMechaSSS.safetensors"
+    },
+    "angie": {
+      "name": "angie",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\angie.safetensors"
+    },
+    "anne_mary": {
+      "name": "anne_mary",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\anne_mary.safetensors"
+    },
+    "arachi": {
+      "name": "arachi",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\arachi.safetensors"
+    },
+    "arboliva": {
+      "name": "arboliva",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\arboliva.safetensors"
+    },
+    "asian_beauty": {
+      "name": "asian_beauty",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\asian_beauty.safetensors"
+    },
+    "ayane": {
+      "name": "ayane",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\ayane.safetensors"
+    },
+    "barghest_swim": {
+      "name": "barghest_swim",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\barghest_swim.safetensors"
+    },
+    "beauty_masters": {
+      "name": "beauty_masters",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\beauty_masters.safetensors"
+    },
+    "belle": {
+      "name": "belle",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\belle.safetensors"
+    },
+    "better_cleavage": {
+      "name": "better_cleavage",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\better_cleavage.safetensors"
+    },
+    "bgirl": {
+      "name": "bgirl",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\bgirl.safetensors"
+    },
+    "blue_lace_dress": {
+      "name": "blue_lace_dress",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\blue_lace_dress.safetensors"
+    },
+    "bsmt": {
+      "name": "bsmt",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\bsmt.safetensors"
+    },
+    "busty_slider": {
+      "name": "busty_slider",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\busty_slider.safetensors"
+    },
+    "cattleya_glory": {
+      "name": "cattleya_glory",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\cattleya_glory.safetensors"
+    },
+    "cat_maid": {
+      "name": "cat_maid",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\cat_maid.safetensors"
+    },
+    "china_dress": {
+      "name": "china_dress",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\china_dress.safetensors"
+    },
+    "Chinese dragon-000014": {
+      "name": "Chinese dragon-000014",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\Chinese dragon-000014.safetensors"
+    },
+    "chunli": {
+      "name": "chunli",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\chunli.safetensors"
+    },
+    "chunli_cos": {
+      "name": "chunli_cos",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\chunli_cos.safetensors"
+    },
+    "chutxkan": {
+      "name": "chutxkan",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\chutxkan.safetensors"
+    },
+    "coco": {
+      "name": "coco",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\coco.safetensors"
+    },
+    "colored_contacts": {
+      "name": "colored_contacts",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\colored_contacts.safetensors"
+    },
+    "comp_swim": {
+      "name": "comp_swim",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\comp_swim.safetensors"
+    },
+    "cross_short": {
+      "name": "cross_short",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\cross_short.safetensors"
+    },
+    "cure_berry_v2": {
+      "name": "cure_berry_v2",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\cure_berry_v2.safetensors"
+    },
+    "cybermaid_melanite": {
+      "name": "cybermaid_melanite",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\cybermaid_melanite.safetensors"
+    },
+    "dcp001": {
+      "name": "dcp001",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\dcp001.safetensors"
+    },
+    "dcp002": {
+      "name": "dcp002",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\dcp002.safetensors"
+    },
+    "dolphin_shorts": {
+      "name": "dolphin_shorts",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\dolphin_shorts.safetensors"
+    },
+    "dorothy": {
+      "name": "dorothy",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\dorothy.safetensors"
+    },
+    "edg_bond": {
+      "name": "edg_bond",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\edg_bond.safetensors"
+    },
+    "elysia_cos": {
+      "name": "elysia_cos",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\elysia_cos.safetensors"
+    },
+    "ennezju9": {
+      "name": "ennezju9",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\ennezju9.safetensors"
+    },
+    "equitation": {
+      "name": "equitation",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\equitation.safetensors"
+    },
+    "eula": {
+      "name": "eula",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\eula.safetensors"
+    },
+    "eula_noface": {
+      "name": "eula_noface",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\eula_noface.safetensors"
+    },
+    "eula_v2": {
+      "name": "eula_v2",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\eula_v2.safetensors"
+    },
+    "eula_v3": {
+      "name": "eula_v3",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\eula_v3.safetensors"
+    },
+    "eunjung": {
+      "name": "eunjung",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\eunjung.safetensors"
+    },
+    "european_doll": {
+      "name": "european_doll",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\european_doll.safetensors"
+    },
+    "fiona": {
+      "name": "fiona",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\fiona.safetensors"
+    },
+    "geronimo": {
+      "name": "geronimo",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\geronimo.safetensors"
+    },
+    "glaceon": {
+      "name": "glaceon",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\glaceon.safetensors"
+    },
+    "gongbi": {
+      "name": "gongbi",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\gongbi.safetensors"
+    },
+    "guqinghan": {
+      "name": "guqinghan",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\guqinghan.safetensors"
+    },
+    "g_20230717": {
+      "name": "g_20230717",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\g_20230717.safetensors"
+    },
+    "hanfu_transparent": {
+      "name": "hanfu_transparent",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\hanfu_transparent.safetensors"
+    },
+    "hard_zipping": {
+      "name": "hard_zipping",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\hard_zipping.safetensors"
+    },
+    "hot_pants": {
+      "name": "hot_pants",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\hot_pants.safetensors"
+    },
+    "houshou_marine": {
+      "name": "houshou_marine",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\houshou_marine.safetensors"
+    },
+    "hu1a4": {
+      "name": "hu1a4",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\hu1a4.safetensors"
+    },
+    "humantaur": {
+      "name": "humantaur",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\humantaur.safetensors"
+    },
+    "illustrious": {
+      "name": "illustrious",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\illustrious.safetensors"
+    },
+    "ishtar": {
+      "name": "ishtar",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\ishtar.safetensors"
+    },
+    "izayoi_nonomi": {
+      "name": "izayoi_nonomi",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\izayoi_nonomi.safetensors"
+    },
+    "jill": {
+      "name": "jill",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\jill.safetensors"
+    },
+    "jiyingying": {
+      "name": "jiyingying",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\jiyingying.safetensors"
+    },
+    "kalawarner": {
+      "name": "kalawarner",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\kalawarner.safetensors"
+    },
+    "kandisi": {
+      "name": "kandisi",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\kandisi.safetensors"
+    },
+    "kashino_yong": {
+      "name": "kashino_yong",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\kashino_yong.safetensors"
+    },
+    "kiara": {
+      "name": "kiara",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\kiara.safetensors"
+    },
+    "killer_01": {
+      "name": "killer_01",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\killer_01.safetensors"
+    },
+    "killer_02": {
+      "name": "killer_02",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\killer_02.safetensors"
+    },
+    "killer_03": {
+      "name": "killer_03",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\killer_03.safetensors"
+    },
+    "killer_04": {
+      "name": "killer_04",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\killer_04.safetensors"
+    },
+    "killer_sheer": {
+      "name": "killer_sheer",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\killer_sheer.safetensors"
+    },
+    "kimonos": {
+      "name": "kimonos",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\kimonos.safetensors"
+    },
+    "kimono_seethrough": {
+      "name": "kimono_seethrough",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\kimono_seethrough.safetensors"
+    },
+    "kisaragi_maya": {
+      "name": "kisaragi_maya",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\kisaragi_maya.safetensors"
+    },
+    "lace_blindfold": {
+      "name": "lace_blindfold",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\lace_blindfold.safetensors"
+    },
+    "lace_mini": {
+      "name": "lace_mini",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\lace_mini.safetensors"
+    },
+    "lace_nightgown": {
+      "name": "lace_nightgown",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\lace_nightgown.safetensors"
+    },
+    "leia": {
+      "name": "leia",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\leia.safetensors"
+    },
+    "leifang": {
+      "name": "leifang",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\leifang.safetensors"
+    },
+    "leifang_v2": {
+      "name": "leifang_v2",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\leifang_v2.safetensors"
+    },
+    "leila": {
+      "name": "leila",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\leila.safetensors"
+    },
+    "leilei": {
+      "name": "leilei",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\leilei.safetensors"
+    },
+    "leipzig": {
+      "name": "leipzig",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\leipzig.safetensors"
+    },
+    "lei_lei": {
+      "name": "lei_lei",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\lei_lei.safetensors"
+    },
+    "linghan": {
+      "name": "linghan",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\linghan.safetensors"
+    },
+    "long_dress_h6": {
+      "name": "long_dress_h6",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\long_dress_h6.safetensors"
+    },
+    "LoRA Collection of Trauter's": {
+      "name": "LoRA Collection of Trauter's",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\LoRA Collection of Trauter's.safetensors"
+    },
+    "Lora4Cute_girl_mix4": {
+      "name": "Lora4Cute_girl_mix4",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\Lora4Cute_girl_mix4.safetensors"
+    },
+    "Lora4FigmaAnimeFigures": {
+      "name": "Lora4FigmaAnimeFigures",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\Lora4FigmaAnimeFigures.safetensors"
+    },
+    "Lora4guofeng3_Dream": {
+      "name": "Lora4guofeng3_Dream",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\Lora4guofeng3_Dream.safetensors"
+    },
+    "Lora4guofeng3_WuMo2": {
+      "name": "Lora4guofeng3_WuMo2",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\Lora4guofeng3_WuMo2.safetensors"
+    },
+    "lora_000006": {
+      "name": "lora_000006",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\lora_000006.safetensors"
+    },
+    "lora_1733": {
+      "name": "lora_1733",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\lora_1733.safetensors"
+    },
+    "lora_1760": {
+      "name": "lora_1760",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\lora_1760.safetensors"
+    },
+    "lora_20260212": {
+      "name": "lora_20260212",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\lora_20260212.safetensors"
+    },
+    "Lora_20d_new": {
+      "name": "Lora_20d_new",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\Lora_20d_new.safetensors"
+    },
+    "Lora_ChilloutMixss3.0": {
+      "name": "Lora_ChilloutMixss3.0",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\Lora_ChilloutMixss3.0.safetensors"
+    },
+    "Lora_dunhuang_v20": {
+      "name": "Lora_dunhuang_v20",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\Lora_dunhuang_v20.safetensors"
+    },
+    "Lora_epiCRealismHelper": {
+      "name": "Lora_epiCRealismHelper",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\Lora_epiCRealismHelper.safetensors"
+    },
+    "Lora_Realistic_Anime": {
+      "name": "Lora_Realistic_Anime",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\Lora_Realistic_Anime.safetensors"
+    },
+    "Lora_Reallife": {
+      "name": "Lora_Reallife",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\Lora_Reallife.safetensors"
+    },
+    "lou": {
+      "name": "lou",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\lou.safetensors"
+    },
+    "MechaGirlFigure_v1": {
+      "name": "MechaGirlFigure_v1",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\MechaGirlFigure_v1.safetensors"
+    },
+    "MechaGirl_v1": {
+      "name": "MechaGirl_v1",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\MechaGirl_v1.safetensors"
+    },
+    "Mechav2_1.0": {
+      "name": "Mechav2_1.0",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\Mechav2_1.0.safetensors"
+    },
+    "mecha_girl": {
+      "name": "mecha_girl",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\mecha_girl.safetensors"
+    },
+    "mecha_offset": {
+      "name": "mecha_offset",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\mecha_offset.safetensors"
+    },
+    "mei": {
+      "name": "mei",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\mei.safetensors"
+    },
+    "mejiro_kaori": {
+      "name": "mejiro_kaori",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\mejiro_kaori.safetensors"
+    },
+    "melanie": {
+      "name": "melanie",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\melanie.safetensors"
+    },
+    "meru_kiky": {
+      "name": "meru_kiky",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\meru_kiky.safetensors"
+    },
+    "mix4": {
+      "name": "mix4",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\mix4.safetensors"
+    },
+    "moona_hoshinova": {
+      "name": "moona_hoshinova",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\moona_hoshinova.safetensors"
+    },
+    "multi_girls": {
+      "name": "multi_girls",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\multi_girls.safetensors"
+    },
+    "mune03": {
+      "name": "mune03",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\mune03.safetensors"
+    },
+    "musashi_azur": {
+      "name": "musashi_azur",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\musashi_azur.safetensors"
+    },
+    "nagato_seethrough": {
+      "name": "nagato_seethrough",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\nagato_seethrough.safetensors"
+    },
+    "nelson": {
+      "name": "nelson",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\nelson.safetensors"
+    },
+    "ningrongrong": {
+      "name": "ningrongrong",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\ningrongrong.safetensors"
+    },
+    "ningyao": {
+      "name": "ningyao",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\ningyao.safetensors"
+    },
+    "ninja_suit": {
+      "name": "ninja_suit",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\ninja_suit.safetensors"
+    },
+    "nyo": {
+      "name": "nyo",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\nyo.safetensors"
+    },
+    "OC": {
+      "name": "OC",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\OC.safetensors"
+    },
+    "oil_painting": {
+      "name": "oil_painting",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\oil_painting.safetensors"
+    },
+    "ooaya_mari": {
+      "name": "ooaya_mari",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\ooaya_mari.safetensors"
+    },
+    "pants_down": {
+      "name": "pants_down",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\pants_down.safetensors"
+    },
+    "PAseerEasternDragonV3": {
+      "name": "PAseerEasternDragonV3",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\PAseerEasternDragonV3.safetensors"
+    },
+    "pencil_pants": {
+      "name": "pencil_pants",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\pencil_pants.safetensors"
+    },
+    "preggo": {
+      "name": "preggo",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\preggo.safetensors"
+    },
+    "public_v3": {
+      "name": "public_v3",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\public_v3.safetensors"
+    },
+    "pytorch_weights": {
+      "name": "pytorch_weights",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\pytorch_weights.safetensors"
+    },
+    "qipao_bluegreen": {
+      "name": "qipao_bluegreen",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\qipao_bluegreen.safetensors"
+    },
+    "qp_blackflower": {
+      "name": "qp_blackflower",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\qp_blackflower.safetensors"
+    },
+    "qp_cyan": {
+      "name": "qp_cyan",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\qp_cyan.safetensors"
+    },
+    "qp_shuimo": {
+      "name": "qp_shuimo",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\qp_shuimo.safetensors"
+    },
+    "realistic_face": {
+      "name": "realistic_face",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\realistic_face.safetensors"
+    },
+    "red_dudou": {
+      "name": "red_dudou",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\red_dudou.safetensors"
+    },
+    "red_envelope": {
+      "name": "red_envelope",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\red_envelope.safetensors"
+    },
+    "red_snake": {
+      "name": "red_snake",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\red_snake.safetensors"
+    },
+    "reina_rave": {
+      "name": "reina_rave",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\reina_rave.safetensors"
+    },
+    "ruyue_zhenling": {
+      "name": "ruyue_zhenling",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\ruyue_zhenling.safetensors"
+    },
+    "sarah": {
+      "name": "sarah",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\sarah.safetensors"
+    },
+    "sb_lyfe": {
+      "name": "sb_lyfe",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\sb_lyfe.safetensors"
+    },
+    "shiraori": {
+      "name": "shiraori",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\shiraori.safetensors"
+    },
+    "silky_leisure": {
+      "name": "silky_leisure",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\silky_leisure.safetensors"
+    },
+    "silver_tight": {
+      "name": "silver_tight",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\silver_tight.safetensors"
+    },
+    "sirius": {
+      "name": "sirius",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\sirius.safetensors"
+    },
+    "sportswear_white": {
+      "name": "sportswear_white",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\sportswear_white.safetensors"
+    },
+    "sp_000008": {
+      "name": "sp_000008",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\sp_000008.safetensors"
+    },
+    "stockings_black": {
+      "name": "stockings_black",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\stockings_black.safetensors"
+    },
+    "stockings_tan": {
+      "name": "stockings_tan",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\stockings_tan.safetensors"
+    },
+    "stocking_teaser": {
+      "name": "stocking_teaser",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\stocking_teaser.safetensors"
+    },
+    "super_busty": {
+      "name": "super_busty",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\super_busty.safetensors"
+    },
+    "taiho": {
+      "name": "taiho",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\taiho.safetensors"
+    },
+    "teela": {
+      "name": "teela",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\teela.safetensors"
+    },
+    "thin_top": {
+      "name": "thin_top",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\thin_top.safetensors"
+    },
+    "tifa": {
+      "name": "tifa",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\tifa.safetensors"
+    },
+    "transparent_sailor": {
+      "name": "transparent_sailor",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\transparent_sailor.safetensors"
+    },
+    "trans_dressing": {
+      "name": "trans_dressing",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\trans_dressing.safetensors"
+    },
+    "tulle_lace": {
+      "name": "tulle_lace",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\tulle_lace.safetensors"
+    },
+    "tutuqpqp": {
+      "name": "tutuqpqp",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\tutuqpqp.safetensors"
+    },
+    "volleyball_uniform": {
+      "name": "volleyball_uniform",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\volleyball_uniform.safetensors"
+    },
+    "waist_chain": {
+      "name": "waist_chain",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\waist_chain.safetensors"
+    },
+    "wanghong_shuiyi": {
+      "name": "wanghong_shuiyi",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\wanghong_shuiyi.safetensors"
+    },
+    "white_lace": {
+      "name": "white_lace",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\white_lace.safetensors"
+    },
+    "winry": {
+      "name": "winry",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\winry.safetensors"
+    },
+    "yoga_pants": {
+      "name": "yoga_pants",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\yoga_pants.safetensors"
+    },
+    "yor": {
+      "name": "yor",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\yor.safetensors"
+    },
+    "yui_zit": {
+      "name": "yui_zit",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\yui_zit.safetensors"
+    },
+    "zara_azur": {
+      "name": "zara_azur",
+      "path": "E:\\SD_OpenVINO\\models\\sd15-lora\\zara_azur.safetensors"
+    }
+  },
+  "vae": {},
+  "controlnet": {}
+}
