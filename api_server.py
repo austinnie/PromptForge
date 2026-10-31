@@ -114,61 +114,6 @@ async def _auth_middleware(request: Request, call_next):
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
-# ★ 设置你的访问密钥（建议改成一串复杂的字符）
-API_SECRET_KEY = "promptforge_secret_2026" 
-
-@app.middleware("http")
-async def verify_token(request: Request, call_next):
-    # 1. 放行静态文件、HTML页面、以及带前缀的图片请求，防止你连首页都打不开
-    if request.url.path in ["/", "/favicon.ico"] or request.url.path.startswith(("/static/", "/output/")):
-        return await call_next(request)
-        
-    # 2. 检查 Header 或 URL 参数里有没有带 token
-    token = request.headers.get("X-API-Key") or request.query_params.get("token")
-    
-    # 3. 如果没带或者带错了，直接返回 401 拒绝访问
-    if token != API_SECRET_KEY:
-        return JSONResponse(status_code=401, content={"detail": "Unauthorized: 缺少正确的 API Token"})
-        
-    # 4. 验证通过，放行！
-    return await call_next(request)
-    
-# 初始化意图分析器
-analyzer = IntentAnalyzer()
-
-
-class ChatLLMRequest(BaseModel):
-    text: str
-    system_prompt: str = "You are a helpful assistant."
-    model: str = "qwen2.5:7b"   # ★ 新增：允许前端指定模型
-
-
-class ActionRequest(BaseModel):
-    action: str
-    payload: dict = {}
-    
-# ==================== 请求模型定义 ====================
-
-class ChatRequest(BaseModel):
-    text: str
-    has_image: bool = False
-
-class GenerateImageRequest(BaseModel):
-    prompt: str
-    width: int = 1024
-    height: int = 1024
-    steps: int = 25
-    primary_provider: Optional[str] = None  # 可以指定优先用本地还是云端
-    # ★ 新增：允许前端指定本地模型 ID
-    model_id: Optional[str] = None
-    preset: Optional[str] = None
-    
-class VideoRequest(BaseModel):
-    topic: str
-    duration: int = 15
-    
-# ==================== API 路由 ====================
-
 @app.post("/api/skill/image_curator")
 async def run_image_curator(req: ActionRequest):
     """图片鉴赏任务"""
