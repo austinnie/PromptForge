@@ -6,7 +6,7 @@ PromptForge 多端 API 服务端
 
 import logging
 from typing import Optional
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Body
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
@@ -115,31 +115,31 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 
 @app.post("/api/skill/image_curator")
-async def run_image_curator(req: ActionRequest):
+async def run_image_curator(req: dict = Body(...)):
     """图片鉴赏任务"""
     try:
         from skills.image_curator import ImageCurator
-        # 假设你传了目录路径
-        folder = req.payload.get("folder", "output")
+        payload = req.get("payload") or {}
+        folder = payload.get("folder", "output")
         curator = ImageCurator({})
-        # 防止阻塞
         result = await run_in_threadpool(curator.curate, folder, "鉴赏报告")
         return {"status": "success", "result": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/skill/video_generator")
-async def run_video_generator(req: ActionRequest):
+async def run_video_generator(req: dict = Body(...)):
     """视频生成任务"""
     try:
         from skills.video_generator import VideoGenerator
-        topic = req.payload.get("topic", "默认主题")
-        gen = VideoGenerator()
+        payload = req.get("payload") or {}
+        topic = payload.get("topic", "默认主题")
+        gen = VideoGenerator({"output_dir": "output/videos"})
         result = await run_in_threadpool(gen.generate, prompt=topic, duration=15)
         return {"status": "success", "result": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-        
+
 @app.post("/api/chat_llm")
 async def chat_llm(req: ChatLLMRequest):
     try:
@@ -421,31 +421,64 @@ class SkillRequest(BaseModel):
 
 @app.post("/api/run_skill")
 async def run_skill(req: SkillRequest):
-    """在后台运行指定的 Skill"""
+    """运行指定的 Skill（支持 skills.registry 里的全部 18 个）。
+
+    请求体：{"skill_name": "xxx", "kwargs": {...}}
+    """
+    skill_name = req.skill_name
+    req_kwargs = req.kwargs or {}
+
     try:
-        from core.skill_routes import SKILL_ROUTES
-        from handlers.skill_handler import SkillHandler
-        
-        if req.skill_name not in SKILL_ROUTES:
-            return {"status": "error", "message": f"未知的技能: {req.skill_name}"}
-            
-        cfg = SKILL_ROUTES[req.skill_name]
-        module_path = cfg.get("module")
-        class_name = cfg.get("class")
-        
-        # 动态导入类
-        import importlib
-        mod = importlib.import_module(module_path)
-        skill_cls = getattr(mod, class_name)
-        
-        # 实例化并执行
-        skill = skill_cls()
-        # 合并参数，注意不同 skill 需要的参数名不同，这里做一次解包
-        result = await run_in_threadpool(skill.execute, **req.kwargs)
-        
+        from skills.registry import get_meta, import_skill_class
+
+        meta = get_meta(skill_name)
+
+        # 情况 A：registry 里没有 → 回退旧 SKILL_ROUTES
+        if meta is None:
+            from core.skill_routes import SKILL_ROUTES
+            if skill_name not in SKILL_ROUTES:
+                return {"status": "error", "message": f"未知的技能: {skill_name}"}
+            cfg = SKILL_ROUTES[skill_name]
+            import importlib
+            mod = importlib.import_module(cfg["module"])
+            skill_cls = getattr(mod, cfg["class"])
+            skill = skill_cls()
+            result = await run_in_threadpool(skill.execute, **req_kwargs)
+            return {"status": "success", "result": result}
+
+        # 情况 B：走 registry
+        # 1. 合并默认参数（kwargs_builder）+ 用户传入
+        merged = dict(req_kwargs)
+        if meta.kwargs_builder:
+            try:
+                defaults = meta.kwargs_builder({"prompt": "", "original_text": ""}) or {}
+                merged = {**defaults, **merged}
+                logger.info(f"skill={skill_name} kwargs: defaults={defaults} user={req_kwargs} merged={merged}")
+            except Exception as e:
+                logger.warning(f"kwargs_builder 失败 (skill={skill_name}): {e}")
+
+        # 2. 动态导入 + 构造
+        skill_cls = import_skill_class(meta)
+        config = {
+            "output_dir": str(settings.output_dir),
+            "log_level": "INFO",
+        }
+        skill = skill_cls(config)
+
+        # 3. 执行
+        result = await run_in_threadpool(skill.execute, **merged)
+
+        # 4. 统一返回形态
+        if isinstance(result, dict) and result.get("status") == "error":
+            return {
+                "status": "error",
+                "message": result.get("error", "未知错误"),
+                "result": result,
+            }
         return {"status": "success", "result": result}
+
     except Exception as e:
-        logger.error(f"技能 {req.skill_name} 执行失败: {e}")
+        logger.error(f"技能 {skill_name} 执行失败: {e}")
         import traceback
         traceback.print_exc()
         return {"status": "error", "message": str(e)}
@@ -508,11 +541,12 @@ async def read_index():
 async def catch_all(full_path: str):
     from fastapi.responses import FileResponse
     import os
-    # 先尝试匹配 static 里的实际文件
-    file_path = os.path.join("static", full_path)
-    if os.path.isfile(file_path):
-        return FileResponse(file_path)
-    # 否则回退到首页
+    base = os.path.abspath("static")
+    target = os.path.abspath(os.path.join(base, full_path))
+    if not target.startswith(base):
+        return FileResponse("static/index.html")   # 拒绝越界
+    if os.path.isfile(target):
+        return FileResponse(target)
     return FileResponse("static/index.html")
 
 
