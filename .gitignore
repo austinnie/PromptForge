@@ -93,3 +93,6 @@ cloudflared
 # 探测输出
 *_probe.txt
 "@
+# Python
+__pycache__/
+*.py[cod]
