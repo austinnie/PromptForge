@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#1a1a1a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>PromptForge</title>
+    <link rel="manifest" href="/static/manifest.json">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div id="app">
+    <header id="topbar">
+        <button id="menu-btn" aria-label="菜单">☰</button>
+        <span id="title">💬 PromptForge</span>
+        <span id="conn-status" class="offline">连接中...</span>
+    </header>
+
+    <div id="sidebar" class="hidden">
+        <div class="sidebar-header">
+            <strong>菜单</strong>
+            <button id="sidebar-close">×</button>
+        </div>
+        <div class="sidebar-body">
+            <button class="sidebar-item" data-action="list-skills">📋 全部 Skills</button>
+            <button class="sidebar-item" data-action="clear-chat">🗑️ 清空聊天</button>
+            <button class="sidebar-item" data-action="cancel">⏹️ 取消当前任务</button>
+        </div>
+    </div>
+
+    <main id="chat"></main>
+
+    <div id="status-bar" class="hidden"></div>
+
+    <footer id="input-area">
+        <textarea id="input" placeholder="说点什么…  例: 画一只猫 / github日报" rows="1"></textarea>
+        <button id="send-btn">发送</button>
+    </footer>
+</div>
+<script src="/static/app.js"></script>
+</body>
+</html>
