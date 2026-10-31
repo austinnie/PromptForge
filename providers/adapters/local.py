@@ -101,6 +101,52 @@ class DiffusersEngine(BaseLocalEngine):
         return result.images[0]
 
 
+    def image_to_image(
+        self,
+        prompt: str,
+        image: Image.Image,
+        negative_prompt: str = "",
+        strength: float = 0.7,
+        num_inference_steps: int = 25,
+        guidance_scale: float = 7.5,
+        seed: int = None,
+    ) -> Image.Image:
+        """图生图（需要 pipeline 支持 img2img，SD 1.5 兼容）。"""
+        if self.pipeline is None:
+            raise RuntimeError("模型未加载")
+
+        # diffusers 的 img2img 需要 AutoPipelineForImage2Image
+        # 这里保守做法：把 SD pipe 当 i2i pipe 用（diffusers 支持 image= 参数）
+        import torch
+        if seed is None or seed == -1:
+            seed = torch.randint(0, 2**32 - 1, (1,)).item()
+        generator = torch.Generator("cpu").manual_seed(seed)
+
+        # 尺寸对齐 8 的倍数
+        w, h = image.size
+        w = (w // 8) * 8
+        h = (h // 8) * 8
+        if (w, h) != image.size:
+            image = image.resize((w, h), Image.Resampling.LANCZOS)
+
+        try:
+            result = self.pipeline(
+                prompt=prompt,
+                negative_prompt=negative_prompt,
+                image=image,
+                strength=strength,
+                num_inference_steps=num_inference_steps,
+                guidance_scale=guidance_scale,
+                generator=generator,
+            )
+            return result.images[0]
+        except TypeError:
+            # 当前 pipe 不支持 i2i，抛明确异常
+            raise NotImplementedError(
+                "当前本地 pipe 不支持图生图，请切换到 agnes 等 API provider"
+            )
+            
+
 class OpenVINOEngine(DiffusersEngine):
     def _do_load(self, absolute_path: Path):
         try:
@@ -123,8 +169,15 @@ class OpenVINOEngine(DiffusersEngine):
     capabilities=["image"],
     requires_key=False,
     free=True,
-    description="本地 Stable Diffusion"
+    description="本地 Stable Diffusion（模型清单驱动，支持 SD1.5 / SDXL / OpenVINO）",
+    config_schema={
+        "model_id":    {"env": "SD_MODEL_ID",  "required": False},
+        "device":      {"env": "SD_DEVICE",    "default": "CPU"},
+        "engine_type": {"env": "SD_ENGINE",    "default": "auto"},
+    },
 )
+
+
 class LocalSDAdapter(BaseProvider):
     
     @classmethod
@@ -184,7 +237,25 @@ class LocalSDAdapter(BaseProvider):
             raise ProviderUnavailable(f"本地推理失败: {e}")
 
     def image_to_image(self, req: ImageRequest) -> Image.Image:
-        raise NotImplementedError("本地引擎暂未实现图生图")
+        ref = req.reference_list[0] if req.reference_list else req.reference
+        if ref is None:
+            raise ProviderUnavailable("local_sd.image_to_image 需要 reference 图片")
+
+        try:
+            return self._engine.image_to_image(
+                prompt=req.prompt,
+                image=ref,
+                negative_prompt=req.negative,
+                strength=req.strength,
+                num_inference_steps=req.steps,
+                guidance_scale=req.cfg,
+                seed=req.seed,
+            )
+        except NotImplementedError:
+            raise
+        except Exception as e:
+            logger.error(f"本地图生图出错: {e}")
+            raise ProviderUnavailable(f"本地图生图失败: {e}")
 
     def get_name(self) -> str:
         return f"LocalSD ({self.device})"
