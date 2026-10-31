@@ -1,205 +1,180 @@
 # handlers/couple_handler.py
-"""双人合成处理器"""
+"""双人合成处理器（统一走 provider 链，本地/API 自动适配）"""
 
 import os
 import random
-import torch
 from typing import Dict, Any, List
+
 from PIL import Image
 
 from .base import BaseHandler
 from core.safety import SafetyChecker
+from providers.base import ImageRequest
+from providers.fallback import FallbackImageProvider
+from providers import list_providers, get_meta
 
 
 class CoupleHandler(BaseHandler):
-    """双人合成处理器（支持本地和 API 模式）"""
+    """双人合成处理器"""
 
     def __init__(self, app):
         super().__init__(app)
         self.is_generating = False
         self.cancel_flag = False
+        self._backend = None
+
+    # ---------- provider 链 ----------
+
+    def _get_backend(self) -> FallbackImageProvider:
+        if self._backend is not None:
+            return self._backend
+
+        settings = self.app.settings
+        all_image = list_providers("image")
+        if not all_image:
+            raise RuntimeError("providers 注册表里没有 image provider")
+
+        mode = getattr(settings, "generation_mode", "api")
+        if mode == "local" and "local_sd" in all_image:
+            primary = "local_sd"
+        else:
+            primary = getattr(settings, "api_provider", "agnes")
+            if primary not in all_image:
+                primary = all_image[0]
+
+        pool = [p for p in all_image if p != primary]
+        pool.sort(key=lambda p: (not get_meta(p).get("free", False), p))
+
+        configs = {}
+        for p in [primary] + pool:
+            if p == "local_sd":
+                configs[p] = {
+                    "model_path": settings.model_path,
+                    "lora_path": settings.lora_path,
+                    "device": "CPU",
+                }
+            else:
+                configs[p] = settings.get_provider_config(p)
+
+        self._backend = FallbackImageProvider(
+            primary=primary,
+            fallback=pool,
+            configs=configs,
+            on_fallback=lambda frm, to, err: self._append_log(
+                f"⚠️ {frm} 不可用，切到 {to}"
+            ),
+        )
+        return self._backend
+
+    # ---------- 主入口 ----------
 
     def handle(self, intent: Dict[str, Any]) -> None:
-        """处理双人合成意图"""
-        if not hasattr(self.app, 'uploaded_images') or len(self.app.uploaded_images) < 2:
-            self._reply("❌ 请上传两张图片（一男一女）")
-            self._reply("💡 点击工具栏的「📎 上传图片」选择两张图")
+        uploaded = getattr(self.app, "uploaded_images", None) or []
+        if len(uploaded) < 2:
+            self._reply("❌ 双人合成需要上传 2 张人物图片")
             return
 
         if self.is_generating:
             self._reply("⏳ 正在生成中，请稍候...")
             return
 
-        prompt = intent.get("prompt", "")
-        original_text = intent.get("original_text", "")
         action = intent.get("params", {}).get("action", "standing together")
+        original_text = intent.get("original_text", "")
+        prompt = intent.get("prompt") or (
+            f"1girl and 1boy, {action}, couple, romantic, masterpiece"
+        )
 
-        # 安全检查
-        if self.app.settings.safe_mode and getattr(self.app.settings, 'enable_safety_check', True):
-            is_unsafe, matched = SafetyChecker.check(original_text)
-            if is_unsafe:
-                self._append_log(f"⚠️ 安全拦截: {matched[:5]}")
-                cleaned = SafetyChecker.sanitize(original_text)
-                if not cleaned or SafetyChecker.get_score(original_text) > 30:
-                    self._reply("🛡️ 检测到不安全内容，已阻止合成")
-                    self._update_status("⛔ 安全拦截")
+        if getattr(self.app.settings, "safe_mode", False):
+            is_safe, _ = SafetyChecker.check(prompt)
+            if not is_safe:
+                prompt = SafetyChecker.sanitize(prompt)
+                if not prompt:
+                    self._reply("🛡️ 内容被安全过滤")
                     return
-                self._reply("⚠️ 已自动过滤敏感词")
-                original_text = cleaned
 
-        # 根据模式选择
-        if self.app.settings.generation_mode == "api":
-            self._handle_api(action, original_text)
-        else:
-            self._handle_local(action, prompt)
+        images = [img.convert("RGB") for img in uploaded[:2]]
 
-    # ==================== 本地模式 ====================
-
-    def _handle_local(self, action: str, prompt: str):
-        """本地模式"""
-        if not self._ensure_model_loaded():
-            return
-
-        self._update_status("👫 合成双人图片...")
         self.is_generating = True
         self.cancel_flag = False
 
         try:
-            pipe = self._get_pipeline()
-            if pipe is None:
-                self._reply("❌ 模型未加载")
-                self.is_generating = False
-                return
+            backend = self._get_backend()
+            primary = backend.primary
+            self._update_status(f"🎨 双人合成中... ({primary})")
 
-            # 获取两张图片
-            img1 = self.app.uploaded_images[0].copy().convert('RGB')
-            img2 = self.app.uploaded_images[1].copy().convert('RGB')
+            # local_sd 只吃单图 → 横向拼；API 支持 list → 传 list
+            if primary == "local_sd":
+                reference = self._concat_horizontal(images)
+                reference_list = None
+            else:
+                reference = images[0]
+                reference_list = images
 
-            # 合并
-            h1, w1 = img1.size
-            h2, w2 = img2.size
-            target_h = min(h1, h2, 512)
-            img1 = img1.resize((int(w1 * target_h / h1), target_h), Image.Resampling.LANCZOS)
-            img2 = img2.resize((int(w2 * target_h / h2), target_h), Image.Resampling.LANCZOS)
-
-            combined = Image.new('RGB', (img1.width + img2.width, target_h))
-            combined.paste(img1, (0, 0))
-            combined.paste(img2, (img1.width, 0))
-
-            full_prompt = f"1girl and 1boy, {action}, couple, romantic, masterpiece, best quality, photorealistic, 8k"
-            negative = "worst quality, low quality, ugly, deformed, blurry, bad anatomy, watermark, text"
-
-            steps = self.app.settings.default_steps
-            cfg = self.app.settings.default_cfg
-            strength = 0.50
-
-            seed = random.randint(1, 2**32 - 1)
-            generator = torch.Generator("cpu").manual_seed(seed)
-
-            self._update_status(f"👫 合成中... 步数: {steps}")
-
-            result = pipe(
-                prompt=full_prompt,
-                negative_prompt=negative,
-                image=combined,
-                strength=strength,
-                num_inference_steps=steps,
-                guidance_scale=cfg,
-                generator=generator,
-                num_images_per_prompt=1
+            req = ImageRequest(
+                prompt=prompt,
+                negative="worst quality, low quality, blurry, deformed, bad anatomy",
+                width=1024,
+                height=1024,
+                steps=30,
+                cfg=7.5,
+                seed=random.randint(1, 2**32 - 1),
+                reference=reference,
+                reference_list=reference_list,
+                strength=0.6,
             )
 
-            image = result.images[0]
-            filepath = self._save_image(image, f"couple_{action}", "couple")
+            image = backend.image_to_image(req)
 
-            self._reply(f"✅ 双人合成完成！(本地模式)\n📁 {os.path.basename(filepath)}")
-            self._update_status(f"✅ 合成完成 (种子: {seed})")
+            tag = primary.lower()
+            filepath = self._save_image(
+                image, original_text or action, f"couple_{tag}"
+            )
+
+            self._reply(f"✅ 双人合成完成！\n📁 {os.path.basename(filepath)}")
+            self._update_status("✅ 双人合成完成")
 
             if self.context:
                 self.context.update(
                     {"type": "couple", "prompt": prompt},
-                    {"image_path": filepath}
+                    {"image_path": filepath},
                 )
 
         except Exception as e:
             if self.cancel_flag:
                 self._reply("⏹️ 已取消")
             else:
-                self._reply(f"❌ 合成失败: {str(e)}")
-                self._update_status("❌ 合成失败")
-            import traceback
-            traceback.print_exc()
+                self._reply(f"❌ 双人合成失败: {e}")
+                self._update_status("❌ 双人合成失败")
+                import traceback
+                traceback.print_exc()
         finally:
             self.is_generating = False
 
-    # ==================== API 模式 ====================
+    # ---------- 工具 ----------
 
-    def _handle_api(self, action: str, original_text: str):
-        """API 模式：使用 Agnes 的多图合成"""
-        self.is_generating = True
-        self.cancel_flag = False
-
-        try:
-            from handlers.text_to_image import TextToImageHandler
-            api_handler = TextToImageHandler(self.app)
-            engine = api_handler._get_api_engine()
-
-            if engine is None:
-                self._reply("❌ API 引擎初始化失败")
-                self.is_generating = False
-                return
-
-            if not hasattr(engine, 'image_to_image'):
-                self._reply(f"❌ {engine.get_name()} 不支持多图合成")
-                self.is_generating = False
-                return
-
-            # 获取两张图片
-            images = [
-                self.app.uploaded_images[0].copy().convert('RGB'),
-                self.app.uploaded_images[1].copy().convert('RGB'),
-            ]
-
-            full_prompt = f"1girl and 1boy, {action}, couple, romantic, masterpiece, best quality, photorealistic, 8k"
-
-            self._update_status("☁️ API 双人合成中...")
-
-            image = engine.image_to_image(
-                prompt=full_prompt,
-                image=images,  # ✅ 传列表
-                strength=0.7,
-                steps=25,
-                cfg=7.5,
-                seed=random.randint(1, 999),
-            )
-
-            filepath = self._save_image(image, f"couple_{action}", "couple_api")
-
-            self._reply(f"✅ 双人合成完成！({engine.get_name()} API)\n📁 {os.path.basename(filepath)}")
-            self._update_status("✅ API 合成完成")
-
-            if self.context:
-                self.context.update(
-                    {"type": "couple", "prompt": full_prompt},
-                    {"image_path": filepath}
-                )
-
-        except Exception as e:
-            if self.cancel_flag:
-                self._reply("⏹️ 已取消")
+    def _concat_horizontal(self, images: List[Image.Image]) -> Image.Image:
+        """横向拼接（本地 SD 需要单图输入）"""
+        h = min(img.height for img in images)
+        resized = []
+        for img in images:
+            if img.height != h:
+                w = int(img.width * h / img.height)
+                resized.append(img.resize((w, h), Image.Resampling.LANCZOS))
             else:
-                self._reply(f"❌ API 双人合成失败: {str(e)}")
-                self._update_status("❌ API 合成失败")
-            import traceback
-            traceback.print_exc()
-        finally:
-            self.is_generating = False
+                resized.append(img)
+        total_w = sum(img.width for img in resized)
+        canvas = Image.new("RGB", (total_w, h), (255, 255, 255))
+        x = 0
+        for img in resized:
+            canvas.paste(img, (x, 0))
+            x += img.width
+        return canvas
 
     def _append_log(self, msg: str):
-        if hasattr(self.app, '_append_log'):
-            self.app._append_log(msg)
+        if hasattr(self.app, "_append_message"):
+            self.app._append_message("assistant", msg)
         else:
-            print(f"[LOG] {msg}")
+            print(msg)
 
     def cancel(self):
         self.cancel_flag = True

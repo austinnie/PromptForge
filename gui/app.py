@@ -98,6 +98,20 @@ class ChatApp:
         self._setup_ui()
         self._build_menubar()
         self._check_llm()
+
+        # ---- 接入 Orchestrator ----
+        from application.events import EventBus
+        from application.context import AppContext
+        from application.orchestrator import Orchestrator
+
+        self.bus = EventBus()
+        self.ctx = AppContext.from_gui(self)
+        self.orch = Orchestrator(
+            self.bus, self.ctx,
+            pre_dispatch_hook=self._enhance_hook,
+        )
+        self._wire_orch_events()
+        
     
     def _setup_ui(self):
         """设置UI"""
@@ -2530,51 +2544,66 @@ class ChatApp:
         finally:
             self._is_processing = False
             self.root.after(0, self._reset_ui)
-            
+
+
+    # ---------- Orchestrator 集成 ----------
+
+    def _enhance_hook(self, intent) -> None:
+        """orchestrator 前置钩子：LLM 增强 text_to_image 的 prompt。
+
+        对应旧 _process 里的 _enhance_with_llm 调用。
+        """
+        if not (self.settings.llm_enabled and self.llm.is_available()):
+            return
+        if intent.type != "text_to_image":
+            return
+        try:
+            self._enhance_with_llm(intent)
+        except Exception as e:
+            print(f"⚠️ LLM 增强失败（不影响生成）: {e}")
+
+    def _wire_orch_events(self) -> None:
+        """把 orchestrator 事件桥接到 GUI（全部走 root.after）。"""
+
+        def _on_message(e):
+            self._append_message(e.get("role", "assistant"), e.get("content", ""))
+
+        def _on_status(e):
+            text = e.get("text", "")
+            if hasattr(self, "_update_toolbar_status"):
+                self.root.after(
+                    0, lambda t=text: self._update_toolbar_status(t)
+                )
+            else:
+                self.root.after(
+                    0, lambda t=text: self.status_var.set(t)
+                )
+
+        def _on_artifact(e):
+            kind = e.get("kind", "")
+            path = e.get("path", "")
+            if kind in ("image_path", "image") and path:
+                self.root.after(0, lambda p=path: self._append_image(p))
+            elif path:
+                self.root.after(
+                    0,
+                    lambda k=kind, p=path: self._append_message(
+                        "assistant", f"📄 {k}: {p}"
+                    ),
+                )
+
+        def _on_error(e):
+            self._append_message("assistant", f"❌ {e.get('message', '')}")
+
+        self.bus.on("message", _on_message)
+        self.bus.on("status", _on_status)
+        self.bus.on("artifact", _on_artifact)
+        self.bus.on("error", _on_error)
+        
     def _process(self, text: str):
         try:
-            intent = self.intent_analyzer.analyze(
-                text,
-                has_image=bool(self.uploaded_images),
-                has_multiple=len(self.uploaded_images) >= 2,
-                image_count=len(self.uploaded_images),  # ✅ 关键修复
-            )
-            
-            self._append_log(f"🔍 意图: {intent.type}")
-            
-            if self.llm.is_available() and self.settings.llm_enabled:
-                if intent.type in ["text_to_image"]:
-                    self._enhance_with_llm(intent)
-            
-            from handlers import (
-                TextToImageHandler, 
-                ImageToImageHandler,
-                CoupleHandler, 
-                MultiPersonHandler,  # ✅ 新增
-                ChatHandler, 
-                VideoHandler,
-                SkillHandler,   # ✅ 新增
-            )
-            
-            handlers = {
-                "text_to_image": TextToImageHandler(self),
-                "image_to_image": ImageToImageHandler(self),
-                "couple": CoupleHandler(self),
-                "multi_person": MultiPersonHandler(self),   # ✅ 新增
-                "chat": ChatHandler(self),
-                "video": VideoHandler(self),  # ✅ 新增
-                "preset_image": PresetHandler(self),                 
-                "skill": SkillHandler(self),  
-            }
-            
-            handler = handlers.get(intent.type)
-            if handler:
-                handler.handle(vars(intent))
-            else:
-                self._append_message("assistant", f"⚠️ 暂不支持 {intent.type} 模式")
-            
-            self.context.update(vars(intent))
-            
+            # 委托给 orchestrator：analyze + LLM 增强（hook）+ 分发
+            self.orch.handle_text(text)
         except Exception as e:
             self._append_message("assistant", f"❌ 处理失败: {str(e)}")
             import traceback
@@ -2602,6 +2631,10 @@ class ChatApp:
         self.progress_bar.config(value=0)
     
     def _cancel_generation(self):
+        try:
+            self.orch.cancel()      # ← 通知 orchestrator 和所有 handler
+        except Exception:
+            pass
         if hasattr(self, 'cancel_flag'):
             self.cancel_flag = True
         self.status_var.set("⏹️ 已取消")

@@ -64,6 +64,23 @@ class TextToImageHandler(BaseHandler):
         print(f"✅ 后台引擎链: {[primary] + pool}")
         return self._backend
 
+
+    def _get_api_engine(self):
+        """[DEPRECATED] 兼容旧代码（audio_handler 等）。
+
+        新代码请用 self._get_backend()，直接走 provider 链。
+        """
+        import warnings
+        warnings.warn(
+            "_get_api_engine 已废弃，请迁移到 _get_backend() / providers.create()",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        backend = self._get_backend()
+        from providers.registry import create
+        cfg = backend.configs.get(backend.primary, {})
+        return create(backend.primary, cfg)
+        
     def handle(self, intent: Dict[str, Any]) -> None:
         """统一的文生图处理入口（自动适配本地/API）"""
         if self.is_generating:
