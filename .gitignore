@@ -96,3 +96,6 @@ cloudflared
 # Python
 __pycache__/
 *.py[cod]
+
+skills.json
+verify_*.json
