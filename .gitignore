@@ -81,3 +81,15 @@ list.txt
 scan_blobs.py
 test_video.json
 test_video.py
+# 探测 / 备份 / 临时
+gui_probe.txt
+*.bak
+*.tmp
+
+# 二进制工具（本地才有）
+cloudflared.exe
+cloudflared
+
+# 探测输出
+*_probe.txt
+"@
