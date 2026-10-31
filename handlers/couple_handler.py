@@ -117,7 +117,7 @@ class CoupleHandler(BaseHandler):
                 height=1024,
                 steps=30,
                 cfg=7.5,
-                seed=random.randint(1, 2**32 - 1),
+                seed=random.randint(1, 2**31 - 1),
                 reference=reference,
                 reference_list=reference_list,
                 strength=0.6,

@@ -170,7 +170,7 @@ class ImageGenerator:
             height = kwargs.get("height", self.config["image_height"])
             steps = kwargs.get("steps", self.config["steps"])
             cfg = kwargs.get("cfg", self.config["cfg"])
-            seed = kwargs.get("seed", random.randint(1, 2**32 - 1))
+            seed = kwargs.get("seed", random.randint(1, 2**31 - 1))
             negative = kwargs.get("negative", self.config["negative_prompt"])
             engine_name = kwargs.get("engine")  # 单次调用覆盖 primary
 
@@ -287,7 +287,7 @@ class ImageGenerator:
             steps = kwargs.get("steps", self.config["steps"])
             cfg = kwargs.get("cfg", self.config["cfg"])
             strength = kwargs.get("strength", 0.7)
-            seed = kwargs.get("seed", random.randint(1, 2**32 - 1))
+            seed = kwargs.get("seed", random.randint(1, 2**31 - 1))
             negative = kwargs.get("negative", self.config["negative_prompt"])
             engine_name = kwargs.get("engine")
 

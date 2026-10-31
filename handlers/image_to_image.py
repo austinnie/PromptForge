@@ -116,7 +116,7 @@ class ImageToImageHandler(BaseHandler):
                 height=height,
                 steps=params["steps"],
                 cfg=params["cfg"],
-                seed=random.randint(1, 2**32 - 1),
+                seed=random.randint(1, 2**31 - 1),
                 reference=init_image,
                 strength=params["strength"],
             )

@@ -124,7 +124,7 @@ class TextToImageHandler(BaseHandler):
                 height=height,
                 steps=steps,
                 cfg=cfg,
-                seed=random.randint(1, 2**32 - 1),
+                seed=random.randint(1, 2**31 - 1),
             )
             
             image = backend.text_to_image(req)
@@ -199,7 +199,7 @@ class TextToImageHandler(BaseHandler):
                 height=height,
                 steps=params["steps"],
                 cfg=params["cfg"],
-                seed=random.randint(1, 2**32 - 1),
+                seed=random.randint(1, 2**31 - 1),
                 reference=init_image,
                 strength=0.7,
             )
