@@ -1,4 +1,4 @@
-"""search_engine - 匿名搜索引擎"""
+# skills/search_engine/__init__.py
 from .skill import SearchEngine
 
 __all__ = ["SearchEngine"]
