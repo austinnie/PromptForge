@@ -21,6 +21,51 @@
         ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
         body { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
     </style>
+<script>
+(function () {
+    // ---- 1. 从 URL 或 localStorage 读 token ----
+    function getToken() {
+        const params = new URLSearchParams(location.search);
+        const fromUrl = params.get('token');
+        if (fromUrl) {
+            localStorage.setItem('pf_token', fromUrl);
+            // 清掉 URL 上的 token（避免被日志/分享泄露）
+            params.delete('token');
+            const clean = location.pathname +
+                (params.toString() ? '?' + params.toString() : '');
+            history.replaceState(null, '', clean);
+            return fromUrl;
+        }
+        return localStorage.getItem('pf_token') || '';
+    }
+    window.PF_TOKEN = getToken();
+
+    // ---- 2. 拦截 fetch，自动加 header ----
+    const _fetch = window.fetch;
+    window.fetch = function (url, opts) {
+        opts = opts || {};
+        opts.headers = Object.assign({}, opts.headers || {});
+        if (window.PF_TOKEN && !opts.headers['x-pf-token']) {
+            opts.headers['x-pf-token'] = window.PF_TOKEN;
+        }
+        return _fetch.call(this, url, opts);
+    };
+
+    // ---- 3. 拦截 <img> 加载失败，自动重试带 token ----
+    document.addEventListener('error', function (e) {
+        const el = e.target;
+        if (!el || el.tagName !== 'IMG' || !el.src) return;
+        if (el.dataset.pfRetried) return;
+        if (!window.PF_TOKEN) return;
+        el.dataset.pfRetried = '1';
+        try {
+            const u = new URL(el.src, location.href);
+            u.searchParams.set('token', window.PF_TOKEN);
+            el.src = u.toString();
+        } catch (err) {}
+    }, true);
+})();
+</script>	
 </head>
 <body class="bg-gray-900 text-white min-h-screen p-4 flex flex-col gap-4 font-sans max-w-5xl mx-auto">
 

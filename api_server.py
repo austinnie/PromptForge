@@ -60,6 +60,57 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ============================================================
+# 🔒 Token 认证
+# ============================================================
+import os
+import hmac
+from fastapi import Request
+from fastapi.responses import JSONResponse
+
+# .env 里设 PF_WEB_TOKEN=<长随机串>；为空 = 不校验（仅限本地）
+_WEB_TOKEN = os.getenv("PF_WEB_TOKEN", "").strip()
+
+# 公开路径（无需 token）
+_PUBLIC_PATHS = {"/", "/favicon.ico"}
+_PUBLIC_PREFIXES = ("/static/",)   # 前端资源
+
+
+def _extract_token(request: Request) -> str:
+    return (
+        request.headers.get("x-pf-token")
+        or request.query_params.get("token")
+        or ""
+    )
+
+
+def _check_token(candidate: str) -> bool:
+    if not _WEB_TOKEN:
+        return True                      # 未配置 → 放行（本地开发）
+    if not candidate:
+        return False
+    return hmac.compare_digest(candidate, _WEB_TOKEN)
+
+
+@app.middleware("http")
+async def _auth_middleware(request: Request, call_next):
+    path = request.url.path
+
+    # 首页 + 静态资源放行（前端自己会带 token 请求 API）
+    if path in _PUBLIC_PATHS:
+        return await call_next(request)
+    if any(path.startswith(p) for p in _PUBLIC_PREFIXES):
+        return await call_next(request)
+
+    # ⚠️ /output/* 和所有 API 一律要求 token
+    if not _check_token(_extract_token(request)):
+        return JSONResponse(
+            {"error": "unauthorized", "hint": "URL 加 ?token=xxx"},
+            status_code=401,
+        )
+
+    return await call_next(request)
+    
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
