@@ -462,6 +462,40 @@ app.mount("/output", StaticFiles(directory="output"), name="output")
 # 3. 挂载 PWA 所需的静态文件（manifest.json, sw.js, 图标）
 app.mount("/static", StaticFiles(directory="static"), name="static_files")
 
+
+
+# ============================================================
+# Skills 列表（P5 新增）
+# ============================================================
+
+@app.get("/api/skills")
+def get_skills():
+    """列出所有已注册的 skill（来自 skills.registry，共 18 个）。
+
+    返回形态：
+      {status: "success", count: N, data: [{name, source, keywords, ...}]}
+    """
+    from skills.registry import list_skills, get_meta
+
+    result = []
+    for name in list_skills():
+        m = get_meta(name)
+        if not m:
+            continue
+        result.append({
+            "name": m.name,
+            "source": m.source,                # meta / routes / both
+            "keywords": list(m.keywords),
+            "system_hint": m.system_hint,
+            "category": m.category,
+            "outputs": list(m.outputs),
+            "class_path": m.class_path,
+        })
+
+    return {"status": "success", "count": len(result), "data": result}
+
+
+
 # 4. 挂载前端首页（注意：必须放在所有 /api/ 和 /static/ 路由之后）
 # 这样当用户访问根路径 / 时，自动返回 static/index.html
 @app.get("/")
