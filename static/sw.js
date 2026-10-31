@@ -1,21 +1,41 @@
-const CACHE_NAME = 'promptforge-v1';
+const CACHE_NAME = "pf-v1";
 const ASSETS = [
-  '/',
-  '/static/index.html'
+    "/",
+    "/static/index.html",
+    "/static/app.js",
+    "/static/style.css",
+    "/static/skills-panel.css",
+    "/static/skills-panel.js"
 ];
 
-// 安装时缓存核心文件
-self.addEventListener('install', (e) => {
-  e.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS))
-  );
+self.addEventListener("install", (e) => {
+    e.waitUntil(caches.open(CACHE_NAME).then(c => c.addAll(ASSETS)));
+    self.skipWaiting();
 });
 
-// 拦截网络请求（如果缓存有，就优先走缓存，让打开速度极快）
-self.addEventListener('fetch', (e) => {
-  e.respondWith(
-    caches.match(e.request).then((res) => {
-      return res || fetch(e.request);
-    })
-  );
+self.addEventListener("activate", (e) => {
+    e.waitUntil(
+        caches.keys().then(keys => Promise.all(
+            keys.map(k => k !== CACHE_NAME && caches.delete(k))
+        ))
+    );
+    self.clients.claim();
+});
+
+self.addEventListener("fetch", (e) => {
+    const url = new URL(e.request.url);
+    // API 和 output 走网络，不缓存
+    if (url.pathname.startsWith("/api") || url.pathname.startsWith("/output")) {
+        return;
+    }
+    e.respondWith(
+        caches.match(e.request).then(res => {
+            return res || fetch(e.request).then(response => {
+                return caches.open(CACHE_NAME).then(cache => {
+                    cache.put(e.request, response.clone());
+                    return response;
+                });
+            });
+        })
+    );
 });

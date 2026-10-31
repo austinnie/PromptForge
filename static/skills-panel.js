@@ -1,10 +1,7 @@
-/* skills-panel.js - Skills 面板（独立模块，不依赖现有 app.js） */
+/* skills-panel.js - Skills 面板（含 Token 弹窗和自动重试） */
 (function () {
     "use strict";
 
-    // ============================================================
-    // 常量：每个 skill 的示例 kwargs（点 "填充示例" 一键填入）
-    // ============================================================
     const SKILL_EXAMPLES = {
         daily_pipeline:        { topic: "机甲少女站在废墟中", count: 2, skip_wechat: true },
         github_repo_daily:     { force_publish: false, skip_illustration: false },
@@ -26,7 +23,6 @@
         wechat_formatter:      { md_path: "output/xxx/article.md", theme: "newspaper" },
     };
 
-    // skill 名字 → 图标
     const SKILL_ICONS = {
         daily_pipeline: "📅", github_repo_daily: "🐙", image_curator: "🖼️",
         image_generator: "🎨", local_model_manage: "📦", music_generator: "🎵",
@@ -36,21 +32,67 @@
         video_sniffer: "🎯", voice_assistant: "🔊", wechat_formatter: "📱",
     };
 
+    const TOKEN_KEYS = ["pf_token", "pf_web_token", "token", "auth_token"];
+
     // ============================================================
-    // Token 获取（兼容多种存储方式）
+    // Token 获取与弹窗
     // ============================================================
     function getToken() {
         try {
-            return (
-                localStorage.getItem("pf_token") ||
-                localStorage.getItem("pf_web_token") ||
-                localStorage.getItem("token") ||
-                new URLSearchParams(location.search).get("token") ||
-                ""
-            );
-        } catch (e) {
+            const urlToken = new URLSearchParams(location.search).get("token");
+            if (urlToken) {
+                localStorage.setItem("pf_token", urlToken);
+                const p = new URLSearchParams(location.search);
+                p.delete("token");
+                const clean = location.pathname + (p.toString() ? "?" + p.toString() : "");
+                history.replaceState(null, "", clean);
+                return urlToken;
+            }
+            for (const key of TOKEN_KEYS) {
+                const v = localStorage.getItem(key);
+                if (v) { localStorage.setItem("pf_token", v); return v; }
+            }
             return "";
-        }
+        } catch (e) { return ""; }
+    }
+
+    function promptToken(reason) {
+        return new Promise((resolve) => {
+            const old = document.getElementById("pf-token-modal");
+            if (old) old.remove();
+
+            const modal = document.createElement("div");
+            modal.id = "pf-token-modal";
+            modal.innerHTML = `
+                <div style="position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:10001;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(3px)">
+                  <div style="background:#242424;color:#e8e8e8;padding:24px;border-radius:12px;max-width:420px;width:90vw;box-shadow:0 10px 40px rgba(0,0,0,.5);font-family:-apple-system,'PingFang SC',sans-serif">
+                    <h3 style="margin:0 0 8px;font-size:16px">🔑 需要访问 Token</h3>
+                    <p style="margin:0 0 16px;color:#999;font-size:13px;line-height:1.5">${escapeHtml(reason || "请粘贴 .env 中的 PF_WEB_TOKEN 值")}</p>
+                    <input id="pf-token-input" type="text" placeholder="粘贴 token..."
+                      style="width:100%;padding:10px 12px;background:#1a1a1a;border:1px solid #444;border-radius:6px;color:#e8e8e8;font-family:monospace;font-size:13px;outline:none;box-sizing:border-box">
+                    <div style="display:flex;gap:8px;margin-top:16px">
+                      <button id="pf-token-cancel" style="flex:0 0 auto;padding:10px 16px;background:#333;color:#ccc;border:none;border-radius:6px;cursor:pointer;font-size:13px">取消</button>
+                      <button id="pf-token-ok" style="flex:1;padding:10px;background:#4a9eff;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px">保存并重试</button>
+                    </div>
+                  </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            const input = modal.querySelector("#pf-token-input");
+            setTimeout(() => input.focus(), 50);
+            modal.querySelector("#pf-token-ok").onclick = () => {
+                const v = input.value.trim();
+                if (!v) { input.focus(); return; }
+                localStorage.setItem("pf_token", v);
+                modal.remove();
+                resolve(v);
+            };
+            modal.querySelector("#pf-token-cancel").onclick = () => { modal.remove(); resolve(""); };
+            input.onkeydown = (e) => {
+                if (e.key === "Enter") modal.querySelector("#pf-token-ok").click();
+                if (e.key === "Escape") modal.querySelector("#pf-token-cancel").click();
+            };
+        });
     }
 
     function apiUrl(path) {
@@ -58,7 +100,6 @@
         const sep = path.includes("?") ? "&" : "?";
         return path + (t ? `${sep}token=${encodeURIComponent(t)}` : "");
     }
-
     function apiHeaders() {
         const h = { "Content-Type": "application/json" };
         const t = getToken();
@@ -67,7 +108,7 @@
     }
 
     // ============================================================
-    // 结果回显（尝试找现有聊天容器）
+    // 结果回显
     // ============================================================
     function tryAppendToChat(html) {
         const selectors = ["#chat", "#messages", ".chat", ".chat-container", ".messages", "#chat-box"];
@@ -85,31 +126,20 @@
     }
 
     // ============================================================
-    // DOM 构建
+    // DOM 构建与状态
     // ============================================================
-    let state = {
-        skills: [],
-        loading: false,
-        filter: "",
-        expanded: null,   // 当前展开的 skill name
-    };
+    let state = { skills: [], loading: false, filter: "", expanded: null };
 
     function createUI() {
-        // 浮动触发按钮
         const btn = document.createElement("button");
-        btn.className = "pf-skills-trigger";
-        btn.innerHTML = "🎯";
-        btn.title = "Skills";
+        btn.className = "pf-skills-trigger"; btn.innerHTML = "🎯"; btn.title = "Skills";
         btn.onclick = openPanel;
         document.body.appendChild(btn);
 
-        // 遮罩
         const backdrop = document.createElement("div");
-        backdrop.className = "pf-skills-backdrop";
-        backdrop.onclick = closePanel;
+        backdrop.className = "pf-skills-backdrop"; backdrop.onclick = closePanel;
         document.body.appendChild(backdrop);
 
-        // 抽屉
         const drawer = document.createElement("div");
         drawer.className = "pf-skills-drawer";
         drawer.innerHTML = `
@@ -133,53 +163,54 @@
         };
     }
 
-    // ============================================================
-    // 打开 / 关闭
-    // ============================================================
     function openPanel() {
         document.querySelector(".pf-skills-drawer").classList.add("open");
         document.querySelector(".pf-skills-backdrop").classList.add("open");
         if (state.skills.length === 0) loadSkills();
     }
-
     function closePanel() {
         document.querySelector(".pf-skills-drawer").classList.remove("open");
         document.querySelector(".pf-skills-backdrop").classList.remove("open");
     }
 
-    // ============================================================
-    // 加载 skills
-    // ============================================================
     async function loadSkills() {
-        state.loading = true;
-        renderList();
+        state.loading = true; renderList();
+        
+        if (!getToken()) {
+            const t = await promptToken("首次使用需要访问 Token。");
+            if (!t) {
+                state.loading = false;
+                document.getElementById("pf-skills-list").innerHTML = `<div class="pf-loading" style="color:#f87171">未提供 Token</div>`;
+                return;
+            }
+        }
+
         try {
-            const r = await fetch(apiUrl("/api/skills"), { headers: apiHeaders() });
+            let r = await fetch(apiUrl("/api/skills"), { headers: apiHeaders() });
+            if (r.status === 401) {
+                localStorage.removeItem("pf_token");
+                const t = await promptToken("Token 验证失败，请重新输入。");
+                if (!t) throw new Error("401 Unauthorized");
+                r = await fetch(apiUrl("/api/skills"), { headers: apiHeaders() });
+            }
             if (!r.ok) throw new Error(`HTTP ${r.status}`);
             const json = await r.json();
             if (json.status !== "success") throw new Error(json.message || "加载失败");
+            
             state.skills = json.data || [];
             document.getElementById("pf-skills-count").textContent = `(${state.skills.length})`;
-
-            // 更新触发按钮徽章
             const trigger = document.querySelector(".pf-skills-trigger");
             if (trigger) {
                 trigger.classList.add("badge");
                 trigger.dataset.badge = state.skills.length;
             }
         } catch (e) {
-            state.skills = [];
-            const list = document.getElementById("pf-skills-list");
-            if (list) list.innerHTML = `<div class="pf-loading" style="color:#f87171">加载失败: ${escapeHtml(e.message)}</div>`;
+            document.getElementById("pf-skills-list").innerHTML = `<div class="pf-loading" style="color:#f87171">加载失败: ${escapeHtml(e.message)}</div>`;
         } finally {
-            state.loading = false;
-            renderList();
+            state.loading = false; renderList();
         }
     }
 
-    // ============================================================
-    // 渲染列表
-    // ============================================================
     function renderList() {
         const list = document.getElementById("pf-skills-list");
         if (!list || state.loading) return;
@@ -192,20 +223,16 @@
                 (s.keywords || []).some(k => k.toLowerCase().includes(state.filter))
             );
         }
-
         if (skills.length === 0) {
             list.innerHTML = `<div class="pf-loading">${state.skills.length ? "无匹配 skill" : "暂无 skill"}</div>`;
             return;
         }
 
         list.innerHTML = skills.map(s => renderCard(s)).join("");
-
-        // 绑定卡片点击
         list.querySelectorAll(".pf-skill-head").forEach(head => {
             head.onclick = () => toggleCard(head.closest(".pf-skill-card"));
         });
 
-        // 恢复展开状态
         if (state.expanded) {
             const card = list.querySelector(`[data-skill="${state.expanded}"]`);
             if (card) card.classList.add("expanded");
@@ -247,7 +274,6 @@
     function toggleCard(card) {
         const name = card.dataset.skill;
         const isExpanded = card.classList.contains("expanded");
-        // 关闭其他
         card.parentElement.querySelectorAll(".pf-skill-card").forEach(c => c.classList.remove("expanded"));
         if (!isExpanded) {
             card.classList.add("expanded");
@@ -257,9 +283,6 @@
         }
     }
 
-    // ============================================================
-    // 执行 skill
-    // ============================================================
     async function runSkill(skillName, card) {
         const textarea = card.querySelector(`textarea[data-kwargs="${cssEscape(skillName)}"]`);
         const resultEl = card.querySelector(`div[data-result="${cssEscape(skillName)}"]`);
@@ -270,7 +293,7 @@
         if (raw) {
             try {
                 kwargs = JSON.parse(raw);
-                if (typeof kwargs !== "object" || Array.isArray(kwargs)) throw new Error("kwargs 必须是 JSON 对象 {}");
+                if (typeof kwargs !== "object" || Array.isArray(kwargs)) throw new Error("必须是 JSON 对象 {}");
             } catch (e) {
                 showResult(resultEl, "error", `JSON 解析失败: ${e.message}`);
                 return;
@@ -285,17 +308,28 @@
 
         const t0 = Date.now();
         try {
-            const r = await fetch(apiUrl("/api/run_skill"), {
+            let r = await fetch(apiUrl("/api/run_skill"), {
                 method: "POST",
                 headers: apiHeaders(),
                 body: JSON.stringify({ skill_name: skillName, kwargs }),
             });
+            
+            if (r.status === 401) {
+                localStorage.removeItem("pf_token");
+                const t = await promptToken("Token 验证失败，请重新输入。");
+                if (!t) throw new Error("401 Unauthorized");
+                r = await fetch(apiUrl("/api/run_skill"), {
+                    method: "POST",
+                    headers: apiHeaders(),
+                    body: JSON.stringify({ skill_name: skillName, kwargs }),
+                });
+            }
+
             const json = await r.json();
             const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
 
             if (json.status === "success") {
                 showResult(resultEl, "success", formatResult(json, elapsed), json);
-                // 尝试追加到聊天区
                 const chatHtml = `<div style="padding:8px 12px;background:#242424;border-radius:8px;margin:8px 0">
                     <div style="color:#4ade80;font-size:12px;margin-bottom:4px">✅ ${escapeHtml(skillName)} 完成 (${elapsed}s)</div>
                     ${formatResultForChat(json)}
@@ -314,9 +348,7 @@
 
     function formatResult(json, elapsed) {
         const d = json.result || {};
-        // 如果 result 本身是 {status, result: {...}}，再剥一层
         const inner = (d.result && typeof d.result === "object") ? d.result : d;
-
         const lines = [`✅ 完成 (${elapsed}s)`];
         const artifactKeys = ["image_path", "video_path", "audio_file", "article_md", "article_html",
                               "article_docx", "article_pdf", "report_file", "novel_file", "audio_file",
@@ -340,19 +372,15 @@
         const d = json.result || {};
         const inner = (d.result && typeof d.result === "object") ? d.result : d;
         const parts = [];
-
-        // 图片
         const imgPath = inner.image_path || inner.article_html && null;
         if (imgPath) {
             const url = apiUrl(`/api/file?path=${encodeURIComponent(imgPath)}`);
             parts.push(`<img src="${url}" loading="lazy" style="max-width:100%;border-radius:8px;margin-top:6px" onclick="window.open('${url}')">`);
         }
-        // 音频
         if (inner.audio_file) {
             const url = apiUrl(`/api/file?path=${encodeURIComponent(inner.audio_file)}`);
             parts.push(`<audio controls src="${url}" style="width:100%;margin-top:6px"></audio>`);
         }
-        // 文件链接
         for (const key of ["article_md", "article_html", "article_pdf", "report_file", "novel_file", "preview_path", "video_path"]) {
             const p = inner[key];
             if (p) {
@@ -370,7 +398,6 @@
         el.classList.add("show");
         el.className = `pf-skill-result show ${type}`;
         el.innerHTML = `<div style="white-space:pre-wrap">${escapeHtml(text)}</div>`;
-        // 追加图片/音频
         if (type === "success" && json) {
             const chatParts = formatResultForChat(json);
             if (chatParts) {
@@ -381,9 +408,6 @@
         }
     }
 
-    // ============================================================
-    // 工具
-    // ============================================================
     function escapeHtml(s) {
         return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({
             "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
@@ -395,16 +419,12 @@
         return String(s).replace(/[^a-zA-Z0-9_-]/g, "\\$&");
     }
 
-    // ============================================================
-    // 事件委托（填充示例 / 执行按钮）
-    // ============================================================
     document.addEventListener("click", (e) => {
         const btn = e.target.closest("button[data-action]");
         if (!btn) return;
         const action = btn.dataset.action;
         const skillName = btn.dataset.skillName;
         if (!skillName) return;
-
         const card = btn.closest(".pf-skill-card");
         if (!card) return;
 
@@ -419,16 +439,9 @@
         }
     });
 
-    // ============================================================
-    // 初始化
-    // ============================================================
-    function init() {
-        if (document.readyState === "loading") {
-            document.addEventListener("DOMContentLoaded", createUI);
-        } else {
-            createUI();
-        }
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", createUI);
+    } else {
+        createUI();
     }
-
-    init();
 })();

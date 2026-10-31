@@ -60,8 +60,6 @@ class _DailyLogHandler(logging.Handler):
             pass
 
 
-
-    
 class ChatApp:
     """智能生图主应用"""
     
@@ -95,11 +93,9 @@ class ChatApp:
         # 网络广播播放器（懒加载）
         self._radio_player = None
         
-        self._setup_ui()
-        self._build_menubar()
-        self._check_llm()
-
-        # ---- 接入 Orchestrator ----
+        # =========================================================
+        # ★ 接入 Orchestrator (必须在构建 UI 和 菜单之前)
+        # =========================================================
         from application.events import EventBus
         from application.context import AppContext
         from application.orchestrator import Orchestrator
@@ -111,6 +107,11 @@ class ChatApp:
             pre_dispatch_hook=self._enhance_hook,
         )
         self._wire_orch_events()
+
+        # 构建 UI
+        self._setup_ui()
+        self._build_menubar()
+        self._check_llm()
         
     
     def _setup_ui(self):
@@ -187,31 +188,6 @@ class ChatApp:
         ttk.Label(toolbar_row1, text="API:").pack(side=tk.LEFT, padx=5)
         
         self.provider_var = tk.StringVar(value=self.settings.api_provider)
-        #self.provider_combo = ttk.Combobox(
-        #    toolbar_row1,
-        #    textvariable=self.provider_var,
-        #    values=[
-        #    "pollinations", 
-        #    "huggingface", 
-        #    "tongyi", 
-        #    "yige", 
-        #    "hunyuan", 
-        #    "agnes", 
-        #    "freeapi", 
-        #    "replicate", 
-        #    "stability",
-        #    "free_multimodal_proxy",   # 新增
-        #    "freellmapi",               # 新增
-        #    "siliconflow",              # 新增
-        #    "openrouter",               # 新增            
-        #    ],
-        #    width=12,
-        #    state="readonly"
-        #)
-        #self.provider_combo.pack(side=tk.LEFT, padx=2)
-        #self.provider_combo.bind('<<ComboboxSelected>>', self._on_provider_changed)
-
-
 
         # 初始化时
         self.provider_combo = ttk.Combobox(
@@ -275,7 +251,6 @@ class ChatApp:
         ).pack(side=tk.LEFT, padx=2)
 
         # ✅ 每日任务：一键生图 → 鉴赏 → 排版 → 推送
-
         ttk.Button(
             toolbar_row2,
             text="📅 每日任务",
@@ -576,6 +551,56 @@ class ChatApp:
         auto_menu.add_command(label="🐙 GitHub 日报", command=self._run_github_daily)
         menubar.add_cascade(label="自动化", menu=auto_menu)
 
+        # ============================================================
+        # 🎯 动态加载 Skills 菜单
+        # ============================================================
+        try:
+            from skills.registry import list_by_category
+            from tkinter import simpledialog
+
+            skill_menu = tk.Menu(menubar, tearoff=0)
+            
+            # 按分类获取
+            categories = list_by_category()
+            for cat_name, skills in categories.items():
+                cat_menu = tk.Menu(skill_menu, tearoff=0)
+                for s in skills:
+                    def _run(sn=s.name):
+                        # 弹出输入框填 kwargs
+                        kwargs_str = simpledialog.askstring(
+                            f"运行 {sn}", 
+                            "输入 kwargs (JSON格式，留空为 {}):",
+                            parent=self.root
+                        )
+                        if kwargs_str is None:
+                            return  # 取消
+                        if not kwargs_str.strip():
+                            kwargs_str = "{}"
+                        try:
+                            kwargs = json.loads(kwargs_str)
+                        except Exception as e:
+                            messagebox.showerror("JSON 错误", f"解析失败: {e}")
+                            return
+                        
+                        # 丢到线程里跑，避免卡死 GUI
+                        def _worker():
+                            try:
+                                # 直接调 orchestrator 
+                                if hasattr(self, 'orch'):
+                                    self.orch.run_skill(sn, **kwargs)
+                                else:
+                                    self._append_message("system", f"⚠️ 未接入 orchestrator，无法运行 {sn}")
+                            except Exception as e:
+                                self._append_message("system", f"❌ {sn} 执行失败: {e}")
+                        threading.Thread(target=_worker, daemon=True).start()
+
+                    cat_menu.add_command(label=s.name, command=_run)
+                skill_menu.add_cascade(label=cat_name or "其他", menu=cat_menu)
+            
+            menubar.add_cascade(label="🎯 Skills", menu=skill_menu)
+        except Exception as e:
+            print(f"⚠️ 动态菜单加载失败: {e}")
+
         self.root.config(menu=menubar)
 
     # ============================================================
@@ -821,9 +846,6 @@ class ChatApp:
             except Exception:
                 pass      
 
-
-
-                
     # ============================================================
     # ✅ 第二批：视频生成
     # ============================================================

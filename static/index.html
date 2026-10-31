@@ -9,7 +9,8 @@
     <!-- ================= PWA 配置区 ================= -->
     <meta name="theme-color" content="#111827">
     <link rel="manifest" href="/static/manifest.json">
-    <link rel="apple-touch-icon" href="/static/icon-192.png">
+    <!-- 如果你没有准备图标，这行可以注释掉以免控制台 404 -->
+    <!-- <link rel="apple-touch-icon" href="/static/icon-192.png"> -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="PromptForge">
@@ -21,52 +22,55 @@
         ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
         body { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
     </style>
-<script>
-(function () {
-    // ---- 1. 从 URL 或 localStorage 读 token ----
-    function getToken() {
-        const params = new URLSearchParams(location.search);
-        const fromUrl = params.get('token');
-        if (fromUrl) {
-            localStorage.setItem('pf_token', fromUrl);
-            // 清掉 URL 上的 token（避免被日志/分享泄露）
-            params.delete('token');
-            const clean = location.pathname +
-                (params.toString() ? '?' + params.toString() : '');
-            history.replaceState(null, '', clean);
-            return fromUrl;
-        }
-        return localStorage.getItem('pf_token') || '';
-    }
-    window.PF_TOKEN = getToken();
 
-    // ---- 2. 拦截 fetch，自动加 header ----
-    const _fetch = window.fetch;
-    window.fetch = function (url, opts) {
-        opts = opts || {};
-        opts.headers = Object.assign({}, opts.headers || {});
-        if (window.PF_TOKEN && !opts.headers['x-pf-token']) {
-            opts.headers['x-pf-token'] = window.PF_TOKEN;
+    <!-- 核心安全配置：全自动 Token 读取与拦截 -->
+    <script>
+    (function () {
+        // ---- 1. 从 URL 或 localStorage 读 token ----
+        function getToken() {
+            const params = new URLSearchParams(location.search);
+            const fromUrl = params.get('token');
+            if (fromUrl) {
+                localStorage.setItem('pf_token', fromUrl);
+                // 清掉 URL 上的 token（避免被日志/分享泄露）
+                params.delete('token');
+                const clean = location.pathname + (params.toString() ? '?' + params.toString() : '');
+                history.replaceState(null, '', clean);
+                return fromUrl;
+            }
+            return localStorage.getItem('pf_token') || '';
         }
-        return _fetch.call(this, url, opts);
-    };
+        window.PF_TOKEN = getToken();
 
-    // ---- 3. 拦截 <img> 加载失败，自动重试带 token ----
-    document.addEventListener('error', function (e) {
-        const el = e.target;
-        if (!el || el.tagName !== 'IMG' || !el.src) return;
-        if (el.dataset.pfRetried) return;
-        if (!window.PF_TOKEN) return;
-        el.dataset.pfRetried = '1';
-        try {
-            const u = new URL(el.src, location.href);
-            u.searchParams.set('token', window.PF_TOKEN);
-            el.src = u.toString();
-        } catch (err) {}
-    }, true);
-})();
-</script>
-    <link rel="stylesheet" href="/static/skills-panel.css">	
+        // ---- 2. 拦截全局 fetch，自动加 header ----
+        const _fetch = window.fetch;
+        window.fetch = function (url, opts) {
+            opts = opts || {};
+            opts.headers = Object.assign({}, opts.headers || {});
+            if (window.PF_TOKEN && !opts.headers['x-pf-token']) {
+                opts.headers['x-pf-token'] = window.PF_TOKEN;
+            }
+            return _fetch.call(this, url, opts);
+        };
+
+        // ---- 3. 拦截 <img> 加载失败，自动重试带 token ----
+        document.addEventListener('error', function (e) {
+            const el = e.target;
+            if (!el || el.tagName !== 'IMG' || !el.src) return;
+            if (el.dataset.pfRetried) return;
+            if (!window.PF_TOKEN) return;
+            el.dataset.pfRetried = '1';
+            try {
+                const u = new URL(el.src, location.href);
+                u.searchParams.set('token', window.PF_TOKEN);
+                el.src = u.toString();
+            } catch (err) {}
+        }, true);
+    })();
+    </script>
+    
+    <!-- Skills 面板样式 -->
+    <link rel="stylesheet" href="/static/skills-panel.css">
 </head>
 <body class="bg-gray-900 text-white min-h-screen p-4 flex flex-col gap-4 font-sans max-w-5xl mx-auto">
 
@@ -138,12 +142,14 @@
     <!-- 技能面板配置 -->
     <section id="skills-config" class="hidden bg-gray-800 rounded-xl p-4">
         <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
-            <button onclick="runSkill('news_aggregator', {})" class="bg-gray-700 hover:bg-gray-600 p-2 rounded text-sm text-left truncate">📰 抓取新闻简报</button>
-            <button onclick="runSkill('daily_pipeline', {})" class="bg-gray-700 hover:bg-gray-600 p-2 rounded text-sm text-left truncate">📅 执行每日任务</button>
+            <button onclick="runSkill('news_aggregator', {top_n: 3})" class="bg-gray-700 hover:bg-gray-600 p-2 rounded text-sm text-left truncate">📰 抓取新闻简报</button>
+            <button onclick="runSkill('daily_pipeline', {count: 2})" class="bg-gray-700 hover:bg-gray-600 p-2 rounded text-sm text-left truncate">📅 执行每日任务</button>
             <button onclick="runSkill('github_repo_daily', {})" class="bg-gray-700 hover:bg-gray-600 p-2 rounded text-sm text-left truncate">🐙 GitHub 日报</button>
             <button onclick="runSkill('tech_hot_article', {})" class="bg-gray-700 hover:bg-gray-600 p-2 rounded text-sm text-left truncate">📄 生成技术文章</button>
             <button onclick="runSkill('novel_writer', {genre:'科幻', title:'测试', outline:'测试', characters:'主角', chapter_count: 1, words_per_chapter: 500})" class="bg-gray-700 hover:bg-gray-600 p-2 rounded text-sm text-left truncate">📝 写小说</button>
             <button onclick="runSkill('music_generator', {topic:'星空', emotion:'peaceful', duration: 15})" class="bg-gray-700 hover:bg-gray-600 p-2 rounded text-sm text-left truncate">🎵 生成音乐</button>
+            <button onclick="runSkill('voice_assistant', {action:'tts', text:'你好，我是AI助手'})" class="bg-gray-700 hover:bg-gray-600 p-2 rounded text-sm text-left truncate">🔊 语音合成</button>
+            <button onclick="runSkill('search_engine', {action:'search', query:'风景', kind:'images', limit: 5})" class="bg-gray-700 hover:bg-gray-600 p-2 rounded text-sm text-left truncate">🔍 图片搜索</button>
         </div>
     </section>
 
@@ -185,21 +191,16 @@
 
     <script>
         const API_BASE = window.location.origin;
-        
-        // ★ 核心安全配置：必须与后端 api_server.py 里的 API_SECRET_KEY 保持一致
-        const SECRET_KEY = "promptforge_secret_2026"; 
-
         let currentMode = 't2i';
 
         // ================= 安全的请求封装 =================
+        // 因为全局的 fetch 已经被劫持并自动注入了 x-pf-token，这里直接 fetch 即可
         async function fetchAuth(url, options = {}) {
-            if (!options.headers) options.headers = {};
-            options.headers['X-API-Key'] = SECRET_KEY;
             const response = await fetch(url, options);
             if (response.status === 401) {
                 document.getElementById('conn-status').textContent = "未授权";
                 document.getElementById('conn-status').className = "text-xs px-2 py-1 bg-red-900 text-red-300 rounded border border-red-700";
-                alert("安全验证失败：密钥错误或未授权！");
+                alert("安全验证失败：Token 错误或缺失，请使用 ?token=xxx 重新访问！");
                 throw new Error("Unauthorized");
             }
             return response;
@@ -250,7 +251,7 @@
                 promptInput.classList.remove('hidden');
                 actionBtn.textContent = "💬 发送对话";
                 actionBtn.className = "w-full bg-green-600 hover:bg-green-500 font-bold py-2 rounded-lg text-sm shadow-lg";
-            } else {
+            } else if (mode === 't2i' || mode === 'i2i') {
                 promptInput.classList.remove('hidden');
                 actionBtn.textContent = "✨ 生成图片";
                 actionBtn.className = "w-full bg-blue-600 hover:bg-blue-500 font-bold py-2 rounded-lg text-sm shadow-lg";
@@ -419,7 +420,7 @@
             } catch (err) { alert("请求失败: " + err.message); }
         }
 
-        // ====== 5. 技能执行 ======
+        // ====== 5. 技能执行 (硬编码按钮) ======
         async function runSkill(skillName, kwargs) {
             const resultDiv = document.getElementById('text-result');
             resultDiv.classList.remove('hidden');
@@ -440,6 +441,17 @@
                     if (resData.result) displayTxt += JSON.stringify(resData.result, null, 2);
                     else displayTxt += JSON.stringify(resData, null, 2);
                     resultDiv.textContent = displayTxt;
+                    
+                    // 如果生成了图片，自动尝试展示第一张
+                    let imgPath = resData?.result?.image_path || resData?.image_path;
+                    if (imgPath) {
+                        const container = document.getElementById('image-container');
+                        const imgEl = document.getElementById('result-image');
+                        container.classList.remove('hidden');
+                        // 通过 /api/file 接口安全读取，或者根据实际返回路径拼接
+                        imgEl.src = `${API_BASE}/api/file?path=${encodeURIComponent(imgPath)}`;
+                        document.getElementById('image-caption').textContent = `来源: Skill ${skillName}`;
+                    }
                 } else {
                     resultDiv.textContent = `❌ 失败: ${data.message}`;
                 }
@@ -518,6 +530,8 @@
 
         window.onload = loadInitData;
     </script>
-<script src="/static/skills-panel.js"></script>	
+
+    <!-- Skills 抽屉面板 (独立组件) -->
+    <script src="/static/skills-panel.js"></script>
 </body>
 </html>
