@@ -26,7 +26,14 @@ logger = logging.getLogger(__name__)
     requires_key=False,
     free=True,
     description="本地 Stable Diffusion（OpenVINO / diffusers），基于 pipeline_pool 复用实例",
+    config_schema={
+        "model_path": {"env": "SD_MODEL_PATH", "required": False},
+        "lora_path":  {"env": "LORA_PATH",     "required": False},
+        "vae_path":   {"env": "VAE_PATH",      "required": False},
+        "device":     {"env": "SD_DEVICE",     "default": "CPU"},
+    },
 )
+
 class LocalSDAdapter(BaseProvider):
 
     # ---------- 构造 ----------

@@ -7,6 +7,7 @@ import logging
 from typing import Any, Callable
 
 from .errors import ProviderConfigError
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -25,8 +26,8 @@ def register(
     requires_key: bool = False,
     free: bool = False,
     description: str = "",
+    config_schema: dict[str, dict] | None = None,   # ← 新增
 ):
-    """装饰器：把 provider 注册进注册表。"""
     def deco(cls):
         if name in _REGISTRY:
             return cls
@@ -39,11 +40,12 @@ def register(
             "requires_key": requires_key,
             "free": free,
             "description": description,
+            "config_schema": config_schema or {},    # ← 新增
         }
         logger.debug(f"✅ registered provider: {name} -> {cls.__name__}")
         return cls
     return deco
-
+    
 
 def create(name: str, config: dict = None, force_new: bool = False) -> Any:
     """按名称创建（或获取） provider 实例。"""
@@ -96,3 +98,76 @@ def clear_cache():
     global _INSTANCE_CACHE
     _INSTANCE_CACHE.clear()
     logger.info("🗑️ Provider 实例缓存已清空")
+    
+# ============================================================
+# 配置自动加载（P3 新增）
+# ============================================================
+
+def load_config(name: str) -> dict:
+    """按 config_schema 从环境变量加载 provider 配置。"""
+    meta = _META.get(name)
+    if not meta:
+        return {}
+
+    schema = meta.get("config_schema", {})
+    cfg: dict = {}
+
+    if not schema:
+        prefix = f"{name.upper()}_"
+        for key, value in os.environ.items():
+            if key.startswith(prefix):
+                short = key[len(prefix):].lower()
+                cfg[short] = value
+                cfg[key] = value
+        return cfg
+
+    for key, spec in schema.items():
+        env_key = spec.get("env") or f"{name.upper()}_{key.upper()}"
+        val = os.getenv(env_key)
+
+        if val is None or val == "":
+            val = spec.get("default")
+
+        if (val is None or val == "") and spec.get("required"):
+            raise ProviderConfigError(f"{name} 缺少必填配置: {env_key}")
+
+        type_ = spec.get("type", "str")
+        if val is not None and val != "":
+            try:
+                if type_ == "int":
+                    val = int(val)
+                elif type_ == "float":
+                    val = float(val)
+                elif type_ == "bool":
+                    val = str(val).lower() in ("1", "true", "yes", "on")
+            except (ValueError, TypeError):
+                pass
+
+        cfg[key] = val
+        cfg[env_key] = val
+
+    return cfg
+
+
+def validate_config(name: str) -> list[str]:
+    """检查 provider 配置是否齐全，返回缺失的 env 变量名。"""
+    meta = _META.get(name, {})
+    schema = meta.get("config_schema", {})
+    missing = []
+    for key, spec in schema.items():
+        if not spec.get("required"):
+            continue
+        env_key = spec.get("env") or f"{name.upper()}_{key.upper()}"
+        if not os.getenv(env_key):
+            missing.append(env_key)
+    return missing
+
+
+def validate_all() -> dict[str, list[str]]:
+    """检查所有 provider，返回 {name: [缺失 env]}。"""
+    result = {}
+    for name in _META:
+        missing = validate_config(name)
+        if missing:
+            result[name] = missing
+    return result    

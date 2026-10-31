@@ -58,9 +58,15 @@ _QUALITY_MARKERS = (
 @register(
     name="pollinations",
     capabilities=["image", "audio", "video", "text"],
-    requires_key=True,
-    free=False,
-    description="Pollinations AI（图像需 pollen 余额，chat 免费）"
+    requires_key=False,
+    free=True,
+    description="Pollinations AI（免费匿名可用，可选 API Key）",
+    config_schema={
+        "api_key":     {"env": "POLLINATIONS_API_KEY",      "required": False, "secret": True},
+        "image_model": {"env": "POLLINATIONS_MODEL",        "default": "flux"},
+        "video_model": {"env": "POLLINATIONS_VIDEO_MODEL",  "default": ""},
+        "audio_model": {"env": "POLLINATIONS_AUDIO_MODEL",  "default": "nova"},
+    },
 )
 
 class PollinationsAdapter(BaseProvider):

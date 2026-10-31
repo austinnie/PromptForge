@@ -1,27 +1,31 @@
 # config/settings.py
 """PromptForge 全局配置。
 
-设计要点：
-  - 所有 os.getenv 用 field(default_factory=...) 延迟求值，
-    避免 dataclass 类体求值时 .env 尚未加载
-  - output_dir 相对路径按 BASE_DIR 解析，避免 CWD 依赖
-  - Ollama 地址兼容 OLLAMA_URL / OLLAMA_HOST 双名
-  - 补齐 LLMClient 相关字段（LLM_BACKENDS 等）
+P3 改造版：
+  - provider 配置全部下沉到 providers.registry（config_schema）
+  - settings.py 只保留"业务层真正会用到的核心字段"
+  - get_provider_config 优先走 registry.load_config
+
+行数：约 400 → 约 230
+删除：tongyi / yige / hunyuan / hf / replicate / stability /
+      free_multimodal_proxy / freellmapi / siliconflow / openrouter 等
+      未被业务层引用的字段
+      以及硬编码的 get_provider_info dict
 """
 
 import os
 import logging
 from pathlib import Path
 from dataclasses import dataclass, field
-#from typing import Optional, List
-from typing import Optional
+from typing import Optional, List
+
 from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 
 _PROVIDER_CACHE: dict[str, dict] = {}
 
-DEFAULT_LOCAL_MODEL_ID = "sd_v1_5_aiiiiii01_v10"  # 默认本地模型
+DEFAULT_LOCAL_MODEL_ID = "sd_v1_5_aiiiiii01_v10"
 
 # ------------------------------------------------------------
 # 加载 .env
@@ -29,7 +33,6 @@ DEFAULT_LOCAL_MODEL_ID = "sd_v1_5_aiiiiii01_v10"  # 默认本地模型
 _ENV_PATH = Path(__file__).parent.parent / ".env"
 load_dotenv(_ENV_PATH)
 
-# 调试开关：设置 PF_DEBUG_ENV=1 才打印加载信息
 if os.getenv("PF_DEBUG_ENV", "0") == "1":
     print(f"📂 .env 文件路径: {_ENV_PATH}")
     print(f"📂 .env 文件是否存在: {_ENV_PATH.exists()}")
@@ -69,7 +72,6 @@ def _env_list(key: str, default: List[str]) -> List[str]:
     return [item.strip() for item in v.split(",") if item.strip()]
 
 
-
 @dataclass
 class Settings:
     """全局配置"""
@@ -94,7 +96,6 @@ class Settings:
     llm_temperature: float = field(default_factory=lambda: _env_float("LLM_TEMPERATURE", 0.7))
     llm_max_tokens: int = field(default_factory=lambda: _env_int("LLM_MAX_TOKENS", 2048))
 
-    # Ollama 地址：优先 OLLAMA_URL，回退 OLLAMA_HOST
     ollama_url: str = field(
         default_factory=lambda: (
             os.getenv("OLLAMA_URL")
@@ -114,7 +115,7 @@ class Settings:
         default_factory=lambda: _env_int("OLLAMA_NUM_PARALLEL", 2)
     )
 
-    # GitHub 日报专属 LLM 配置
+    # GitHub 日报专属 LLM
     gh_daily_llm_backends: List[str] = field(
         default_factory=lambda: _env_list("GH_DAILY_LLM_BACKENDS", ["agnes", "ollama"])
     )
@@ -129,46 +130,15 @@ class Settings:
     )
 
     # ============================================================
-    # 生成模式 / 提供商
+    # 生成模式
     # ============================================================
     generation_mode: str = field(default_factory=lambda: os.getenv("GENERATION_MODE", "local"))
     api_provider: str = field(default_factory=lambda: os.getenv("API_PROVIDER", "pollinations"))
 
     # ============================================================
-    # 图像 API 提供商
+    # Agnes（被 llm_client / video_generator / wechat_formatter / image_curator 直接引用）
+    # 其余 provider 的配置请用 settings.get_provider_config(name)
     # ============================================================
-    # ----- 通义万相 -----
-    tongyi_api_key: str = field(default_factory=lambda: os.getenv("TONGYI_API_KEY", ""))
-    tongyi_model: str = field(default_factory=lambda: os.getenv("TONGYI_MODEL", "wanx-v1"))
-    tongyi_base_url: str = field(default_factory=lambda: os.getenv("TONGYI_BASE_URL", ""))
-
-    # ----- 文心一格 -----
-    yige_api_key: str = field(default_factory=lambda: os.getenv("YIGE_API_KEY", ""))
-    yige_secret_key: str = field(default_factory=lambda: os.getenv("YIGE_SECRET_KEY", ""))
-
-    # ----- 腾讯混元 -----
-    hunyuan_secret_id: str = field(default_factory=lambda: os.getenv("HUNYUAN_SECRET_ID", ""))
-    hunyuan_secret_key: str = field(default_factory=lambda: os.getenv("HUNYUAN_SECRET_KEY", ""))
-
-    # ----- HuggingFace -----
-    hf_api_token: str = field(default_factory=lambda: os.getenv("HF_API_TOKEN", ""))
-    hf_model: str = field(default_factory=lambda: os.getenv("HF_MODEL", "sdxl"))
-
-    # ----- Pollinations -----
-    pollinations_api_key: str = field(default_factory=lambda: os.getenv("POLLINATIONS_API_KEY", ""))
-    pollinations_model: str = field(
-        default_factory=lambda: os.getenv("POLLINATIONS_MODEL", "black-forest-labs/flux.1-schnell")
-    )
-    pollinations_audio_model: str = field(
-        default_factory=lambda: os.getenv(
-            "POLLINATIONS_AUDIO_MODEL", "community/NamanSoni78/aura-2-amalthea-en"
-        )
-    )
-    pollinations_video_model: str = field(
-        default_factory=lambda: os.getenv("POLLINATIONS_VIDEO_MODEL", "")
-    )
-
-    # ----- Agnes AI -----
     agnes_api_key: str = field(default_factory=lambda: os.getenv("AGNES_API_KEY", ""))
     agnes_image_model: str = field(
         default_factory=lambda: os.getenv("AGNES_IMAGE_MODEL", "agnes-image-2.5-flash")
@@ -186,53 +156,6 @@ class Settings:
         default_factory=lambda: os.getenv("AGNES_BASE_URL", "https://apihub.agnes-ai.com/v1")
     )
 
-    # ----- Free API -----
-    freeapi_model: str = field(default_factory=lambda: os.getenv("FREEAPI_MODEL", "qwen3.7-plus"))
-
-    # ----- Replicate -----
-    replicate_api_token: str = field(default_factory=lambda: os.getenv("REPLICATE_API_TOKEN", ""))
-    replicate_model: str = field(
-        default_factory=lambda: os.getenv("REPLICATE_MODEL", "stability-ai/stable-diffusion")
-    )
-
-    # ----- Stability AI -----
-    stability_api_key: str = field(default_factory=lambda: os.getenv("STABILITY_API_KEY", ""))
-    stability_model: str = field(
-        default_factory=lambda: os.getenv("STABILITY_MODEL", "stable-diffusion-xl-1024-v1-0")
-    )
-
-    # ----- Free Multimodal Proxy -----
-    free_multimodal_proxy_url: str = field(
-        default_factory=lambda: os.getenv("FREE_MULTIMODAL_PROXY_URL", "http://localhost:8080/v1")
-    )
-    free_multimodal_proxy_model: str = field(
-        default_factory=lambda: os.getenv("FREE_MULTIMODAL_PROXY_MODEL", "zimage")
-    )
-    free_multimodal_proxy_token: str = field(
-        default_factory=lambda: os.getenv("FREE_MULTIMODAL_PROXY_TOKEN", "")
-    )
-
-    # ----- FreeLLMAPI -----
-    freellmapi_url: str = field(
-        default_factory=lambda: os.getenv("FREELLMAPI_URL", "http://localhost:3000/v1")
-    )
-    freellmapi_model: str = field(default_factory=lambda: os.getenv("FREELLMAPI_MODEL", "auto"))
-    freellmapi_key: str = field(
-        default_factory=lambda: os.getenv("FREELLMAPI_KEY", "freellmapi")
-    )
-
-    # ----- 硅基流动 -----
-    siliconflow_api_key: str = field(default_factory=lambda: os.getenv("SILICONFLOW_API_KEY", ""))
-    siliconflow_model: str = field(
-        default_factory=lambda: os.getenv("SILICONFLOW_MODEL", "sd-turbo")
-    )
-
-    # ----- OpenRouter -----
-    openrouter_api_key: str = field(default_factory=lambda: os.getenv("OPENROUTER_API_KEY", ""))
-    openrouter_model: str = field(
-        default_factory=lambda: os.getenv("OPENROUTER_MODEL", "bytedance-seed/seedream-4.5")
-    )
-
     # ============================================================
     # 生成参数
     # ============================================================
@@ -243,15 +166,12 @@ class Settings:
     default_height: int = field(default_factory=lambda: _env_int("DEFAULT_HEIGHT", 768))
 
     # ============================================================
-    # 视频生成
+    # 视频
     # ============================================================
-    # 目标时长（秒），超长会自动分段拼接
     video_duration: int = field(default_factory=lambda: _env_int("VIDEO_DURATION", 60))
-    # 单段时长（秒）
     video_segment_duration: int = field(
         default_factory=lambda: _env_int("VIDEO_SEGMENT_DURATION", 10)
     )
-    # 是否自动循环拼接（默认开启）
     video_auto_merge: bool = field(
         default_factory=lambda: _env_bool("VIDEO_AUTO_MERGE", "true")
     )
@@ -272,7 +192,7 @@ class Settings:
     )
 
     # ============================================================
-    # 文章配图引擎
+    # 文章配图
     # ============================================================
     article_image_engine: str = field(
         default_factory=lambda: os.getenv("ARTICLE_IMAGE_ENGINE", "agnes")
@@ -320,28 +240,22 @@ class Settings:
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         )
     )
-    
-    # ✅ 新增：新闻摘要 LLM 后端（不配则用全局 LLM_BACKENDS）
     news_llm_backends: List[str] = field(
         default_factory=lambda: _env_list("NEWS_LLM_BACKENDS", [])
-    )    
+    )
 
     # ============================================================
-    # 初始化后处理
+    # 初始化
     # ============================================================
 
     def __post_init__(self):
-        # output_dir 相对路径按 BASE_DIR 解析
         if not self.output_dir.is_absolute():
             self.output_dir = self.BASE_DIR / self.output_dir
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        # 调试日志（改成 logger.debug，避免每次实例化刷屏）
-        logger.debug(f"Settings.video_segment_duration = {self.video_segment_duration}")
-        logger.debug(f"Settings.video_duration = {self.video_duration}")
-        logger.debug(f"安全检测开关: {'启用' if self.enable_safety_check else '禁用'}")
+        logger.debug(f"video_segment_duration={self.video_segment_duration}")
+        logger.debug(f"安全检测: {'启用' if self.enable_safety_check else '禁用'}")
         logger.debug(f"LLM 后端: {self.llm_backends}")
-        logger.debug(f"Ollama 地址: {self.ollama_url}")
 
     # ============================================================
     # 工具方法
@@ -352,173 +266,51 @@ class Settings:
             return self.model_path
         return None
 
-    #def get_api_config(self) -> dict:
-    #    """获取所有 API 配置（供 create_engine 使用）"""
-    #    return {
-    #        "tongyi": {
-    #            "TONGYI_API_KEY": self.tongyi_api_key,
-    #            "TONGYI_MODEL": self.tongyi_model,
-    #            "TONGYI_BASE_URL": self.tongyi_base_url,
-    #        },
-    #        "yige": {
-    #            "YIGE_API_KEY": self.yige_api_key,
-    #            "YIGE_SECRET_KEY": self.yige_secret_key,
-    #        },
-    #        "hunyuan": {
-    #            "HUNYUAN_SECRET_ID": self.hunyuan_secret_id,
-    #            "HUNYUAN_SECRET_KEY": self.hunyuan_secret_key,
-    #        },
-    #        "huggingface": {
-    #            "HF_API_TOKEN": self.hf_api_token,
-    #            "HF_MODEL": self.hf_model,
-    #        },
-    #        "pollinations": {
-    #            "POLLINATIONS_API_KEY": self.pollinations_api_key,
-    #            "POLLINATIONS_MODEL": self.pollinations_model,
-    #            "POLLINATIONS_VIDEO_MODEL": self.pollinations_video_model,
-    #            "POLLINATIONS_AUDIO_MODEL": self.pollinations_audio_model,
-    #        },
-    #        "agnes": {
-    #            "AGNES_API_KEY": self.agnes_api_key,
-    #            "AGNES_IMAGE_MODEL": self.agnes_image_model,
-    #            "AGNES_TEXT_MODEL": self.agnes_text_model,
-    #            "AGNES_VIDEO_MODEL": self.agnes_video_model,
-    #            "AGNES_VISION_MODEL": self.agnes_vision_model,
-    #            "AGNES_BASE_URL": self.agnes_base_url,
-    #        },
-    #        "freeapi": {
-    #            "FREEAPI_MODEL": self.freeapi_model,
-    #        },
-    #        "replicate": {
-    #            "REPLICATE_API_TOKEN": self.replicate_api_token,
-    #            "REPLICATE_MODEL": self.replicate_model,
-    #        },
-    #        "stability": {
-    #            "STABILITY_API_KEY": self.stability_api_key,
-    #            "STABILITY_MODEL": self.stability_model,
-    #        },
-    #        "free_multimodal_proxy": {
-    #            "FREE_MULTIMODAL_PROXY_URL": self.free_multimodal_proxy_url,
-    #            "FREE_MULTIMODAL_PROXY_MODEL": self.free_multimodal_proxy_model,
-    #            "FREE_MULTIMODAL_PROXY_TOKEN": self.free_multimodal_proxy_token,
-    #        },
-    #        "freellmapi": {
-    #            "FREELLMAPI_URL": self.freellmapi_url,
-    #            "FREELLMAPI_MODEL": self.freellmapi_model,
-    #            "FREELLMAPI_KEY": self.freellmapi_key,
-    #        },
-    #        "siliconflow": {
-    #            "SILICONFLOW_API_KEY": self.siliconflow_api_key,
-    #            "SILICONFLOW_MODEL": self.siliconflow_model,
-    #        },
-    #        "openrouter": {
-    #            "OPENROUTER_API_KEY": self.openrouter_api_key,
-    #            "OPENROUTER_MODEL": self.openrouter_model,
-    #        },
-    #    }
-    #
-    
-    
     def get_provider_info(self, provider: str) -> dict:
-        """获取特定提供商的信息"""
-        providers = {
-            "tongyi": {
-                "name": "通义万相 (阿里云百炼)",
-                "requires_key": True,
-                "free": False,
-                "description": "阿里云百炼平台，需要 API Key",
-            },
-            "pollinations": {
-                "name": "Pollinations AI",
-                "requires_key": True,
-                "free": True,
-                "description": "免费，需注册获取 API Key",
-            },
-            "agnes": {
-                "name": "Agnes AI",
-                "requires_key": True,
-                "free": True,
-                "description": "无限期免费，需注册获取 API Key",
-            },
-            "huggingface": {
-                "name": "HuggingFace",
-                "requires_key": True,
-                "free": True,
-                "description": "免费但有限速，需 API Token",
-            },
-            "yige": {
-                "name": "文心一格 (百度)",
-                "requires_key": True,
-                "free": False,
-                "description": "百度文心一格，按量付费",
-            },
-            "hunyuan": {
-                "name": "腾讯混元",
-                "requires_key": True,
-                "free": False,
-                "description": "腾讯混元，按量付费",
-            },
-            "replicate": {
-                "name": "Replicate",
-                "requires_key": True,
-                "free": False,
-                "description": "按量付费，支持真正的图生图",
-            },
-            "stability": {
-                "name": "Stability AI",
-                "requires_key": True,
-                "free": False,
-                "description": "按量付费，支持真正的图生图",
-            },
-            "freeapi": {
-                "name": "Free API",
-                "requires_key": False,
-                "free": True,
-                "description": "社区免费代理，稳定性较差",
-            },
-            "siliconflow": {
-                "name": "硅基流动",
-                "requires_key": True,
-                "free": False,
-                "description": "国内平台，注册获取 Key",
-            },
-            "openrouter": {
-                "name": "OpenRouter",
-                "requires_key": True,
-                "free": False,
-                "description": "聚合 30+ 模型",
-            },
-        }
-        return providers.get(provider, {})
+        """获取 provider 元信息（从 registry 读，P3 改造后不再硬编码）"""
+        try:
+            from providers import get_meta
+            return get_meta(provider)
+        except Exception:
+            return {}
 
     def get_provider_config(self, name: str) -> dict:
-        """
-        自动从环境变量读取 provider 配置。
+        """获取 provider 配置。
 
-        "agnes" -> 扫描所有 AGNES_* 变量，转小写去掉前缀：
-            AGNES_API_KEY=x       -> {"api_key": "x"}
-            AGNES_IMAGE_MODEL=y   -> {"image_model": "y"}
-            AGNES_BASE_URL=z      -> {"base_url": "z"}
+        优先级：
+          1. providers.registry.load_config(name) —— 按 config_schema 从 env 读
+          2. 回退：扫 {NAME}_* 环境变量（兼容无 schema 的 provider）
 
-        同时保留原值（大写）用于兼容旧代码：
-            -> {"api_key": "x", "AGNES_API_KEY": "x", ...}
+        结果进程内缓存；修改 .env 后调 clear_provider_cache()。
         """
         if name in _PROVIDER_CACHE:
             return _PROVIDER_CACHE[name]
 
-        prefix = f"{name.upper()}_"
         cfg: dict = {}
-        for key, value in os.environ.items():
-            if not key.startswith(prefix):
-                continue
-            # 小写短名
-            short = key[len(prefix):].lower()
-            cfg[short] = value
-            # 大写全名（兼容旧 adapter 中 config.get("AGNES_API_KEY")）
-            cfg[key] = value
+
+        # 优先走 registry schema
+        try:
+            from providers.registry import load_config
+            cfg = load_config(name) or {}
+        except Exception as e:
+            logger.debug(f"load_config({name}) 失败，回退到扫 env: {e}")
+
+        # 回退：扫 {NAME}_*
+        if not cfg:
+            prefix = f"{name.upper()}_"
+            for key, value in os.environ.items():
+                if not key.startswith(prefix):
+                    continue
+                short = key[len(prefix):].lower()
+                cfg[short] = value
+                cfg[key] = value
 
         _PROVIDER_CACHE[name] = cfg
         return cfg
-    
+
+    def clear_provider_cache(self) -> None:
+        """清空 provider 配置缓存（改 .env 后调用）。"""
+        _PROVIDER_CACHE.clear()
+
 
 settings = Settings()

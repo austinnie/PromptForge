@@ -7,8 +7,10 @@ import pkgutil
 
 # ★ 关键：必须最先导入 registry，保证 register 定义存在
 from .registry import (
-    register, create, get, list_providers, get_meta, all_meta, clear_cache
+    register, create, get, list_providers, get_meta, all_meta, clear_cache,
+    load_config, validate_config, validate_all,   # ← 新增
 )
+
 from .base import (
     ImageRequest, VideoRequest, AudioRequest,
     ImageProvider, VideoProvider, AudioProvider, VisionProvider,

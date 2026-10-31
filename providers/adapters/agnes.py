@@ -21,7 +21,15 @@ from ..registry import register
     capabilities=["image", "video", "text", "vision"],
     requires_key=True,
     free=True,
-    description="Agnes AI，注册免费，支持图像/视频/文本/视觉"
+    description="Agnes AI，注册免费，支持图像/视频/文本/视觉",
+    config_schema={
+        "api_key":      {"env": "AGNES_API_KEY",      "required": True,  "secret": True},
+        "base_url":     {"env": "AGNES_BASE_URL",     "default": "https://apihub.agnes-ai.com/v1"},
+        "image_model":  {"env": "AGNES_IMAGE_MODEL",  "default": "agnes-image-2.5-flash"},
+        "text_model":   {"env": "AGNES_TEXT_MODEL",   "default": "agnes-2.5-flash"},
+        "video_model":  {"env": "AGNES_VIDEO_MODEL",  "default": "agnes-video-2.5-flash"},
+        "vision_model": {"env": "AGNES_VISION_MODEL", "default": "agnes-2.5-flash"},
+    },
 )
 
 class AgnesAdapter(BaseProvider):
