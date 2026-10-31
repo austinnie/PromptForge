@@ -1,79 +1,52 @@
 """
-tech_hot_article - 技术热点文章生成器
+tech_hot_article - 技术热点文章生成 Skill（P2 补齐版）
 
 功能：
-  - 获取当前技术热点
-  - 基于热点生成技术文章
-  - 生成配图
-  - 输出 Word 文档
+  - 抓取技术热点（Hacker News / Dev.to / GitHub Trending / TechCrunch）
+  - LLM 写深度技术文章（1500 字左右）
+  - 自动生成配图提示词并插图（image_generator）
+  - 输出 Markdown / Word / TXT
+
+依赖：
+  - requests（已有）
+  - 可选：python-docx（Word 输出）
+  - LLMClient（Agnes 优先 / Ollama 兜底）
 """
 
-import os
-import time
-import json
+from __future__ import annotations
+
 import logging
-import random
 import re
-import requests
-from pathlib import Path
-from typing import Dict, Any, Optional, List
+import time
 from datetime import datetime
-import hashlib
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+from xml.etree import ElementTree as ET
+
+import requests
 
 logger = logging.getLogger(__name__)
 
-from config.settings import settings
-
-# ==================== 常量配置 ====================
-DEFAULT_ARTICLE_WORDS = 1500      # 默认文章字数
-CHARS_PER_IMAGE = 500             # 每多少字插入一张配图
-MAX_IMAGES_PER_ARTICLE = 5        # 单篇文章最多配图数量
-DEFAULT_IMAGE_WIDTH = 800
-DEFAULT_IMAGE_HEIGHT = 600
-DEFAULT_IMAGE_ENGINE = "agnes"
-
-# 依赖检查
-try:
-    import feedparser
-    FEEDPARSER_AVAILABLE = True
-except ImportError:
-    FEEDPARSER_AVAILABLE = False
-
-try:
-    from docx import Document
-    from docx.shared import Inches, Pt, RGBColor
-    from docx.enum.text import WD_ALIGN_PARAGRAPH
-    DOCX_AVAILABLE = True
-except ImportError:
-    DOCX_AVAILABLE = False
-
-try:
-    from PIL import Image, ImageDraw, ImageFont
-    PIL_AVAILABLE = True
-except ImportError:
-    PIL_AVAILABLE = False
+DEFAULT_ARTICLE_WORDS = 1500
+CHARS_PER_IMAGE = 500
+MAX_IMAGES_PER_ARTICLE = 4
 
 
 class TechHotArticle:
-    """
-    技术热点文章生成器
-    """
+    name = "tech_hot_article"
+    version = "1.0.0"
 
-    # ============ 热点源配置 ============
+    # 热点源
     HOT_SOURCES = {
-        "github": "https://github.com/trending",
         "hacker_news": "https://hnrss.org/frontpage",
-        "techcrunch": "https://techcrunch.com/feed/",
-        "the_verge": "https://www.theverge.com/rss/index.xml",
-        "wired": "https://www.wired.com/feed/rss",
+        "devto":       "https://dev.to/feed",
+        "techcrunch":  "https://techcrunch.com/feed/",
+        "verge":       "https://www.theverge.com/rss/index.xml",
         "arstechnica": "https://arstechnica.com/feed/",
-        "zdnet": "https://www.zdnet.com/news/rss.xml",
-        "venturebeat": "https://feeds.feedburner.com/venturebeat/SZYF",
-        "devto": "https://dev.to/feed",
-        "medium": "https://medium.com/feed/tag/technology",
     }
+    GITHUB_TRENDING = "https://github.com/trending"
 
-    # ============ 文章风格 ============
+    # 写作风格
     WRITING_STYLES = [
         "专业分析型",
         "通俗科普型",
@@ -82,765 +55,474 @@ class TechHotArticle:
         "趋势预测型",
     ]
 
-    # ============ 文章主题 ============
+    # 热点分类
     TOPICS = [
-        "人工智能",
-        "机器学习",
-        "大语言模型",
-        "云计算",
-        "边缘计算",
-        "网络安全",
-        "区块链",
-        "Web3",
-        "物联网",
-        "5G",
-        "量子计算",
-        "生物科技",
-        "新能源",
-        "自动驾驶",
-        "机器人",
+        "人工智能", "机器学习", "大语言模型", "云计算",
+        "网络安全", "区块链", "Web3", "物联网", "5G",
+        "量子计算", "生物科技", "新能源", "自动驾驶", "机器人",
     ]
 
-    def __init__(self, config: Dict[str, Any] = None):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
         self.config = config or {}
-        self.name = "tech_hot_article"
-        self.version = "1.1.0"  # 升级版本号
         self._setup_logging()
         self._setup_config()
+        self._image_provider = None
+        self._init_image_provider()
 
-        if not FEEDPARSER_AVAILABLE:
-            logger.warning("feedparser 未安装，热点抓取功能可能受限")
-        if not DOCX_AVAILABLE:
-            logger.warning("python-docx 未安装，Word 导出功能不可用")
-        if not PIL_AVAILABLE:
-            logger.warning("Pillow 未安装，图片生成功能不可用")
+    # ---------- 初始化 ----------
 
-        # ✅ 初始化图像引擎
-        # ✅ 初始化图像 provider 链
-        self._provider = None
-        self._image_engine_provider = None
-        self._init_image_engine()
-
-        logger.info("TechHotArticle 初始化完成")
-
-    def _init_image_engine(self):
-        """初始化图像 provider 链（带 fallback，可配 image_engine）。"""
-        try:
-            import sys
-            project_root = Path(__file__).parents[2]
-            if str(project_root) not in sys.path:
-                sys.path.insert(0, str(project_root))
-
-            from skills._provider_helper import build_image_provider
-
-            # self.config["image_engine"] 来自 settings.article_image_engine
-            engine_name = self.config.get("image_engine")  # None 就让 helper 用默认
-
-            self._provider = build_image_provider(
-                primary=engine_name,
-                on_fallback=lambda frm, to, err: logger.warning(
-                    f"⚠️ 图像 provider {frm} 失败（{str(err).splitlines()[0][:60]}），"
-                    f"切换到 {to}"
-                ),
-            )
-            self._image_engine_provider = self._provider.primary
-            logger.info(
-                f"✅ 图像 provider 链: {self._provider.chain} "
-                f"(primary={self._image_engine_provider})"
-            )
-        except Exception as e:
-            logger.warning(f"⚠️ 图像 provider 初始化失败: {e}，将使用 Pillow 回退方案")
-            import traceback
-            traceback.print_exc()
-            self._provider = None
-            self._image_engine_provider = None
-            
     def _setup_logging(self):
-        log_level = self.config.get("log_level", "INFO")
+        level = self.config.get("log_level", "INFO")
         logging.basicConfig(
-            level=getattr(logging, log_level.upper()),
-            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+            level=getattr(logging, level.upper()),
+            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         )
 
     def _setup_config(self):
         defaults = {
-            "output_dir": "./skills/tech_hot_article/output",
-            "max_hot_items": 10,
+            "output_dir": "./output/articles",
             "article_words": DEFAULT_ARTICLE_WORDS,
-            "temperature": 0.85,
-            "ollama_url": "http://localhost:11434",
-            "model": "qwen2.5:7b",
-            "image_width": DEFAULT_IMAGE_WIDTH,
-            "image_height": DEFAULT_IMAGE_HEIGHT,
-            # ✅ 图像生成配置
-            "image_engine": getattr(settings, 'article_image_engine', DEFAULT_IMAGE_ENGINE),
-            "image_style": "digital art, tech illustration, clean, modern, professional",
-            "image_fallback": True,
-            # ✅ 多图插入配置（统一命名）
-            "chars_per_image": CHARS_PER_IMAGE,               # 每多少字一张图
-            "max_images_per_article": MAX_IMAGES_PER_ARTICLE, # 单篇最多图片数
-            "min_images_per_article": 1,                      # 单篇最少图片数
+            "max_images": MAX_IMAGES_PER_ARTICLE,
+            "image_engine": "agnes",
+            "write_formats": ["md", "docx"],
         }
-        for key, value in defaults.items():
-            if key not in self.config:
-                self.config[key] = value
-
+        for k, v in defaults.items():
+            self.config.setdefault(k, v)
         Path(self.config["output_dir"]).mkdir(parents=True, exist_ok=True)
-        Path(self.config["output_dir"] + "/articles").mkdir(parents=True, exist_ok=True)
-        Path(self.config["output_dir"] + "/images").mkdir(parents=True, exist_ok=True)
-        Path(self.config["output_dir"] + "/word").mkdir(parents=True, exist_ok=True)
 
-    # ==================== 热点获取 ====================
-
-    def _fetch_hacker_news(self) -> List[Dict]:
-        """抓取 Hacker News 热点"""
+    def _init_image_provider(self):
+        """初始化图像 provider（走 registry）。"""
         try:
-            import feedparser
-            feed = feedparser.parse(self.HOT_SOURCES["hacker_news"])
-            items = []
-            for entry in feed.entries[:10]:
-                items.append({
-                    "title": entry.get("title", ""),
-                    "link": entry.get("link", ""),
-                    "summary": entry.get("summary", ""),
-                    "source": "Hacker News",
-                    "score": int(entry.get("score", 0)) if entry.get("score") else 0,
-                })
-            return items
+            from providers import list_providers, create
+            from config.settings import settings
+
+            image_providers = list_providers("image")
+            if not image_providers:
+                return
+
+            engine = self.config["image_engine"]
+            if engine not in image_providers:
+                engine = image_providers[0]
+
+            cfg = settings.get_provider_config(engine)
+            self._image_provider = create(engine, cfg)
+            self._image_engine_name = engine
+            logger.info(f"✅ 图像引擎: {engine}")
         except Exception as e:
-            logger.warning(f"抓取 Hacker News 失败: {e}")
-            return []
+            logger.warning(f"图像引擎初始化失败: {e}")
+            self._image_provider = None
 
-    def _fetch_devto(self) -> List[Dict]:
-        """抓取 Dev.to 热点"""
-        try:
-            import feedparser
-            feed = feedparser.parse(self.HOT_SOURCES["devto"])
-            items = []
-            for entry in feed.entries[:10]:
-                items.append({
-                    "title": entry.get("title", ""),
-                    "link": entry.get("link", ""),
-                    "summary": entry.get("summary", ""),
-                    "source": "Dev.to",
-                    "score": 0,
-                })
-            return items
-        except Exception as e:
-            logger.warning(f"抓取 Dev.to 失败: {e}")
-            return []
-
-    def _fetch_techcrunch(self) -> List[Dict]:
-        """抓取 TechCrunch 热点"""
-        try:
-            import feedparser
-            feed = feedparser.parse(self.HOT_SOURCES["techcrunch"])
-            items = []
-            for entry in feed.entries[:10]:
-                items.append({
-                    "title": entry.get("title", ""),
-                    "link": entry.get("link", ""),
-                    "summary": entry.get("summary", ""),
-                    "source": "TechCrunch",
-                    "score": 0,
-                })
-            return items
-        except Exception as e:
-            logger.warning(f"抓取 TechCrunch 失败: {e}")
-            return []
-
-    def _fetch_github_trending(self) -> List[Dict]:
-        """抓取 GitHub Trending"""
-        try:
-            import feedparser
-            # GitHub Trending 没有标准 RSS，用模拟数据
-            # 实际可以用 GitHub API
-            topics = [
-                "LangChain", "AutoGPT", "Stable Diffusion", "Whisper",
-                "Llama", "ChatGPT", "Python", "Rust", "React", "Vue",
-                "TypeScript", "Go", "Rust", "Zig", "Docker",
-                "Kubernetes", "PyTorch", "TensorFlow", "Jupyter", "VS Code"
-            ]
-            items = []
-            for topic in random.sample(topics, 5):
-                items.append({
-                    "title": f"GitHub Trending: {topic}",
-                    "link": f"https://github.com/trending/{topic.lower()}",
-                    "summary": f"{topic} 是当前 GitHub 上最热门的项目之一",
-                    "source": "GitHub Trending",
-                    "score": random.randint(100, 1000),
-                })
-            return items
-        except Exception as e:
-            logger.warning(f"抓取 GitHub Trending 失败: {e}")
-            return []
-
-    def get_hot_topics(self) -> List[Dict]:
-        """获取所有热点"""
-        all_items = []
-
-        # 从多个源抓取
-        all_items.extend(self._fetch_hacker_news())
-        all_items.extend(self._fetch_devto())
-        all_items.extend(self._fetch_techcrunch())
-        all_items.extend(self._fetch_github_trending())
-
-        # 如果抓取失败，使用模拟热点
-        if not all_items:
-            logger.warning("所有热点源抓取失败，使用模拟数据")
-            all_items = self._get_mock_hot_topics()
-
-        # 去重（按标题去重）
-        seen = set()
-        unique_items = []
-        for item in all_items:
-            key = item["title"][:30].lower()
-            if key not in seen:
-                seen.add(key)
-                unique_items.append(item)
-
-        # 按热度排序
-        unique_items.sort(key=lambda x: x.get("score", 0), reverse=True)
-
-        return unique_items[:self.config.get("max_hot_items", 10)]
-
-    def _get_mock_hot_topics(self) -> List[Dict]:
-        """模拟热点（备用）"""
-        mock_items = [
-            {
-                "title": "ChatGPT 发布多模态功能，支持图像识别",
-                "link": "https://example.com/1",
-                "summary": "OpenAI 宣布 ChatGPT 新增多模态能力，用户可以通过图像与 AI 交互",
-                "source": "TechCrunch",
-                "score": 950,
-            },
-            {
-                "title": "Google 发布 Gemini 2.0，性能超越 GPT-4",
-                "link": "https://example.com/2",
-                "summary": "Google 发布新一代 AI 模型 Gemini 2.0，在多项基准测试中领先",
-                "source": "Wired",
-                "score": 890,
-            },
-            {
-                "title": "Meta 开源 Llama 3，70B 参数模型免费商用",
-                "link": "https://example.com/3",
-                "summary": "Meta 宣布 Llama 3 开源，支持免费商用，推动 AI 民主化",
-                "source": "The Verge",
-                "score": 850,
-            },
-            {
-                "title": "苹果发布 Apple Intelligence，重新定义 Siri",
-                "link": "https://example.com/4",
-                "summary": "苹果在 WWDC 发布 Apple Intelligence，Siri 获得 AI 能力提升",
-                "source": "ZDNet",
-                "score": 800,
-            },
-            {
-                "title": "量子计算突破：Google 实现量子霸权 2.0",
-                "link": "https://example.com/5",
-                "summary": "Google 在量子计算领域取得重大突破，算力大幅提升",
-                "source": "Ars Technica",
-                "score": 750,
-            },
-            {
-                "title": "华为发布盘古大模型 5.0，AI 能力全面升级",
-                "link": "https://example.com/6",
-                "summary": "华为发布盘古大模型 5.0，在多个行业场景中实现突破",
-                "source": "TechCrunch",
-                "score": 720,
-            },
-            {
-                "title": "Anthropic 推出 Claude 3.5，上下文超 200K",
-                "link": "https://example.com/7",
-                "summary": "Anthropic 发布 Claude 3.5，上下文窗口提升至 200K tokens",
-                "source": "VentureBeat",
-                "score": 680,
-            },
-            {
-                "title": "Stability AI 发布 Stable Diffusion 3.5，图像质量提升",
-                "link": "https://example.com/8",
-                "summary": "Stability AI 发布新版本图像生成模型，支持更精细的创作",
-                "source": "Dev.to",
-                "score": 650,
-            },
-        ]
-        return mock_items
-
-    # ==================== 文章生成 ====================
-
-    def _call_ollama(self, prompt: str, temperature: float = 0.85) -> str:
-        """调用 Ollama API"""
-        url = f"{self.config.get('ollama_url')}/api/generate"
-        model = self.config.get("model", "qwen2.5:7b")
-
-        payload = {
-            "model": model,
-            "prompt": prompt,
-            "stream": False,
-            "options": {
-                "temperature": temperature,
-                "num_predict": 4096,
-            }
-        }
-
-        try:
-            response = requests.post(url, json=payload, timeout=300)
-            response.raise_for_status()
-            data = response.json()
-            return data.get("response", "").strip()
-        except Exception as e:
-            logger.error(f"Ollama 调用失败: {e}")
-            return ""
-
-    def generate_article(self, hot_item: Dict, style: str = None) -> Dict:
-        """生成文章"""
-        if style is None:
-            style = random.choice(self.WRITING_STYLES)
-
-        title = hot_item.get("title", "")
-        summary = hot_item.get("summary", "")
-        source = hot_item.get("source", "")
-
-        article_words = self.config.get("article_words", DEFAULT_ARTICLE_WORDS)
-
-        
-        # 构建提示词
-        prompt = f"""你是一位资深科技编辑，请根据以下热点信息，撰写一篇技术文章。
-
-热点标题：{title}
-热点描述：{summary}
-来源：{source}
-
-写作风格：{style}
-文章字数：约 {article_words} 字
-
-要求：
-1. 文章标题要吸引人
-2. 开头引入热点话题
-3. 正文分析技术背景、影响和未来趋势
-4. 结尾总结观点
-5. 语言专业但不晦涩
-6. 结构清晰，分段落
-
-请直接输出文章内容，包括标题和正文："""
-
-        # 生成文章
-        logger.info(f"正在生成文章，风格: {style}")
-        content = self._call_ollama(prompt)
-
-        if not content:
-            logger.error("文章生成失败")
-            return None
-
-        # 提取标题和正文
-        lines = content.strip().split("\n")
-        article_title = lines[0].strip() if lines else title
-        # 剥掉任意层级的 Markdown 标题前缀（#、##、### ...）
-        article_title = re.sub(r"^#+\s*", "", article_title).strip()
-        if not article_title:
-            article_title = title
-
-        # body 里如果紧跟一行纯 Markdown 标题，也顺手剥掉
-        body_lines = lines[1:] if len(lines) > 1 else []
-        while body_lines and not body_lines[0].strip():
-            body_lines.pop(0)
-        if body_lines:
-            body_lines[0] = re.sub(r"^#+\s*", "", body_lines[0]).strip()
-
-        body = "\n".join(body_lines) if body_lines else content
-
-        return {
-            "title": article_title,
-            "body": body,
-            "full_content": content,
-            "style": style,
-            "hot_title": title,
-            "hot_source": source,
-        }
-
-    # ==================== 图片生成 ====================
-
-    def _generate_pillow_image(self, title: str) -> Optional[str]:
-        """使用 Pillow 生成简单配图（回退方案）"""
-        output_dir = Path(self.config["output_dir"]) / "images"
-        output_dir.mkdir(parents=True, exist_ok=True)
-        
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:19]
-        filename = f"article_image_pil_{timestamp}.png"
-        filepath = output_dir / filename
-        
-        if not PIL_AVAILABLE:
-            logger.warning("Pillow 未安装，无法生成配图")
-            return None
-        
-        try:
-            width = self.config.get("image_width", 800)
-            height = self.config.get("image_height", 600)
-            img = Image.new("RGB", (width, height), color=(20, 30, 50))
-            draw = ImageDraw.Draw(img)
-            
-            # 绘制装饰图形
-            colors = [
-                (50, 100, 200), (200, 50, 100), (50, 200, 100),
-                (200, 150, 50), (150, 50, 200)
-            ]
-            for i in range(random.randint(3, 6)):
-                x1 = random.randint(0, width)
-                y1 = random.randint(0, height)
-                x2 = x1 + random.randint(100, 300)
-                y2 = y1 + random.randint(100, 300)
-                color = random.choice(colors)
-                draw.rectangle([x1, y1, x2, y2], outline=color, width=3)
-            
-            for i in range(random.randint(5, 10)):
-                cx = random.randint(0, width)
-                cy = random.randint(0, height)
-                r = random.randint(20, 80)
-                color = random.choice(colors)
-                draw.ellipse([cx - r, cy - r, cx + r, cy + r], outline=color, width=2)
-            
-            # 添加文字
-            try:
-                font_paths = [
-                    "C:/Windows/Fonts/simsun.ttc",
-                    "C:/Windows/Fonts/msyh.ttc",
-                    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-                ]
-                font = None
-                for fp in font_paths:
-                    if Path(fp).exists():
-                        font = ImageFont.truetype(fp, 24)
-                        break
-                if font is None:
-                    font = ImageFont.load_default()
-                
-                text = title[:50]
-                bbox = draw.textbbox((0, 0), text, font=font)
-                tw = bbox[2] - bbox[0]
-                th = bbox[3] - bbox[1]
-                draw.text(
-                    (width // 2 - tw // 2, height // 2 - th // 2),
-                    text, fill=(255, 255, 255), font=font
-                )
-                
-                date_text = datetime.now().strftime("%Y-%m-%d")
-                draw.text((width - 200, height - 40), date_text, fill=(150, 180, 200), font=font)
-            except Exception as e:
-                logger.warning(f"文字渲染失败: {e}")
-            
-            img.save(filepath, "PNG")
-            logger.info(f"✅ Pillow 配图已保存: {filepath}")
-            return str(filepath)
-            
-        except Exception as e:
-            logger.error(f"❌ Pillow 配图生成失败: {e}")
-            return None
-        
-    def _generate_placeholder_image(self, filepath: Path, title: str) -> str:
-        """生成占位图"""
-        try:
-            with open(filepath, 'w', encoding='utf-8') as f:
-                f.write(f"Placeholder Image\n")
-                f.write(f"Generated: {datetime.now().isoformat()}\n")
-                f.write(f"Title: {title}\n")
-            return str(filepath)
-        except:
-            return ""
-
-    def _split_article_into_blocks(self, body: str) -> List[str]:
-        """将文章正文按段落拆分为块（用于分段插入配图）"""
-        # 按空行拆分
-        paragraphs = [p.strip() for p in body.split("\n\n") if p.strip()]
-        
-        # 如果段落太少，按单换行拆分
-        if len(paragraphs) < 3:
-            paragraphs = [p.strip() for p in body.split("\n") if p.strip() and len(p.strip()) > 20]
-        
-        # 过滤掉太短的段落（如标题行）
-        paragraphs = [p for p in paragraphs if len(p) > 30]
-        
-        return paragraphs
-        
-    def _determine_image_positions(self, paragraphs: List[str]) -> List[int]:
-        total_paragraphs = len(paragraphs)
-        total_chars = sum(len(p) for p in paragraphs)
-        
-        chars_per_image = self.config.get("chars_per_image", CHARS_PER_IMAGE)  # ← 统一
-        max_images = self.config.get("max_images_per_article", MAX_IMAGES_PER_ARTICLE)
-        min_images = self.config.get("min_images_per_article", 1)
-        
-        calculated = max(1, total_chars // chars_per_image)
-        image_count = max(min_images, min(calculated, max_images))
-        image_count = min(image_count, max(0, total_paragraphs - 1))
-        
-        if image_count <= 0:
-            return []
-        
-        step = total_paragraphs / (image_count + 1)
-        positions = []
-        for i in range(1, image_count + 1):
-            pos = int(step * i)
-            if pos < total_paragraphs:
-                positions.append(pos)
-        
-        logger.info(f"📊 文章共 {total_paragraphs} 段，{total_chars} 字 → 规划 {len(positions)} 张配图")
-        return positions
-        
-
-    def _generate_image_for_block(
-        self, block_text: str, article_title: str
-    ) -> Optional[str]:
-        """为某个段落块生成配图。"""
-
-        # ✅ 如果 provider 不可用，直接回退到 Pillow
-        if not self._provider:
-            logger.info("🔄 图像 provider 不可用，使用 Pillow 回退方案")
-            return self._generate_pillow_image(article_title)
-
-        try:
-            snippet = block_text[:80].replace("\n", " ").strip()
-            style = self.config.get("image_style", "digital art, tech illustration")
-            prompt = (
-                f"Tech article illustration about: {snippet}. "
-                f"Context: {article_title[:50]}. "
-                f"Style: {style}, vibrant colors, professional, high quality, "
-                f"no text, no watermark, no signature"
-            )
-
-            logger.info(f"🎨 [API] 生成配图: {snippet[:40]}...")
-
-            from providers.base import ImageRequest
-
-            image = self._provider.text_to_image(ImageRequest(
-                prompt=prompt,
-                negative=(
-                    "text, watermark, signature, low quality, blurry, "
-                    "ugly, deformed"
-                ),
-                width=self.config.get("image_width", 800),
-                height=self.config.get("image_height", 600),
-                steps=25,
-                cfg=7.5,
-                seed=random.randint(1, 999),
-            ))
-
-            # 保存
-            output_dir = Path(self.config["output_dir"]) / "images"
-            output_dir.mkdir(parents=True, exist_ok=True)
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:19]
-            filepath = output_dir / f"article_image_api_{timestamp}.png"
-
-            # 调整尺寸
-            target_size = (
-                self.config["image_width"],
-                self.config["image_height"],
-            )
-            if image.size != target_size:
-                image = image.resize(target_size, Image.Resampling.LANCZOS)
-
-            image.save(filepath, "PNG")
-            logger.info(f"✅ API 配图已保存: {filepath}")
-            return str(filepath)
-
-        except Exception as e:
-            logger.error(f"❌ API 配图生成失败: {e}")
-            logger.info("🔄 回退到 Pillow 生成")
-            return self._generate_pillow_image(article_title)
-            
-    # ==================== Word 文档生成 ====================
-
-    def create_word_document(self, article: Dict, image_positions: Dict[int, str] = None) -> str:
-        """
-        生成 Word 文档
-        image_positions: {段落索引: 图片路径} 的映射，表示在哪个段落之后插入图片
-        """
-        output_dir = Path(self.config["output_dir"]) / "word"
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        safe_title = re.sub(r'[<>:"/\\|?*]', '', article["title"])[:30]
-        filename = f"tech_article_{safe_title}_{timestamp}.docx"
-        filepath = output_dir / filename
-
-        if not DOCX_AVAILABLE:
-            logger.warning("python-docx 未安装，生成 TXT 替代")
-            return self._generate_txt_alternative(article, image_positions, filepath)
-
-        try:
-            doc = Document()
-
-            # 标题
-            title = doc.add_heading(article["title"], 0)
-            title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-
-            # 元信息
-            meta = doc.add_paragraph()
-            meta.add_run(f"生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            meta.add_run(f"写作风格：{article.get('style', '未指定')}\n")
-            meta.add_run(f"热点来源：{article.get('hot_source', '未指定')}")
-
-            doc.add_paragraph()
-
-            # ✅ 按段落插入正文 + 配图
-            paragraphs = self._split_article_into_blocks(article.get("body", ""))
-            image_positions = image_positions or {}
-
-            for idx, para in enumerate(paragraphs):
-                # 插入段落
-                p = doc.add_paragraph(para)
-                p.paragraph_format.first_line_indent = Inches(0.3)
-                
-                # ✅ 判断是否在该段后插入图片
-                if idx in image_positions:
-                    img_path = image_positions[idx]
-                    if img_path and Path(img_path).exists():
-                        try:
-                            doc.add_picture(img_path, width=Inches(5.5))
-                            # 居中
-                            last_paragraph = doc.paragraphs[-1]
-                            last_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                            # 添加图注
-                            caption = doc.add_paragraph(f"图 {list(image_positions.keys()).index(idx) + 1}：文章配图")
-                            caption.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                            doc.add_paragraph()
-                        except Exception as e:
-                            logger.warning(f"插入图片失败: {e}")
-
-            # 页脚
-            doc.add_page_break()
-            footer = doc.add_paragraph()
-            footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            footer.add_run(f"文章由 AI 自动生成 | {datetime.now().strftime('%Y-%m-%d')}")
-
-            doc.save(str(filepath))
-            logger.info(f"✅ Word 文档已生成: {filepath}")
-            return str(filepath)
-
-        except Exception as e:
-            logger.error(f"❌ Word 文档生成失败: {e}")
-            return self._generate_txt_alternative(article, image_positions, filepath)
-                
-    def _generate_txt_alternative(self, article: Dict, image_positions: Dict[int, str], filepath: Path) -> str:
-        """生成 TXT 替代（图片以路径形式标注）"""
-        try:
-            txt_path = filepath.with_suffix(".txt")
-            with open(txt_path, 'w', encoding='utf-8') as f:
-                f.write("=" * 60 + "\n")
-                f.write(f"  {article['title']}\n")
-                f.write("=" * 60 + "\n\n")
-                f.write(f"生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-                f.write(f"写作风格：{article.get('style', '未指定')}\n")
-                f.write(f"热点来源：{article.get('hot_source', '未指定')}\n\n")
-                f.write("=" * 60 + "\n\n")
-                
-                paragraphs = self._split_article_into_blocks(article.get("body", ""))
-                for idx, para in enumerate(paragraphs):
-                    f.write(para + "\n\n")
-                    if idx in image_positions and image_positions[idx]:
-                        f.write(f"[配图：{image_positions[idx]}]\n\n")
-            
-            return str(txt_path)
-        except Exception as e:
-            logger.error(f"TXT 替代生成失败: {e}")
-            return ""
-        
-
-    # ==================== 执行入口 ====================
+    # ---------- 主入口 ----------
 
     def execute(self, **kwargs) -> Dict[str, Any]:
-        """执行文章生成"""
-        start_time = time.time()
-        logger.info(f"执行技能: {self.name} (v{self.version})")
+        """run_skill 走这里。
+
+        关键 kwargs：
+          topic:    指定主题（不填则自动选热点）
+          style:    写作风格（默认随机）
+          words:    目标字数（默认 1500）
+          images:   配图数量（默认 4，0 = 不配图）
+          source:   指定抓取源（hacker_news / devto / github 等）
+        """
+        start = time.time()
 
         try:
-            # 获取热点
-            logger.info("正在获取技术热点...")
-            hot_items = self.get_hot_topics()
+            topic_kw = kwargs.get("topic") or ""
+            style = kwargs.get("style") or self._pick_style()
+            words = int(kwargs.get("words", self.config["article_words"]))
+            image_count = int(kwargs.get("images", self.config["max_images"]))
+            source = kwargs.get("source")
 
-            if not hot_items:
-                return {"status": "error", "error": "未获取到热点"}
+            logger.info(f"📰 技术文章生成")
+            logger.info(f"   主题: {topic_kw or '(自动选热点)'}")
+            logger.info(f"   风格: {style}")
+            logger.info(f"   字数: ~{words}")
+            logger.info(f"   配图: {image_count} 张")
 
-            # 选择热点
-            selected_index = kwargs.get("hot_index")
-            if selected_index is not None and 0 <= selected_index < len(hot_items):
-                hot_item = hot_items[selected_index]
+            # ---- 阶段 1：抓热点 ----
+            hot_item = None
+            if topic_kw:
+                hot_item = {"title": topic_kw, "summary": "", "url": "", "source": "manual"}
             else:
-                hot_item = random.choice(hot_items)
+                hot_topics = self.get_hot_topics(source=source)
+                if not hot_topics:
+                    return {"status": "error", "error": "没有抓到任何热点"}
+                hot_item = hot_topics[0]
+                logger.info(f"   选中热点: {hot_item['title']}")
 
-            # 获取风格
-            style = kwargs.get("style")
-            if style not in self.WRITING_STYLES:
-                style = random.choice(self.WRITING_STYLES)
-
-            logger.info(f"选中热点: {hot_item['title']}")
-            logger.info(f"写作风格: {style}")
-
-            # 生成文章
-            article = self.generate_article(hot_item, style)
-            if article is None:
+            # ---- 阶段 2：写文章 ----
+            article = self._generate_article(hot_item, style, words)
+            if not article:
                 return {"status": "error", "error": "文章生成失败"}
 
-            # ✅ 分段并确定图片位置
-            paragraphs = self._split_article_into_blocks(article.get("body", ""))
-            image_positions_idx = self._determine_image_positions(paragraphs)
+            logger.info(f"✅ 文章生成: {article['title']} ({len(article['body'])} 字)")
 
-            # ✅ 为每个位置生成配图
-            image_positions = {}
-            image_paths = []
-            for idx in image_positions_idx:
-                img_path = self._generate_image_for_block(paragraphs[idx], article["title"])
-                if img_path:
-                    image_positions[idx] = img_path
-                    image_paths.append(img_path)
+            # ---- 阶段 3：配图 ----
+            images: List[str] = []
+            if image_count > 0 and self._image_provider:
+                images = self._generate_images(article, image_count)
+                logger.info(f"✅ 配图生成: {len(images)} 张")
 
-            logger.info(f"✅ 共生成 {len(image_paths)} 张配图")
+            # ---- 阶段 4：输出 ----
+            article["images"] = images
+            article["hot_item"] = hot_item
 
-            # 生成 Word 文档（带多图）
-            word_path = self.create_word_document(article, image_positions)
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            safe_title = re.sub(r"[^\w\u4e00-\u9fff\-_]", "_", article["title"][:30])
+            out_dir = Path(self.config["output_dir"]) / f"{ts}_{safe_title}"
+            out_dir.mkdir(parents=True, exist_ok=True)
 
-            # 保存文章信息
-            output_dir = Path(self.config["output_dir"]) / "articles"
-            output_dir.mkdir(parents=True, exist_ok=True)
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            info_file = output_dir / f"article_{timestamp}.json"
-            with open(info_file, 'w', encoding='utf-8') as f:
-                json.dump({
-                    "article": article,
-                    "hot_item": hot_item,
-                    "image_paths": image_paths,
-                    "image_positions": {str(k): v for k, v in image_positions.items()},
-                    "word_path": word_path,
-                    "timestamp": datetime.now().isoformat(),
-                }, f, ensure_ascii=False, indent=2)
+            md_path = self._write_markdown(article, out_dir / "article.md")
+            outputs = {"article_md": str(md_path) if md_path else None}
 
+            if "docx" in self.config["write_formats"]:
+                docx_path = self._write_docx(article, out_dir / "article.docx")
+                if docx_path:
+                    outputs["article_docx"] = docx_path
+
+            outputs["output_dir"] = str(out_dir)
+            outputs["word_count"] = len(article["body"])
+            outputs["images_count"] = len(images)
+            outputs["elapsed"] = f"{time.time() - start:.1f}s"
+
+            logger.info(f"🎉 完成: {out_dir}")
             return {
                 "status": "success",
-                "result": {
-                    "title": article["title"],
-                    "hot_topic": hot_item["title"],
-                    "hot_source": hot_item.get("source", ""),
-                    "style": style,
-                    "word_file": word_path,
-                    "image_files": image_paths,
-                    "image_file": image_paths[0] if image_paths else None,
-                    "article_file": str(info_file),
-                    "generated_at": datetime.now().isoformat(),
-                },
-                "metadata": {
-                    "skill": self.name,
-                    "version": self.version,
-                }
+                "result": outputs,
+                "metadata": {"skill": self.name, "version": self.version},
             }
 
         except Exception as e:
-            logger.error(f"执行失败: {e}")
-            import traceback
-            traceback.print_exc()
-            return {
-                "status": "error",
-                "error": str(e),
-                "skill": self.name,
+            logger.exception("技术文章生成失败")
+            return {"status": "error", "error": str(e)}
+
+    # ---------- 阶段 1：抓热点 ----------
+
+    def get_hot_topics(self, source: Optional[str] = None) -> List[Dict[str, Any]]:
+        """抓取热点，返回按热度排序的列表。"""
+        items: List[Dict[str, Any]] = []
+
+        sources_to_fetch = [source] if source else list(self.HOT_SOURCES.keys())
+        if not source or source == "github":
+            sources_to_fetch = [s for s in sources_to_fetch if s != "github"]
+            items.extend(self._fetch_github_trending())
+
+        for src in sources_to_fetch:
+            if src not in self.HOT_SOURCES:
+                continue
+            try:
+                items.extend(self._fetch_rss(self.HOT_SOURCES[src], src))
+            except Exception as e:
+                logger.warning(f"  抓取 {src} 失败: {e}")
+
+        if not items:
+            logger.warning("⚠️ 所有源都没抓到，使用 mock 数据")
+            return self._mock_hot_topics()
+
+        # 按"有 url + summary 长度"简单排序（有内容的优先）
+        items.sort(key=lambda x: (bool(x.get("url")), len(x.get("summary", ""))), reverse=True)
+        return items[:20]
+
+    def _fetch_rss(self, feed_url: str, source_name: str) -> List[Dict[str, Any]]:
+        """抓取 RSS feed。"""
+        try:
+            r = requests.get(
+                feed_url,
+                timeout=10,
+                headers={"User-Agent": "Mozilla/5.0 PromptForge/1.0"},
+            )
+            r.raise_for_status()
+        except Exception as e:
+            raise RuntimeError(f"HTTP 失败: {e}")
+
+        try:
+            root = ET.fromstring(r.content)
+        except ET.ParseError as e:
+            raise RuntimeError(f"XML 解析失败: {e}")
+
+        # RSS 2.0: <rss><channel><item>
+        # Atom:   <feed><entry>
+        items = root.findall(".//item") or root.findall(
+            ".//{http://www.w3.org/2005/Atom}entry"
+        )
+
+        result: List[Dict[str, Any]] = []
+        for item in items[:10]:
+            title = self._text(item, "title") or self._text(
+                item, "{http://www.w3.org/2005/Atom}title"
+            )
+            link = self._text(item, "link") or ""
+            if not link:
+                link_el = item.find("{http://www.w3.org/2005/Atom}link")
+                if link_el is not None:
+                    link = link_el.get("href", "")
+            summary = (
+                self._text(item, "description")
+                or self._text(item, "{http://www.w3.org/2005/Atom}summary")
+                or self._text(item, "{http://www.w3.org/2005/Atom}content")
+                or ""
+            )
+            # 去 HTML 标签
+            summary = re.sub(r"<[^>]+>", "", summary)[:300]
+
+            if title:
+                result.append({
+                    "title": title.strip(),
+                    "summary": summary.strip(),
+                    "url": link.strip(),
+                    "source": source_name,
+                })
+        return result
+
+    def _fetch_github_trending(self) -> List[Dict[str, Any]]:
+        """抓 GitHub Trending。"""
+        try:
+            r = requests.get(
+                self.GITHUB_TRENDING,
+                timeout=10,
+                headers={"User-Agent": "Mozilla/5.0"},
+            )
+            r.raise_for_status()
+        except Exception as e:
+            logger.warning(f"GitHub Trending 抓取失败: {e}")
+            return []
+
+        result: List[Dict[str, Any]] = []
+        # 简单正则提取 repo 名
+        for m in re.finditer(r'<h2[^>]*>.*?<a href="(/[^/]+/[^/"]+)"', r.text, re.DOTALL):
+            repo = m.group(1)
+            if repo.count("/") == 2:
+                title = f"GitHub Trending: {repo[1:]}"
+                result.append({
+                    "title": title,
+                    "summary": f"热门仓库 {repo[1:]}",
+                    "url": f"https://github.com{repo}",
+                    "source": "github",
+                })
+                if len(result) >= 5:
+                    break
+        return result
+
+    @staticmethod
+    def _text(parent, tag: str) -> str:
+        el = parent.find(tag)
+        return el.text.strip() if el is not None and el.text else ""
+
+    def _mock_hot_topics(self) -> List[Dict[str, Any]]:
+        return [
+            {
+                "title": f"{topic} 领域近期最新进展",
+                "summary": f"探索 {topic} 领域的前沿技术突破与行业趋势。",
+                "url": "",
+                "source": "mock",
             }
-        
+            for topic in self.TOPICS[:5]
+        ]
+
+    # ---------- 阶段 2：写文章 ----------
+
+    def _generate_article(
+        self,
+        hot_item: Dict[str, Any],
+        style: str,
+        words: int,
+    ) -> Optional[Dict[str, Any]]:
+        from core.llm_client import get_default_client
+
+        title_hint = hot_item["title"]
+        summary_hint = hot_item.get("summary", "")
+
+        prompt = f"""请根据以下技术热点写一篇深度文章。
+
+【热点信息】
+标题：{title_hint}
+摘要：{summary_hint[:300] if summary_hint else '(无)'}
+
+【写作要求】
+1. 风格：{style}
+2. 字数：约 {words} 字
+3. 结构：
+   - 吸引人的标题（30 字以内）
+   - 导语（100-150 字，点明为什么值得关注）
+   - 正文分 3-4 个小节（用 ## 二级标题）
+   - 结语（100-150 字，展望或行动建议）
+4. 面向中文技术读者，语言专业但易懂
+5. 需要实际技术细节，避免空话套话
+6. 输出 Markdown 格式（标题用 # / ##）
+
+直接输出文章，不要说明你在做什么。"""
+
+        try:
+            llm = get_default_client(temperature=0.75, max_tokens=4096, timeout=180)
+            raw = llm.generate(prompt)
+        except Exception as e:
+            logger.error(f"LLM 生成失败: {e}")
+            return None
+
+        if not raw or len(raw) < 200:
+            return None
+
+        # 解析标题
+        title = ""
+        m = re.search(r"^#\s+(.+?)$", raw, re.MULTILINE)
+        if m:
+            title = m.group(1).strip()
+            # 去掉标题行
+            raw = raw[m.end():].lstrip()
+        else:
+            title = title_hint[:30]
+
+        return {
+            "title": title,
+            "body": raw.strip(),
+            "style": style,
+            "source": hot_item.get("source", ""),
+        }
+
+    # ---------- 阶段 3：配图 ----------
+
+    def _generate_images(self, article: Dict[str, Any], count: int) -> List[str]:
+        """按段落均匀分配配图提示词 → 生成图片。"""
+        # 提取配图提示词
+        prompts = self._extract_image_prompts(article, count)
+        if not prompts:
+            return []
+
+        images: List[str] = []
+        for i, p in enumerate(prompts):
+            logger.info(f"  🎨 [{i+1}/{len(prompts)}] {p[:50]}...")
+            try:
+                from providers.base import ImageRequest
+                req = ImageRequest(
+                    prompt=p,
+                    width=1024,
+                    height=576,        # 16:9 横幅
+                    steps=25,
+                    cfg=7.5,
+                )
+                img = self._image_provider.text_to_image(req)
+                # 保存到文章目录
+                out_dir = Path(self.config["output_dir"]) / f"tmp_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                out_dir.mkdir(parents=True, exist_ok=True)
+                img_path = out_dir / f"img_{i+1:02d}.png"
+                img.save(img_path)
+                images.append(str(img_path))
+                logger.info(f"     ✅ {img_path.name}")
+            except Exception as e:
+                logger.warning(f"     ⚠️ 失败: {e}")
+        return images
+
+    def _extract_image_prompts(self, article: Dict[str, Any], count: int) -> List[str]:
+        """用 LLM 从文章提炼 N 个英文配图提示词。"""
+        from core.llm_client import get_default_client
+
+        body_snippet = article["body"][:3000]
+        prompt = f"""你是 AI 画图提示词专家。请从以下技术文章中提炼 {count} 个适合 AI 画图的英文 prompt。
+
+要求：
+1. 每个 prompt 描述一个抽象概念的具体视觉表达
+2. 风格：futuristic tech illustration, clean composition, professional
+3. 输出格式：每行一个 prompt，不要编号、不要解释、不要 markdown
+
+文章：
+{body_snippet}
+
+直接输出 {count} 行英文 prompt："""
+
+        try:
+            llm = get_default_client(temperature=0.7, max_tokens=500, timeout=60)
+            raw = llm.generate(prompt) or ""
+            lines = [l.strip() for l in raw.splitlines() if l.strip()]
+            # 过滤太短的
+            prompts = [l for l in lines if len(l) > 20][:count]
+
+            # 追加统一风格词
+            suffix = ", futuristic tech illustration, clean composition, professional, 16:9"
+            return [p + suffix for p in prompts] if prompts else []
+        except Exception as e:
+            logger.warning(f"配图提示词生成失败: {e}")
+            # 降级：用文章标题直接生成
+            return [f"{article['title']}, tech concept art, futuristic, 16:9"] * min(count, 1)
+
+    # ---------- 输出 ----------
+
+    def _write_markdown(self, article: Dict[str, Any], path: Path) -> Optional[Path]:
+        try:
+            lines = [f"# {article['title']}", ""]
+
+            # 插入导语（body 的前 3 行或前 200 字）
+            body = article["body"]
+            body_lines = body.split("\n")
+
+            # 简单策略：每 3 个段落插一张图
+            images = article.get("images", [])
+            img_idx = 0
+            chars_since_img = 0
+            chars_per_img = max(CHARS_PER_IMAGE, len(body) // (len(images) + 1)) if images else 999999
+
+            for line in body_lines:
+                lines.append(line)
+                chars_since_img += len(line)
+
+                # 到达配图阈值，且有图未用
+                if images and img_idx < len(images) and chars_since_img >= chars_per_img:
+                    lines.append("")
+                    lines.append(f"![配图]({Path(images[img_idx]).as_posix()})")
+                    lines.append("")
+                    img_idx += 1
+                    chars_since_img = 0
+
+            # 剩余图片追加到末尾
+            while img_idx < len(images):
+                lines.append("")
+                lines.append(f"![配图]({Path(images[img_idx]).as_posix()})")
+                img_idx += 1
+
+            path.write_text("\n".join(lines), encoding="utf-8")
+            return path
+        except Exception as e:
+            logger.warning(f"Markdown 输出失败: {e}")
+            return None
+
+    def _write_docx(self, article: Dict[str, Any], path: Path) -> Optional[str]:
+        try:
+            import docx
+        except ImportError:
+            logger.info("python-docx 未安装，跳过 Word 输出")
+            return None
+
+        try:
+            doc = docx.Document()
+            doc.add_heading(article["title"], level=0)
+
+            for line in article["body"].split("\n"):
+                if line.startswith("## "):
+                    doc.add_heading(line[3:].strip(), level=1)
+                elif line.startswith("# "):
+                    doc.add_heading(line[2:].strip(), level=1)
+                elif line.strip():
+                    doc.add_paragraph(line)
+
+            for img_path in article.get("images", []):
+                try:
+                    doc.add_picture(str(img_path), width=docx.shared.Inches(5.5))
+                except Exception as e:
+                    logger.warning(f"插入图片失败: {e}")
+
+            doc.save(str(path))
+            return str(path)
+        except Exception as e:
+            logger.warning(f"Word 输出失败: {e}")
+            return None
+
+    # ---------- 工具 ----------
+
+    def _pick_style(self) -> str:
+        import random
+        return random.choice(self.WRITING_STYLES)
+
+    def get_name(self) -> str:
+        return "TechHotArticle"
+
     def __repr__(self):
-        return f"<TechHotArticle(name={self.name}, version={self.version})>"
+        return "<TechHotArticle>"
