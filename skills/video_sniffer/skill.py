@@ -1,404 +1,351 @@
 """
-video_sniffer - 网页视频嗅探器
+video_sniffer - 网页视频嗅探器 Skill（P2 补齐版）
 
-输入网页 URL，自动识别页面里所有可下载的视频。
-解析结果交给 video_player 播放 / 下载。
+功能：
+  - yt-dlp 分析：识别 1000+ 站点的视频（B站/YouTube/抖音/快手/微博等）
+  - HTML 后备解析：非标准页面抓 <video> / <source> / m3u8 / mp4 直链
+  - 相关视频提取：从视频详情页抓相关推荐
 
-依赖: pip install yt-dlp
+依赖：
+  - requests（已有）
+  - yt-dlp（可选，但强烈推荐）：pip install yt-dlp
 """
 
 from __future__ import annotations
 
 import logging
-import sys
+import re
+import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib.parse import urljoin, urlparse
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+import requests
 
 logger = logging.getLogger(__name__)
 
-try:
-    import yt_dlp
-    YT_DLP_AVAILABLE = True
-except ImportError:
-    YT_DLP_AVAILABLE = False
-
 
 def _fmt_duration(secs) -> str:
+    """秒数 → "MM:SS" 或 "HH:MM:SS"。"""
     if not secs:
-        return ""
-    total = int(secs)
-    h, rem = divmod(total, 3600)
-    m, s = divmod(rem, 60)
-    return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+        return "?"
+    try:
+        secs = int(secs)
+    except (ValueError, TypeError):
+        return "?"
+    if secs < 60:
+        return f"0:{secs:02d}"
+    if secs < 3600:
+        return f"{secs // 60}:{secs % 60:02d}"
+    return f"{secs // 3600}:{(secs % 3600) // 60:02d}:{secs % 60:02d}"
 
 
 class VideoSniffer:
-    """网页视频嗅探器"""
-
     name = "video_sniffer"
     version = "1.0.0"
 
+    DEFAULT_HEADERS = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        ),
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    }
+
+    # 浏览器侧可能动态加载，但 yt-dlp 通常能绕过
+    YTDLP_SKIP_HOSTS = {
+        # 这些站点用 yt-dlp 反而慢/乱，优先 HTML 解析
+        "example.com",
+    }
+
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         self.config = config or {}
+        self._setup_logging()
         self._setup_config()
-        if not YT_DLP_AVAILABLE:
-            logger.warning("yt-dlp 未安装，嗅探功能不可用。pip install yt-dlp")
+
+    # ---------- 初始化 ----------
+
+    def _setup_logging(self):
+        level = self.config.get("log_level", "INFO")
+        logging.basicConfig(
+            level=getattr(logging, level.upper()),
+            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        )
 
     def _setup_config(self):
         defaults = {
-            "max_entries": 50,      # playlist 最多展开多少条
-            "timeout": 30,          # socket 超时
-            "flat_mode": True,      # True=快，部分字段空；False=慢，字段全
-            "cookies_from_browser": None,   # ← 新增，可填 "chrome"/"edge"/"firefox"
-            "cookies_file": None, 
+            "output_dir": "./output/sniffer",
+            "timeout": 15,
+            "max_direct_links": 20,   # HTML 后备最多返回多少条
         }
+        for k, v in self.config.items():
+            pass
         for k, v in defaults.items():
             self.config.setdefault(k, v)
+        Path(self.config["output_dir"]).mkdir(parents=True, exist_ok=True)
 
-    # ------------------------------------------------------------
-    # 分析入口
-    # ------------------------------------------------------------
-    def analyze(self, url: str) -> Dict[str, Any]:
-        """分析网页，返回可下载的视频列表"""
-        if not YT_DLP_AVAILABLE:
-            return {"status": "error", "error": "yt-dlp 未安装"}
+    # ---------- 主入口 ----------
+
+    def execute(self, **kwargs) -> Dict[str, Any]:
+        """dispatch: action=analyze / related"""
+        action = kwargs.get("action", "analyze")
+        url = (kwargs.get("url") or "").strip()
+
         if not url:
-            return {"status": "error", "error": "缺少 URL"}
+            return {"status": "error", "error": "url 不能为空"}
+
+        if action == "analyze":
+            return self.analyze(url)
+        if action == "related":
+            max_count = int(kwargs.get("max_count", 30))
+            return self.extract_related(url, max_count)
+        return {"status": "error", "error": f"不支持 action: {action}"}
+
+    # ---------- analyze：双引擎 ----------
+
+    def analyze(self, url: str) -> Dict[str, Any]:
+        """分析页面，返回可下载的视频列表。
+
+        返回格式：
+            {
+                "status": "success",
+                "result": {
+                    "url": "...",
+                    "method": "ytdlp" | "html" | "both",
+                    "videos": [{title, url, duration, thumbnail, ...}],
+                    "elapsed": "..."
+                }
+            }
+        """
+        start = time.time()
+
+        videos: List[Dict[str, Any]] = []
+        methods_used: List[str] = []
+
+        # ---- 引擎 1：yt-dlp ----
+        ytdlp_ok = self._try_ytdlp(url, videos)
+        if ytdlp_ok:
+            methods_used.append("ytdlp")
+            logger.info(f"✅ yt-dlp 找到 {len(videos)} 个视频")
+
+        # ---- 引擎 2：HTML 后备（如果 yt-dlp 没拿到 or 是普通页面）----
+        if not videos:
+            html_videos = self._html_fallback(url)
+            if html_videos:
+                videos.extend(html_videos)
+                methods_used.append("html")
+                logger.info(f"✅ HTML 后备找到 {len(html_videos)} 个直链")
+
+        if not videos:
+            return {
+                "status": "error",
+                "error": "未找到视频（yt-dlp 不支持该站点，HTML 也没抓到 <video>/<source>/mp4）",
+                "result": {"url": url, "method": "none", "videos": []},
+            }
+
+        return {
+            "status": "success",
+            "result": {
+                "url": url,
+                "method": "+".join(methods_used),
+                "videos": videos,
+                "count": len(videos),
+                "elapsed": f"{time.time() - start:.1f}s",
+            },
+            "metadata": {"skill": self.name, "version": self.version},
+        }
+
+    # ---------- yt-dlp 引擎 ----------
+
+    def _try_ytdlp(self, url: str, out_videos: List[Dict[str, Any]]) -> bool:
+        """用 yt-dlp 分析（extract_flat 快速模式）。
+
+        成功往 out_videos 里塞，返回 True。
+        """
+        try:
+            import yt_dlp
+        except ImportError:
+            logger.debug("yt-dlp 未安装，跳过")
+            return False
+
+        if any(host in url for host in self.YTDLP_SKIP_HOSTS):
+            return False
 
         opts = {
             "quiet": True,
-            "skip_download": True,
             "no_warnings": True,
-            "socket_timeout": self.config["timeout"],
-            "extract_flat": "in_playlist" if self.config["flat_mode"] else False,
+            "extract_flat": True,      # 只拿元数据，不解析直链
+            "skip_download": True,
+            "noplaylist": False,        # 支持播放列表/多个视频
+            "timeout": self.config["timeout"],
         }
-        
-        # cookie 支持（优先级：cookies_file > cookies_from_browser）
-        if self.config.get("cookies_file"):
-            opts["cookiefile"] = self.config["cookies_file"]
-        elif self.config.get("cookies_from_browser"):
-            opts["cookiesfrombrowser"] = (self.config["cookies_from_browser"],)
-
 
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(url, download=False)
-        except yt_dlp.utils.UnsupportedError as e:
-            # yt-dlp 不支持的站点，走 HTML 嗅探兜底
-            logger.warning(f"yt-dlp 不支持，尝试 HTML 嗅探: {e}")
-            return self._html_fallback(url)
         except Exception as e:
-            logger.error(f"分析失败: {e}")
-            return {"status": "error", "error": str(e)}
+            logger.debug(f"yt-dlp 分析失败: {e}")
+            return False
 
         if not info:
-            return {"status": "error", "error": "无返回结果"}
+            return False
 
-        if info.get("_type") == "playlist":
-            entries = [e for e in (info.get("entries") or []) if e]
-            items = [self._to_item(e) for e in entries[: self.config["max_entries"]]]
-            title = info.get("title") or "播放列表"
-            kind = "playlist"
-            total = len(entries)
-        else:
-            items = [self._to_item(info)]
-            title = info.get("title") or "视频"
-            kind = "single"
-            total = 1
+        # 单视频 or 播放列表
+        entries = info.get("entries") if "entries" in info else [info]
 
-        # 过滤掉没有可用 URL 的条目
-        items = [it for it in items if it.get("url")]
+        for e in entries:
+            if not e:
+                continue
+            item = self._to_item(e)
+            if item:
+                out_videos.append(item)
 
-        logger.info(f"嗅探 {url} → {len(items)}/{total} 条 ({kind})")
-        return {
-            "status": "success",
-            "result": {
-                "url":    url,
-                "kind":   kind,
-                "title":  title,
-                "count":  len(items),
-                "total":  total,
-                "items":  items,
-            },
-        }
+        return bool(out_videos)
 
-    def _to_item(self, entry: Dict[str, Any]) -> Dict[str, Any]:
-        """把 yt-dlp 的 entry 转成统一格式"""
-        vid = entry.get("id", "")
+    def _to_item(self, entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """把 yt-dlp entry 转成统一格式。"""
         url = entry.get("webpage_url") or entry.get("url") or ""
+        if not url:
+            return None
 
-        # flat 模式有时只给 ID，需要拼回完整 URL
-        extractor = (entry.get("extractor_key") or entry.get("extractor") or "").lower()
-        if url and not url.startswith(("http://", "https://")):
-            if "youtube" in extractor:
-                url = f"https://www.youtube.com/watch?v={url}"
-            elif "bilibili" in extractor:
-                url = f"https://www.bilibili.com/video/{url}"
-            elif "twitter" in extractor or "x.com" in extractor:
-                url = ""
-            else:
-                url = ""
-
-        dur = entry.get("duration") or 0
         return {
-            "title":        entry.get("title") or entry.get("fulltitle") or "未知",
-            "url":          url,
-            "id":           vid,
-            "duration":     dur,
-            "duration_str": _fmt_duration(dur),
-            "uploader":     entry.get("uploader") or entry.get("channel") or "",
-            "thumbnail":    entry.get("thumbnail") or "",
-            "source":       extractor or "unknown",
-            "description":  (entry.get("description") or "")[:200],
+            "id": entry.get("id", ""),
+            "title": entry.get("title", "").strip() or "(无标题)",
+            "url": url,
+            "duration": entry.get("duration"),
+            "duration_str": _fmt_duration(entry.get("duration")),
+            "thumbnail": entry.get("thumbnail", ""),
+            "uploader": entry.get("uploader", ""),
+            "view_count": entry.get("view_count"),
+            "formats_count": len(entry.get("formats") or []),
+            "extractor": entry.get("extractor_key", entry.get("extractor", "")),
+            "kind": "video",
         }
 
-    # ------------------------------------------------------------
-    # HTML 嗅探兜底（yt-dlp 不支持的站点）
-    # ------------------------------------------------------------
-    # ------------------------------------------------------------
-    # HTML 嗅探兜底（yt-dlp 不支持的站点）
-    # ------------------------------------------------------------
-    def _html_fallback(self, page_url: str) -> Dict[str, Any]:
-        """从页面 HTML 里嗅探 <video> / <source> / m3u8 / mp4 直链"""
-        import re
-        import requests
+    # ---------- HTML 后备引擎 ----------
 
+    def _html_fallback(self, page_url: str) -> List[Dict[str, Any]]:
+        """从 HTML 里嗅探直链（<video>/<source>/m3u8/mp4）。"""
         try:
             r = requests.get(
                 page_url,
-                headers={"User-Agent": "Mozilla/5.0"},
-                timeout=20,
+                timeout=self.config["timeout"],
+                headers=self.DEFAULT_HEADERS,
             )
             r.raise_for_status()
-            html = r.text
         except Exception as e:
-            return {"status": "error",
-                    "error": f"yt-dlp 不支持且 HTML 抓取失败: {e}"}
+            logger.warning(f"HTML 请求失败: {e}")
+            return []
 
-        urls = set()
+        html = r.text
+        base = page_url
+        base_host = urlparse(base).netloc
 
-        # <video src="...">
-        for m in re.finditer(r'<video[^>]+src=["\']([^"\']+)["\']', html):
-            urls.add(m.group(1))
+        found: Dict[str, Dict[str, Any]] = {}
 
-        # <source src="...">
-        for m in re.finditer(r'<source[^>]+src=["\']([^"\']+)["\']', html):
-            urls.add(m.group(1))
+        def _add(url: str, title: str = "", kind: str = "direct"):
+            if not url:
+                return
+            full = urljoin(base, url)
+            if full in found:
+                return
+            found[full] = {
+                "title": title or f"直链 {len(found) + 1}",
+                "url": full,
+                "kind": kind,
+                "host": urlparse(full).netloc,
+                "is_cross_host": urlparse(full).netloc != base_host,
+            }
 
-        # 裸 m3u8 / mp4
-        for pattern in (
-            r'https?://[^\s"\'\\<>]+\.m3u8[^\s"\'\\<>]*',
-            r'https?://[^\s"\'\\<>]+\.mp4[^\s"\'\\<>]*',
-        ):
-            for m in re.finditer(pattern, html):
-                urls.add(m.group(0))
+        # 1. <video src="...">
+        for m in re.finditer(r'<video[^>]+src="([^"]+)"', html, re.IGNORECASE):
+            _add(m.group(1), kind="video_tag")
 
-        # JSON 字段 "url": "..." / "playUrl": "..."
+        # 2. <video ...><source src="...">
+        for m in re.finditer(r'<source[^>]+src="([^"]+)"', html, re.IGNORECASE):
+            _add(m.group(1), kind="source_tag")
+
+        # 3. .mp4 / .m3u8 / .webm / .flv 直链（HTML 里的字符串）
         for m in re.finditer(
-            r'"(?:url|src|videoUrl|video_url|playUrl|play_url|source)"\s*:\s*"([^"]+)"',
+            r'["\']([^"\']+\.(?:mp4|m3u8|webm|flv)(?:\?[^"\']*)?)["\']',
             html,
+            re.IGNORECASE,
         ):
-            u = m.group(1).replace("\\/", "/")
-            if ".m3u8" in u or ".mp4" in u:
-                urls.add(u)
+            ext = m.group(1).split(".")[-1].split("?")[0].lower()
+            _add(m.group(1), kind=f"{ext}_url")
 
-        # 清理
-        clean = []
-        for u in urls:
-            u = u.replace("\\/", "/").strip()
-            if u.startswith("//"):
-                u = "https:" + u
-            if not u.startswith(("http://", "https://")):
-                continue
-            if u in clean:
-                continue
-            clean.append(u)
+        # 4. data-src（懒加载视频）
+        for m in re.finditer(r'data-(?:src|video-src|url)="([^"]+\.(?:mp4|m3u8)[^"]*)"', html):
+            _add(m.group(1), kind="data_src")
 
-        if not clean:
-            return {"status": "error",
-                    "error": "yt-dlp 不支持该站点，且 HTML 里未发现可下载视频"
-                             "（可能是 JS 动态加载）"}
+        # 去重 + 限流
+        result = list(found.values())[:self.config["max_direct_links"]]
 
-        items = [{
-            "title":        f"视频 {i+1}",
-            "url":          u,
-            "id":           "",
-            "duration":     0,
-            "duration_str": "",
-            "uploader":     "",
-            "thumbnail":    "",
-            "source":       "html_sniffer",
-            "description":  "",
-        } for i, u in enumerate(clean)]
+        # 如果是 m3u8 且带主域名，标注（可能需要 referer 才能下）
+        for item in result:
+            if ".m3u8" in item["url"]:
+                item["hint"] = "m3u8 流，需 ffmpeg 或 yt-dlp 下载"
 
-        logger.info(f"HTML 嗅探 {page_url} → {len(items)} 条")
-        return {
-            "status": "success",
-            "result": {
-                "url":   page_url,
-                "kind":  "html",
-                "title": page_url.rstrip("/").split("/")[-1] or "网页视频",
-                "count": len(items),
-                "total": len(items),
-                "items": items,
-            },
-        }
-        
+        return result
 
-    # ------------------------------------------------------------
-    # 相关视频提取（从单视频页 HTML 抽推荐列表）
-    # ------------------------------------------------------------
-    def extract_related(self, page_url: str,
-                        max_count: int = 30) -> Dict[str, Any]:
-        """从视频页 HTML 里提取"相关视频"链接"""
-        import re
-        import requests
-        from urllib.parse import urlparse, urlunparse
+    # ---------- 相关视频 ----------
 
+    def extract_related(
+        self, page_url: str, max_count: int = 30,
+    ) -> Dict[str, Any]:
+        """从视频页 HTML 里提取"相关视频"链接。"""
         try:
             r = requests.get(
                 page_url,
-                headers={"User-Agent": "Mozilla/5.0"},
-                timeout=20,
+                timeout=self.config["timeout"],
+                headers=self.DEFAULT_HEADERS,
             )
             r.raise_for_status()
-            html = r.text
         except Exception as e:
-            return {"status": "error", "error": f"抓取失败: {e}"}
+            return {"status": "error", "error": f"页面请求失败: {e}"}
 
-        base = urlparse(page_url)
-        self_path = urlunparse((base.scheme, base.netloc, base.path, "", "", ""))
-        found: set = set()
+        html = r.text
+        base_host = urlparse(page_url).netloc
+        base = page_url
 
-        # 0) 最宽松：直接抽所有 /video/xXXXXX
-        for m in re.finditer(r'/video/(x[a-z0-9]{5,})', html):
-            vid = m.group(1)
-            u = f"{base.scheme}://{base.netloc}/video/{vid}"
-            if u == self_path:
+        # 提取所有 href，过滤同域名 + 看起来像视频详情页的
+        links: Dict[str, Dict[str, str]] = {}
+        for m in re.finditer(r'<a[^>]+href="([^"]+)"[^>]*>([^<]{2,80})</a>', html):
+            href, text = m.group(1), m.group(2).strip()
+            if not href or href.startswith(("#", "javascript:", "mailto:")):
                 continue
-            found.add(u)
 
-        # 1) <a href="...">
-        for m in re.finditer(r'<a[^>]+href=["\']([^"\']+)["\']', html):
-            u = self._normalize_url(m.group(1), base)
-            if not u:
+            full = urljoin(base, href)
+            parsed = urlparse(full)
+            if parsed.netloc != base_host:
                 continue
-            p = urlparse(u)
-            if p.netloc != base.netloc:
+            if full == base:
                 continue
-            if not any(k in u for k in ("/video/", "/play/")):
-                continue
-            u = urlunparse((p.scheme, p.netloc, p.path, "", "", ""))
-            if u == self_path:
-                continue
-            found.add(u)
 
-        # 2) 绝对 URL
-        for m in re.finditer(
-            r'https?://(?:www\.)?' + re.escape(base.netloc) +
-            r'/video/(x[a-z0-9]+)',
-            html,
-        ):
-            u = f"{base.scheme}://{base.netloc}/video/{m.group(1)}"
-            if u == self_path:
+            # 启发式过滤：路径里含 video / watch / v / play / bv 等
+            if not re.search(r"/(video|watch|v|play|bv|detail|p)/", parsed.path, re.IGNORECASE):
                 continue
-            found.add(u)
 
-        # 3) JSON 字段
-        for m in re.finditer(
-            r'"(?:url|videoUrl|video_url|href)"\s*:\s*"([^"]+)"', html,
-        ):
-            u = self._normalize_url(m.group(1), base)
-            if not u:
-                continue
-            if "/video/" not in u and "/play/" not in u:
-                continue
-            if urlparse(u).netloc != base.netloc:
-                continue
-            if u == self_path:
-                continue
-            found.add(u)
+            if full not in links:
+                links[full] = {"url": full, "title": text or "(无标题)"}
 
-        items = []
-        for u in sorted(found)[:max_count]:
-            vid = u.rstrip("/").split("/")[-1]
-            items.append({
-                "title":        f"视频 {vid}",
-                "url":          u,
-                "id":           vid,
-                "duration":     0,
-                "duration_str": "",
-                "uploader":     "",
-                "thumbnail":    "",
-                "source":       "related",
-                "description":  "",
-            })
+        result = list(links.values())[:max_count]
 
-        logger.info(f"相关视频 {page_url} → {len(items)} 条")
         return {
             "status": "success",
             "result": {
-                "url":   page_url,
-                "kind":  "related",
-                "title": f"相关视频（{len(items)} 条）",
-                "count": len(items),
-                "total": len(items),
-                "items": items,
+                "url": page_url,
+                "count": len(result),
+                "links": result,
             },
         }
-        
-    @staticmethod
-    def _normalize_url(u: str, base) -> str:
-        """把相对 URL 补全为绝对 URL，失败返回空串"""
-        if not u:
-            return ""
-        u = u.replace("\\/", "/").strip()
-        if u.startswith("//"):
-            return base.scheme + ":" + u
-        if u.startswith("/"):
-            return f"{base.scheme}://{base.netloc}{u}"
-        if u.startswith(("http://", "https://")):
-            return u
-        return ""
-        
-    # ------------------------------------------------------------
-    # execute
-    # ------------------------------------------------------------
-    def execute(self, **kwargs) -> Dict[str, Any]:
-        """
-        action:
-          analyze  url          解析网页，返回视频列表
-          info     url          只拿第一条详情（单视频快速路径）
-        """
-        action = kwargs.get("action", "analyze")
-        url = kwargs.get("url", "")
 
-        try:
-            if action == "analyze":
-                return self.analyze(url)
-            if action == "info":
-                r = self.analyze(url)
-                if r.get("status") != "success":
-                    return r
-                items = r["result"].get("items", [])
-                if not items:
-                    return {"status": "error", "error": "未发现视频"}
-                return {"status": "success", "result": items[0]}
-            if action == "related":
-                return self.extract_related(
-                    url, kwargs.get("max_count", 30),
-                )
-            return {"status": "error", "error": f"未知 action: {action}"}
-            
-        except Exception as e:
-            logger.error(f"执行失败: {e}")
-            import traceback
-            traceback.print_exc()
-            return {"status": "error", "error": str(e), "skill": self.name}
+    # ---------- 展示 ----------
+
+    def get_name(self) -> str:
+        return "VideoSniffer"
 
     def __repr__(self):
-        return f"<VideoSniffer v{self.version} yt_dlp={YT_DLP_AVAILABLE}>"
+        return "<VideoSniffer>"
